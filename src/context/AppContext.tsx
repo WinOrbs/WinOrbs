@@ -25,6 +25,9 @@ import {
   saveTransactionToFirestore,
   loadUserTransactionsFromFirestore,
   loadGlobalLeaderboardFromFirestore,
+  subscribeToTournamentRooms,
+  saveTournamentRoom,
+  deleteTournamentRoom,
   validateMatchVictoryCloud,
 } from '../services/firebase';
 
@@ -562,7 +565,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     });
 
-    return () => unsubscribe();
+    const unsubscribeRooms = subscribeToTournamentRooms(
+      (remoteRooms) => {
+        if (remoteRooms.length > 0) setRooms(remoteRooms);
+      },
+      (error) => console.warn('Firestore rooms sync:', error.message)
+    );
+
+    return () => {
+      unsubscribe();
+      unsubscribeRooms();
+    };
   }, [exchangeRates.vesUsdRate]);
 
   // Sync state to local storage & Firestore
@@ -1117,6 +1130,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setRooms((prev) => [newRoom, ...prev]);
+    saveTournamentRoom(newRoom).catch((error) => console.warn('Room sync:', error));
     setActiveRoom(newRoom);
     soundFx.playBoost();
     return newRoom;
@@ -1173,6 +1187,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setRooms((prev) => [newRoom, ...prev]);
+    saveTournamentRoom(newRoom).catch((error) => console.warn('Room sync:', error));
 
     if (isSpecial || config.broadcastNotification) {
       const broadcastNotif: AppNotification = {
@@ -1193,6 +1208,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const adminUpdateRoom = (roomId: string, updates: Partial<TournamentRoom>) => {
+    const existingRoom = rooms.find((room) => room.id === roomId);
+    if (existingRoom) {
+      const updatedRoom = { ...existingRoom, ...updates };
+      if (updates.potUSD !== undefined) {
+        updatedRoom.winnerRewardUSD = (updates.potUSD * exchangeRates.winnerPotPercent) / 100;
+        updatedRoom.devFeeUSD = (updates.potUSD * exchangeRates.platformPotPercent) / 100;
+      }
+      saveTournamentRoom(updatedRoom).catch((error) => console.warn('Room sync:', error));
+    }
     setRooms((prev) =>
       prev.map((r) => {
         if (r.id === roomId) {
@@ -1215,6 +1239,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const adminDeleteRoom = (roomId: string) => {
     setRooms((prev) => prev.filter((r) => r.id !== roomId));
+    deleteTournamentRoom(roomId).catch((error) => console.warn('Room sync:', error));
     if (activeRoom && activeRoom.id === roomId) {
       setActiveRoom(null);
     }
@@ -1275,6 +1300,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setRooms((prev) => prev.map((r) => (r.id === roomId ? updatedRoom : r)));
+    saveTournamentRoom(updatedRoom).catch((error) => console.warn('Room sync:', error));
     setActiveRoom(updatedRoom);
     soundFx.playBoost();
     return true;
@@ -1293,6 +1319,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setRooms((prev) => prev.map((r) => (r.id === roomId ? startedRoom : r)));
+    saveTournamentRoom(startedRoom).catch((error) => console.warn('Room sync:', error));
     setActiveRoom(startedRoom);
     soundFx.playVictoryFanfare();
   };

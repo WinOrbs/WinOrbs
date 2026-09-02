@@ -21,6 +21,8 @@ import {
   orderBy,
   limit,
   getDocs,
+  onSnapshot,
+  deleteDoc,
   serverTimestamp,
   Firestore,
 } from 'firebase/firestore';
@@ -520,6 +522,35 @@ export async function loadGlobalLeaderboardFromFirestore(): Promise<LeaderboardE
   } catch (err) {
     return [];
   }
+}
+
+/**
+ * Subscribe to the shared tournament rooms collection.
+ */
+export function subscribeToTournamentRooms(
+  onRooms: (rooms: TournamentRoom[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  if (!db) return () => undefined;
+
+  return onSnapshot(
+    query(collection(db, 'rooms'), orderBy('createdAt', 'desc'), limit(100)),
+    (snapshot) => onRooms(snapshot.docs.map((room) => room.data() as TournamentRoom)),
+    (error) => onError?.(error)
+  );
+}
+
+export async function saveTournamentRoom(room: TournamentRoom): Promise<void> {
+  if (!db) return;
+  await setDoc(doc(db, 'rooms', room.id), {
+    ...room,
+    syncedAt: serverTimestamp(),
+  }, { merge: true });
+}
+
+export async function deleteTournamentRoom(roomId: string): Promise<void> {
+  if (!db) return;
+  await deleteDoc(doc(db, 'rooms', roomId));
 }
 
 // ==========================================
