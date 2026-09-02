@@ -18,3 +18,12 @@ View your app in AI Studio: https://ai.studio/apps/aae0e380-201a-47b4-8c38-0bec8
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## Deploy to Cloudflare Pages
+
+Use a Cloudflare Pages project, not a regular Worker deployment:
+
+`npm run deploy:cloudflare`
+
+This builds the Vite app and deploys `dist` with `wrangler pages deploy`. The
+Cloudflare Pages project must already exist and be named `winorbs`.
