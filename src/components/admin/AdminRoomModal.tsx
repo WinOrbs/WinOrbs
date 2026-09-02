@@ -118,7 +118,7 @@ export const AdminRoomModal: React.FC<AdminRoomModalProps> = ({
       setMinPlayersToStart(4);
       setDurationSeconds(240);
       setIsSpecialEvent(true);
-      setSponsorName('Neon Clash Esports & Binance Pay');
+      setSponsorName('WinOrbs Esports & Binance Pay');
       setEventDescription('¡Evento especial con pozo patrocinado de $50 USD! Entrada libre para todos los gladiadores.');
       setBroadcastNotification(true);
     } else if (presetType === 'duel_quick') {
@@ -469,7 +469,7 @@ export const AdminRoomModal: React.FC<AdminRoomModalProps> = ({
                   type="text"
                   value={sponsorName}
                   onChange={(e) => setSponsorName(e.target.value)}
-                  placeholder="ej. Binance Pay / Pago Móvil Venezuela / NeonClash League"
+                  placeholder="ej. Binance Pay / Pago Móvil Venezuela / WinOrbs League"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-amber-500/40 text-amber-200 font-orbitron text-xs focus:border-amber-400 focus:outline-none"
                 />
               </div>

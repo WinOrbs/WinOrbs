@@ -161,7 +161,7 @@ const DEFAULT_EXCHANGE_CONFIG: ExchangeConfig = {
     bankName: 'JPMorgan Chase / Zelle Business',
     accountNumber: '8892-0019-3382-9901',
     routingOrSwift: 'CHASUS33 / zelle@neonclash.io',
-    beneficiary: 'Edgar López / Neon Clash Gaming',
+    beneficiary: 'Edgar López / WinOrbs Gaming',
   },
 };
 

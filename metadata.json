@@ -1,5 +1,5 @@
 {
-  "name": "Neon Clash .IO - Multiplayer Tournament & Rewards",
+  "name": "WinOrbs - Multiplayer Tournament & Rewards",
   "description": "Juego .IO multijugador en tiempo real con estética Neón, potes de premios en torneos, recargas en Pago Móvil/USDT/Bancos, skins exclusivas, vistas isométrica y minimalista, y panel de administración.",
   "requestFramePermissions": ["notifications"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

@@ -163,7 +163,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <ShieldCheck className="w-6 h-6" />
           </div>
           <h3 className="font-orbitron font-extrabold text-xl text-white">
-            {mode === 'signin' && 'Acceso a Neon Clash'}
+            {mode === 'signin' && 'Acceso a WinOrbs'}
             {mode === 'signup' && 'Registro de Gladiador'}
             {mode === 'forgot_password' && 'Recuperar Contraseña'}
           </h3>
