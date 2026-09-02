@@ -24,11 +24,7 @@ import {
   serverTimestamp,
   Firestore,
 } from 'firebase/firestore';
-import {
-  getFunctions,
-  Functions,
-  httpsCallable,
-} from 'firebase/functions';
+import { getAnalytics, Analytics } from 'firebase/analytics';
 import {
   UserProfile,
   Transaction,
@@ -41,20 +37,24 @@ import {
 
 // Standard Firebase Configuration (can be configured via environment or fallback credentials)
 const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as unknown as { env?: Record<string, string> })?.env : undefined;
+const configuredApiKey = metaEnv?.VITE_FIREBASE_API_KEY || '';
+const defaultApiKey = 'AIzaSyChpqNjLwqBPCyQubj5j6c2G1_Yxiva4X8';
+const isDevelopment = metaEnv?.MODE === 'development';
 
 const firebaseConfig = {
-  apiKey: metaEnv?.VITE_FIREBASE_API_KEY || '',
-  authDomain: metaEnv?.VITE_FIREBASE_AUTH_DOMAIN || 'neon-clash-io.firebaseapp.com',
-  projectId: metaEnv?.VITE_FIREBASE_PROJECT_ID || 'neon-clash-io',
-  storageBucket: metaEnv?.VITE_FIREBASE_STORAGE_BUCKET || 'neon-clash-io.appspot.com',
-  messagingSenderId: metaEnv?.VITE_FIREBASE_MESSAGING_SENDER_ID || '468012612029',
-  appId: metaEnv?.VITE_FIREBASE_APP_ID || '1:468012612029:web:neonclash99281a',
+  apiKey: configuredApiKey.startsWith('AIzaSy') && configuredApiKey.length > 25 ? configuredApiKey : defaultApiKey,
+  authDomain: metaEnv?.VITE_FIREBASE_AUTH_DOMAIN || 'winorbs-1f055.firebaseapp.com',
+  projectId: metaEnv?.VITE_FIREBASE_PROJECT_ID || 'winorbs-1f055',
+  storageBucket: metaEnv?.VITE_FIREBASE_STORAGE_BUCKET || 'winorbs-1f055.firebasestorage.app',
+  messagingSenderId: metaEnv?.VITE_FIREBASE_MESSAGING_SENDER_ID || '372071705684',
+  appId: metaEnv?.VITE_FIREBASE_APP_ID || '1:372071705684:web:a831e91ae641a993b151c1',
+  measurementId: metaEnv?.VITE_FIREBASE_MEASUREMENT_ID || 'G-C3L75ZD0QZ',
 };
 
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
 let db: Firestore | null = null;
-let functions: Functions | null = null;
+let analytics: Analytics | null = null;
 
 const hasValidApiKey = !!(firebaseConfig.apiKey && firebaseConfig.apiKey.startsWith('AIzaSy') && firebaseConfig.apiKey.length > 25);
 
@@ -67,10 +67,12 @@ if (hasValidApiKey) {
     }
     auth = getAuth(app);
     db = getFirestore(app);
-    try {
-      functions = getFunctions(app);
-    } catch {
-      functions = null;
+    if (typeof window !== 'undefined') {
+      try {
+        analytics = getAnalytics(app);
+      } catch {
+        analytics = null;
+      }
     }
   } catch (err) {
     console.warn('Firebase connection notice:', err);
@@ -80,7 +82,7 @@ if (hasValidApiKey) {
 }
 
 export const isLocalAuthFallback = !hasValidApiKey;
-export { app, auth, db, functions };
+export { app, auth, db, analytics };
 
 // ==========================================
 // LOCAL SECURE AUTH ENGINE (SHA-256 CRYPTO)
@@ -621,32 +623,38 @@ export function validateMatchVictory(
 }
 
 /**
- * Callable Cloud Function for server-side anti-cheat validation.
- * Falls back to local validation if Cloud Functions are unavailable.
+ * Cloudflare Pages Function for server-side anti-cheat validation.
+ * Falls back to local validation if the endpoint is unavailable.
  */
 export async function validateMatchVictoryCloud(
   token: MatchSessionToken | null,
   telemetry: MatchTelemetry,
-  roomId: string
+  roomId: string,
+  currentPlayers = 15
 ): Promise<MatchValidationResult> {
   if (!token) {
     return { valid: false, reason: 'Token de sesión de combate no encontrado.' };
   }
 
-  if (!functions) {
-    return validateMatchVictory(token, telemetry, { id: roomId, code: token.roomCode } as TournamentRoom);
-  }
-
   try {
-    const validateMatch = httpsCallable(functions, 'validateMatchVictory');
-    const result = await validateMatch({
-      token,
-      telemetry,
-      roomId,
+    const endpoint = metaEnv?.VITE_CLOUDFLARE_ANTICHEAT_URL || '/api/validate-match-victory';
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token,
+        telemetry,
+        roomId,
+        currentPlayers,
+      }),
     });
-    return (result.data as MatchValidationResult) || { valid: false, reason: 'Respuesta inválida del servidor.' };
+    if (!response.ok) throw new Error(`Anti-cheat endpoint returned ${response.status}`);
+    return (await response.json()) as MatchValidationResult;
   } catch (err: any) {
-    console.warn('Cloud anti-cheat unavailable, falling back to local:', err?.message);
+    console.warn('Cloudflare anti-cheat unavailable:', err?.message);
+    if (!isDevelopment) {
+      return { valid: false, reason: 'No se pudo verificar la partida con el servidor anti-cheat de Cloudflare.' };
+    }
     return validateMatchVictory(token, telemetry, { id: roomId, code: token.roomCode } as TournamentRoom);
   }
 }

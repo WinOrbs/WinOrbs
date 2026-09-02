@@ -1448,7 +1448,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           peakMass: Math.max(matchStats?.score || 0, 50),
           orbsConsumed: Math.floor((matchStats?.score || 0) / 10),
         };
-        const validation = await validateMatchVictoryCloud(token, telemetry, room.id);
+        const validation = await validateMatchVictoryCloud(token, telemetry, room.id, room.currentPlayers);
         if (!validation.valid) {
           console.error('Anti-Cheat Alert:', validation.reason);
           soundFx.playNotificationPing();
