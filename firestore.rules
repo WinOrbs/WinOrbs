@@ -1,0 +1,66 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to verify user authentication
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user owns the document
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Helper function to check if user is admin
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email in ['elopez020502@gmail.com', 'admin@neonclash.io'] ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+
+    // User Profiles Collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      // Allow user creation for their own authenticated UID
+      allow create: if isOwner(userId);
+      // Allow updates if owner and not attempting unauthorized privilege escalation
+      allow update: if isOwner(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'balanceUSD', 'balanceVES', 'stats', 'vipTier', 'ownedCosmetics']);
+      allow delete: if isAdmin();
+    }
+
+    // Transactions Collection (Anti-Cheat & Escrow protection)
+    match /transactions/{txId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      // Users can only submit pending transactions for their own account
+      allow create: if isAuthenticated() && 
+                    request.resource.data.userId == request.auth.uid &&
+                    request.resource.data.status == 'pending';
+      // Only system admin can approve or reject financial transactions
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Tournament Rooms Collection
+    match /rooms/{roomId} {
+      allow read: if true;
+      allow create, update: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
+    // Match Records & Anti-Cheat Session Logs
+    match /matches/{matchId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.playerId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // Platform Configuration / Exchange Rates
+    match /config/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}

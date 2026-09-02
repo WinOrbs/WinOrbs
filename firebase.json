@@ -1,0 +1,16 @@
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "auth": {
+    "providers": {
+      "anonymous": false,
+      "emailPassword": true,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "Neon Clash .IO",
+        "supportEmail": "elopez020502@gmail.com",
+        "authorizedRedirectUris": ["http://localhost"]
+      }
+    }
+  }
+}
