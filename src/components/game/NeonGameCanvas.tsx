@@ -184,6 +184,12 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
     const cached = skinImageCacheRef.current.get(normalized);
     if (cached) return cached.complete && cached.naturalWidth > 0 ? cached : null;
     const img = new Image();
+    // crossOrigin evita canvas taint (SecurityError en drawImage) cuando el
+    // host no envía Access-Control-Allow-Origin.
+    img.crossOrigin = 'anonymous';
+    img.onerror = () => {
+      skinImageCacheRef.current.delete(normalized);
+    };
     img.src = normalized;
     skinImageCacheRef.current.set(normalized, img);
     return null;

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { CosmeticItem, VIPPlanConfig, GameConfig } from '../../types';
 import { normalizeImageUrl } from '../../services/imageUtils';
+import { SkinImage } from '../ui/SkinImage';
 import {
   Plus,
   Trash2,
@@ -76,6 +77,7 @@ export const AdminCatalogManager: React.FC<AdminCatalogManagerProps> = ({
   const [form, setForm] = useState<CosmeticFormState>(EMPTY_FORM);
   const [catalogSaved, setCatalogSaved] = useState<boolean>(false);
   const [gameSaved, setGameSaved] = useState<boolean>(false);
+  const [imageLoadError, setImageLoadError] = useState<boolean>(false);
 
   // Gameplay draft state
   const [duration, setDuration] = useState<number>(gameConfig.defaultDurationSeconds);
@@ -137,6 +139,7 @@ export const AdminCatalogManager: React.FC<AdminCatalogManagerProps> = ({
       return;
     }
     setForm((prev) => ({ ...prev, imageUrl: normalized }));
+    setImageLoadError(false);
   };
 
   const handleCosmeticSubmit = (e: React.FormEvent) => {
@@ -351,7 +354,13 @@ export const AdminCatalogManager: React.FC<AdminCatalogManagerProps> = ({
                     style={{ boxShadow: form.imageUrl ? `0 0 18px ${form.glowColor}` : 'none' }}
                   >
                     {form.imageUrl ? (
-                      <img src={normalizeImageUrl(form.imageUrl)} alt="Preview" className="w-full h-full object-contain" />
+                      <SkinImage
+                        src={normalizeImageUrl(form.imageUrl)}
+                        alt="Preview"
+                        className="w-full h-full object-contain"
+                        fallback={<Palette className="w-5 h-5 text-slate-600" />}
+                        onLoadError={() => setImageLoadError(true)}
+                      />
                     ) : (
                       <Palette className="w-5 h-5 text-slate-600" />
                     )}
@@ -359,7 +368,10 @@ export const AdminCatalogManager: React.FC<AdminCatalogManagerProps> = ({
                   <input
                     type="url"
                     value={form.imageUrl}
-                    onChange={(e) => setForm((prev) => ({ ...prev, imageUrl: e.target.value }))}
+                    onChange={(e) => {
+                      setImageLoadError(false);
+                      setForm((prev) => ({ ...prev, imageUrl: e.target.value }));
+                    }}
                     onBlur={() =>
                       setForm((prev) => (prev.imageUrl ? { ...prev, imageUrl: normalizeImageUrl(prev.imageUrl) } : prev))
                     }
@@ -391,6 +403,12 @@ export const AdminCatalogManager: React.FC<AdminCatalogManagerProps> = ({
                   «Cualquier persona con el enlace») o una URL directa (Imgur, Cloudinary, Firebase Storage). PNG
                   cuadrado 512×512 con fondo transparente es lo ideal. Sin imagen se usa el color.
                 </span>
+                {imageLoadError && form.imageUrl && (
+                  <span className="text-[10px] text-amber-300 font-mono-tech mt-1 block flex items-center gap-1">
+                    ⚠️ No se pudo cargar la imagen. Verifica que el archivo en Google Drive esté compartido como
+                    «Cualquier persona con el enlace» y que sea un archivo de imagen (PNG/JPG).
+                  </span>
+                )}
               </div>
             </div>
 
@@ -426,7 +444,12 @@ export const AdminCatalogManager: React.FC<AdminCatalogManagerProps> = ({
                 style={{ backgroundColor: item.color, boxShadow: `0 0 18px ${item.glowColor}` }}
               >
                 {item.imageUrl ? (
-                  <img src={normalizeImageUrl(item.imageUrl)} alt={item.name} className="w-full h-full object-contain" />
+                  <SkinImage
+                    src={normalizeImageUrl(item.imageUrl)}
+                    alt={item.name}
+                    className="w-full h-full object-contain"
+                    fallback={item.type === 'crown' ? '👑' : item.type === 'trail' ? '✨' : '⬤'}
+                  />
                 ) : item.type === 'crown' ? '👑' : item.type === 'trail' ? '✨' : '⬤'}
               </div>
               <div className="min-w-0 flex-1">

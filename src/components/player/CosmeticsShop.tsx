@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { CosmeticItem } from '../../types';
 import { normalizeImageUrl } from '../../services/imageUtils';
+import { SkinImage } from '../ui/SkinImage';
 import {
   Sparkles,
   ShoppingBag,
@@ -50,6 +51,12 @@ export const CosmeticsShop: React.FC = () => {
     // Cargar la imagen personalizada de la skin (si la tiene)
     if (previewItem.imageUrl) {
       const img = new Image();
+      // crossOrigin evita que una imagen sin cabeceras CORS tainte el canvas
+      // y haga que ctx.drawImage lance SecurityError (matando el rAF loop).
+      img.crossOrigin = 'anonymous';
+      img.onerror = () => {
+        if (previewImageRef.current === img) previewImageRef.current = null;
+      };
       img.src = normalizeImageUrl(previewItem.imageUrl);
       previewImageRef.current = img;
     } else {
@@ -306,7 +313,18 @@ export const CosmeticsShop: React.FC = () => {
                       }}
                     >
                       {item.imageUrl ? (
-                        <img src={normalizeImageUrl(item.imageUrl)} alt={item.name} className="w-full h-full object-contain" />
+                        <SkinImage
+                          src={normalizeImageUrl(item.imageUrl)}
+                          alt={item.name}
+                          className="w-full h-full object-contain"
+                          fallback={item.type === 'crown' ? (
+                            <Crown className="w-6 h-6 text-black" />
+                          ) : item.type === 'trail' ? (
+                            <Zap className="w-6 h-6 text-black" />
+                          ) : (
+                            <Sparkles className="w-6 h-6 text-black" />
+                          )}
+                        />
                       ) : item.type === 'crown' ? (
                         <Crown className="w-6 h-6 text-black" />
                       ) : item.type === 'trail' ? (
