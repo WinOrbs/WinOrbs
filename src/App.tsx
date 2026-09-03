@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { PlayerNavbar } from './components/player/PlayerNavbar';
 import { LobbyView } from './components/player/LobbyView';
@@ -21,6 +21,25 @@ const MainAppContent: React.FC = () => {
 
   // Navigation views: 'lobby' | 'game' | 'shop'
   const [currentView, setCurrentView] = useState<'lobby' | 'game' | 'shop'>('lobby');
+
+  // Auto-route: if a Firestore snapshot reports that the user's registered
+  // room just transitioned to in_game (refresh, "close preview" button,
+  // background tab coming back to life), jump straight to the game view.
+  // This is independent of the lobby waiting-room modal so closing the
+  // preview no longer strands the user on the lobby while a match runs.
+  useEffect(() => {
+    if (!activeRoom || activeRoom.status !== 'in_game') return;
+    if (currentView === 'game') return;
+    setCurrentView('game');
+  }, [activeRoom?.id, activeRoom?.status, currentView]);
+
+  // If the match ended while the user was elsewhere, fall back to lobby.
+  // (activeRoom becomes null once leaveRoom runs or the room is recycled.)
+  useEffect(() => {
+    if (currentView === 'game' && !activeRoom) {
+      setCurrentView('lobby');
+    }
+  }, [activeRoom, currentView]);
 
   // Modals state
   const [showWalletModal, setShowWalletModal] = useState<boolean>(false);

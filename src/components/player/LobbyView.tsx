@@ -206,6 +206,9 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     if (autoLaunchedRef.current.has(launchKey)) return;
     autoLaunchedRef.current.add(launchKey);
 
+    // Note: App.tsx already auto-routes to the game view whenever
+    // activeRoom.status flips to in_game, so even closing the modal here
+    // no longer strands the user. We still close the modal for UX.
     setWaitingRoomModal(null);
     onStartGame(activePlayerRoom);
   }, [currentUser, onStartGame, rooms, waitingRoomModal]);

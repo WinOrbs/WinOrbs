@@ -361,24 +361,17 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
             .map((player) => [player.id, player])
         );
 
-        // Live host election: designated host while online, otherwise the oldest
-        // registered player that is still publishing state.
+        // Live host election: designated host while online. Stale-host takeover
+        // is intentionally DISABLED: a non-designated client must never become
+        // the world authority, because every registered player trusts that the
+        // designated host's `hostId` is the one truth. Falling back to the
+        // oldest registered player or any fresh id lets two tabs of the same
+        // user or a late joiner fight over the world, desyncing scores.
         const designated = room.hostId === 'admin_master'
           ? room.registeredPlayers?.[0]?.id
           : room.hostId;
         const freshIds = fresh.map((player) => player.id);
-        let live: string | null = null;
-        if (designated && freshIds.includes(designated)) {
-          live = designated;
-        } else {
-          for (const slot of room.registeredPlayers || []) {
-            if (freshIds.includes(slot.id)) {
-              live = slot.id;
-              break;
-            }
-          }
-          if (!live && freshIds.length > 0) live = freshIds[0];
-        }
+        const live = designated && freshIds.includes(designated) ? designated : null;
         setHostLiveId((prev) => (prev === live ? prev : live));
       },
       (error) => console.warn('Realtime match sync:', error.message)

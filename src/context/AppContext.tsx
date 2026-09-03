@@ -506,6 +506,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }, [exchangeRates.vesUsdRate]);
 
+  // Re-derive activeRoom from Firestore whenever the user is a registered
+  // player in a room that is still active (waiting / in_game / recently
+  // cancelled). This makes the lobby resilient to:
+  //   - hard refreshes during a match (no lobby UI, jump straight to game)
+  //   - the user closing the waiting-room modal with "MANTENERME EN LA SALA"
+  //   - cancelled rooms: the lobby auto-restores them so the user can still
+  //     claim their refund via the self-refund claim effect below.
+  // Without this, activeRoom was only ever set locally by join/createRoom,
+  // so any navigation away from the lobby (or a refresh) silently desynced
+  // the client from the server-side room state.
+  useEffect(() => {
+    if (!currentUser) return;
+    const myActiveRoom = rooms.find((room) => {
+      const isMember = (room.registeredPlayers || []).some((p) => p.id === currentUser.id);
+      if (!isMember) return false;
+      // Stale matches (clock expired long ago) are treated as inactive.
+      if (room.status === 'in_game' && room.matchStartedAt) {
+        const elapsed = (Date.now() - new Date(room.matchStartedAt).getTime()) / 1000;
+        if (elapsed > (room.durationSeconds || 180) + 60) return false;
+      }
+      return room.status === 'waiting' || room.status === 'in_game' || (room.status === 'finished' && room.cancelled);
+    });
+
+    setActiveRoom((prev) => {
+      if (!myActiveRoom) {
+        // Server says we have no active membership: drop any stale local one
+        // (but only if it is also not present in rooms anymore, to avoid
+        // flickering during the Firestore echo roundtrip).
+        if (prev && !rooms.some((r) => r.id === prev.id)) return null;
+        return prev;
+      }
+      if (prev?.id === myActiveRoom.id) {
+        // Refresh the snapshot so the latest pot / countdown / registered
+        // players propagate to the canvas.
+        return myActiveRoom;
+      }
+      return myActiveRoom;
+    });
+  }, [rooms, currentUser]);
+
   // Sync state to local storage & Firestore
   useEffect(() => {
     if (currentUser) {
@@ -1351,8 +1391,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setRooms((prev) => [newRoom, ...prev]);
     saveTournamentRoom(newRoom).catch((error) => {
+      // Roll back the local optimistic state so the user is not charged for a
+      // room that never made it to Firestore (rules rejection, network, etc.).
       setRooms((prev) => prev.filter((room) => room.id !== newRoom.id));
-      alert('No se pudo guardar la sala en Firestore. Revisa la autenticación y las reglas de la base de datos.');
+      setCurrentUser((prev) =>
+        prev
+          ? {
+              ...prev,
+              balanceUSD: prev.balanceUSD + config.entryFeeUSD,
+              balanceVES: (prev.balanceUSD + config.entryFeeUSD) * exchangeRates.vesUsdRate,
+            }
+          : prev
+      );
+      setActiveRoom((curr) => (curr?.id === newRoom.id ? null : curr));
+      alert('No se pudo guardar la sala en Firestore. Se devolvió la entrada a tu saldo. Revisa la autenticación y las reglas de la base de datos.');
       console.warn('Room sync:', error);
     });
     setActiveRoom(newRoom);
@@ -1498,90 +1550,141 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const joinRoom = (roomId: string, code?: string): boolean => {
-    const targetRoom = rooms.find((r) => r.id === roomId);
-    if (!targetRoom || !currentUser) return false;
+    if (!currentUser) return false;
 
-    if (targetRoom.type === 'private' && code && targetRoom.code !== code) {
-      alert('Código de sala privada incorrecto');
-      return false;
-    }
+    // Look up via functional state to defeat stale closures (rapid double-click
+    // and concurrent-joiner races both go through the same closure otherwise).
+    let resultRoom: TournamentRoom | null = null;
+    let rejectedReason: string | null = null;
+    let rejectedFeeUSD = 0;
+    let chargedFeeUSD = 0;
 
-    const existingPlayers = targetRoom.registeredPlayers || [];
-    const isAlreadyRegistered = existingPlayers.some((p) => p.id === currentUser.id);
-
-    // REJOIN (already registered): never charge again. This also allows re-entering
-    // an ongoing match after a refresh without being considered a new player.
-    if (isAlreadyRegistered) {
-      // Guard: never drop a player into a match whose shared clock already
-      // expired (it would end the match the instant they spawn and feel like
-      // being kicked out right after entering).
-      const startedTs = targetRoom.matchStartedAt
-        ? new Date(targetRoom.matchStartedAt).getTime()
-        : 0;
-      const clockExpired =
-        targetRoom.status === 'in_game' &&
-        startedTs > 0 &&
-        Date.now() - startedTs > (targetRoom.durationSeconds || 180) * 1000;
-      if (clockExpired) {
-        alert('La partida de esta sala ya finalizó. Espera a que se habilite una nueva ronda.');
-        return false;
+    setRooms((prevRooms) => {
+      const targetRoom = prevRooms.find((r) => r.id === roomId);
+      if (!targetRoom) {
+        rejectedReason = 'not_found';
+        return prevRooms;
       }
-      setActiveRoom(targetRoom);
-      void setUserPresenceState(currentUser.id, 'in_game');
-      return true;
-    }
 
-    // NEW registration: only while the room has not launched (kills the
-    // "join in-progress room -> instant relaunch" loop).
-    if (targetRoom.status !== 'waiting') {
-      alert('Esta sala ya está en combate o finalizada. No es posible inscribirse ahora.');
+      if (targetRoom.type === 'private' && code && targetRoom.code !== code) {
+        rejectedReason = 'bad_code';
+        return prevRooms;
+      }
+
+      const existingPlayers = targetRoom.registeredPlayers || [];
+      const isAlreadyRegistered = existingPlayers.some((p) => p.id === currentUser.id);
+
+      // REJOIN (already registered): never charge again. This also allows re-entering
+      // an ongoing match after a refresh without being considered a new player.
+      if (isAlreadyRegistered) {
+        // Guard: never drop a player into a match whose shared clock already
+        // expired (it would end the match the instant they spawn and feel like
+        // being kicked out right after entering).
+        const startedTs = targetRoom.matchStartedAt
+          ? new Date(targetRoom.matchStartedAt).getTime()
+          : 0;
+        const clockExpired =
+          targetRoom.status === 'in_game' &&
+          startedTs > 0 &&
+          Date.now() - startedTs > (targetRoom.durationSeconds || 180) * 1000;
+        if (clockExpired) {
+          rejectedReason = 'clock_expired';
+          return prevRooms;
+        }
+        resultRoom = targetRoom;
+        return prevRooms;
+      }
+
+      // NEW registration: only while the room has not launched (kills the
+      // "join in-progress room -> instant relaunch" loop).
+      if (targetRoom.status !== 'waiting') {
+        rejectedReason = 'not_waiting';
+        return prevRooms;
+      }
+
+      if (targetRoom.currentPlayers >= targetRoom.maxPlayers) {
+        rejectedReason = 'full';
+        return prevRooms;
+      }
+
+      const fee = targetRoom.entryFeeUSD;
+      if (currentUser.balanceUSD < fee) {
+        rejectedReason = 'insufficient_funds';
+        rejectedFeeUSD = fee;
+        return prevRooms;
+      }
+
+      // Charge the entry fee via functional setCurrentUser so a second call
+      // stacked in the same tick cannot deduct twice.
+      chargedFeeUSD = fee;
+      setCurrentUser((prevUser) => {
+        if (!prevUser) return prevUser;
+        return {
+          ...prevUser,
+          balanceUSD: prevUser.balanceUSD - fee,
+          balanceVES: (prevUser.balanceUSD - fee) * exchangeRates.vesUsdRate,
+        };
+      });
+
+      // Register player slot
+      const updatedPlayers = [
+        {
+          id: currentUser.id,
+          name: currentUser.name,
+          avatar: currentUser.avatar,
+          ready: true,
+          isUser: true,
+          joinedAt: new Date().toISOString(),
+        },
+        ...existingPlayers,
+      ].slice(0, targetRoom.maxPlayers);
+
+      const activePlayerCount = updatedPlayers.length;
+      const newPot = activePlayerCount * targetRoom.entryFeeUSD;
+      const winnerReward = (newPot * exchangeRates.winnerPotPercent) / 100;
+      const devFee = (newPot * exchangeRates.platformPotPercent) / 100;
+
+      const updatedRoom: TournamentRoom = {
+        ...targetRoom,
+        currentPlayers: activePlayerCount,
+        potUSD: newPot,
+        winnerRewardUSD: winnerReward,
+        devFeeUSD: devFee,
+        registeredPlayers: updatedPlayers,
+      };
+
+      resultRoom = updatedRoom;
+      return prevRooms.map((r) => (r.id === roomId ? updatedRoom : r));
+    });
+
+    if (rejectedReason) {
+      if (rejectedReason === 'bad_code') alert('Código de sala privada incorrecto');
+      else if (rejectedReason === 'clock_expired')
+        alert('La partida de esta sala ya finalizó. Espera a que se habilite una nueva ronda.');
+      else if (rejectedReason === 'not_waiting')
+        alert('Esta sala ya está en combate o finalizada. No es posible inscribirse ahora.');
+      else if (rejectedReason === 'full')
+        alert('Esta sala ya alcanzó la capacidad máxima.');
+      else if (rejectedReason === 'insufficient_funds')
+        alert(`Saldo insuficiente. La entrada requiere $${rejectedFeeUSD.toFixed(2)} USD.`);
       return false;
     }
 
-    if (currentUser.balanceUSD < targetRoom.entryFeeUSD) {
-      alert(`Saldo insuficiente. La entrada requiere $${targetRoom.entryFeeUSD.toFixed(2)} USD.`);
-      return false;
+    if (!resultRoom) return false;
+
+    const targetRoom = resultRoom;
+
+    // Persist the room + user. The user balance is only updated server-side on
+    // a NEW registration, since rejoin must be free.
+    if (chargedFeeUSD > 0) {
+      saveUserProfileToFirestore({
+        ...currentUser,
+        balanceUSD: currentUser.balanceUSD - chargedFeeUSD,
+        balanceVES: (currentUser.balanceUSD - chargedFeeUSD) * exchangeRates.vesUsdRate,
+      }).catch(console.warn);
     }
-
-    // Deduct entry fee immediately - committed to pot
-    const updatedUser: UserProfile = {
-      ...currentUser,
-      balanceUSD: currentUser.balanceUSD - targetRoom.entryFeeUSD,
-      balanceVES: (currentUser.balanceUSD - targetRoom.entryFeeUSD) * exchangeRates.vesUsdRate,
-    };
-    setCurrentUser(updatedUser);
-    saveUserProfileToFirestore(updatedUser).catch(console.warn);
-
-    // Register player slot
-    const updatedPlayers = [
-      {
-        id: currentUser.id,
-        name: currentUser.name,
-        avatar: currentUser.avatar,
-        ready: true,
-        isUser: true,
-        joinedAt: new Date().toISOString(),
-      },
-      ...existingPlayers,
-    ].slice(0, targetRoom.maxPlayers);
-
-    const activePlayerCount = updatedPlayers.length;
-    const newPot = activePlayerCount * targetRoom.entryFeeUSD;
-    const winnerReward = (newPot * exchangeRates.winnerPotPercent) / 100;
-    const devFee = (newPot * exchangeRates.platformPotPercent) / 100;
-
-    const updatedRoom: TournamentRoom = {
-      ...targetRoom,
-      currentPlayers: activePlayerCount,
-      potUSD: newPot,
-      winnerRewardUSD: winnerReward,
-      devFeeUSD: devFee,
-      registeredPlayers: updatedPlayers,
-    };
-
-    setRooms((prev) => prev.map((r) => (r.id === roomId ? updatedRoom : r)));
-    saveTournamentRoom(updatedRoom).catch((error) => console.warn('Room sync:', error));
-    setActiveRoom(updatedRoom);
+    saveTournamentRoom(targetRoom).catch((error) => console.warn('Room sync:', error));
+    setActiveRoom(targetRoom);
     void setUserPresenceState(currentUser.id, 'in_game');
     soundFx.playBoost();
     return true;
