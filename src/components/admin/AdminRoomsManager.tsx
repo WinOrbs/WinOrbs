@@ -70,6 +70,8 @@ export const AdminRoomsManager: React.FC<AdminRoomsManagerProps> = ({
         isSpecialEvent: data.isSpecialEvent,
         eventDescription: data.eventDescription,
         sponsorName: data.sponsorName,
+        botCount: data.botCount,
+        botDifficulty: data.botDifficulty,
         status: data.status,
       });
       showToast(`¡Sala "${data.name}" actualizada con éxito!`);

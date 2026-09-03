@@ -17,7 +17,7 @@ import { TournamentRoom } from './types';
 import { isLocalAuthFallback } from './services/firebase';
 
 const MainAppContent: React.FC = () => {
-  const { currentRole, activeRoom, leaveRoom, rooms, isAdminUnlocked, isAuthorizedAdmin, joinRoom } = useApp();
+  const { currentRole, currentUser, activeRoom, leaveRoom, rooms, isAdminUnlocked, isAuthorizedAdmin, joinRoom } = useApp();
 
   // Navigation views: 'lobby' | 'game' | 'shop'
   const [currentView, setCurrentView] = useState<'lobby' | 'game' | 'shop'>('lobby');
@@ -49,7 +49,8 @@ const MainAppContent: React.FC = () => {
   }
 
   const handleStartGame = (room: TournamentRoom) => {
-    joinRoom(room.id);
+    const isRegistered = room.registeredPlayers?.some((player) => player.id === currentUser?.id);
+    if (!isRegistered) joinRoom(room.id);
     setCurrentView('game');
   };
 

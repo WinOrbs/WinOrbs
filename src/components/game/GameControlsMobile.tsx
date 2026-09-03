@@ -14,8 +14,6 @@ export const GameControlsMobile: React.FC<GameControlsMobileProps> = ({ onMove, 
   const touchIdRef = useRef<number | null>(null);
   const [knobPos, setKnobPos] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  const [touchId, setTouchId] = useState<number | null>(null);
-  const [joystickOrigin, setJoystickOrigin] = useState<{ x: number; y: number } | null>(null);
   const [isBoosting, setIsBoosting] = useState(false);
 
   const size = Math.max(96, Math.min(180, controlSize));
@@ -23,12 +21,16 @@ export const GameControlsMobile: React.FC<GameControlsMobileProps> = ({ onMove, 
 
   const handleTouchStart = (e: React.TouchEvent) => {
     const touch = e.changedTouches[0];
-    if (touchId !== null) return;
-    joystickOriginRef.current = { x: touch.clientX, y: touch.clientY };
-    setJoystickOrigin(joystickOriginRef.current);
+    if (!touch || touchIdRef.current !== null) return;
+    const bounds = joystickRef.current?.getBoundingClientRect();
+    if (bounds) {
+      joystickOriginRef.current = {
+        x: bounds.left + bounds.width / 2,
+        y: bounds.top + bounds.height / 2,
+      };
+    }
     setIsDragging(true);
     touchIdRef.current = touch.identifier;
-    setTouchId(touch.identifier);
     handleTouchMove(e);
   };
 
@@ -82,8 +84,6 @@ export const GameControlsMobile: React.FC<GameControlsMobileProps> = ({ onMove, 
     if (!ended) return;
     setIsDragging(false);
     touchIdRef.current = null;
-    setTouchId(null);
-    setJoystickOrigin(null);
     setKnobPos({ x: 0, y: 0 });
     onMove(0, 0);
   };
@@ -106,7 +106,7 @@ export const GameControlsMobile: React.FC<GameControlsMobileProps> = ({ onMove, 
   };
 
   return (
-    <div className="absolute inset-0 pointer-events-none z-20 flex justify-between items-end p-6 select-none">
+    <div className="absolute inset-0 pointer-events-none z-20 select-none">
       <div
         id="mobile-joystick"
         ref={joystickRef}
@@ -118,12 +118,8 @@ export const GameControlsMobile: React.FC<GameControlsMobileProps> = ({ onMove, 
           touchAction: 'none',
           width: size,
           height: size,
-          left: joystickOrigin ? joystickOrigin.x - size / 2 : undefined,
-          top: joystickOrigin ? joystickOrigin.y - size / 2 : undefined,
-          bottom: joystickOrigin ? undefined : '1.5rem',
-          right: joystickOrigin ? undefined : 'auto',
         }}
-        className={`pointer-events-auto absolute w-28 h-28 rounded-full border-2 border-cyan-500/40 bg-slate-900/60 backdrop-blur-md flex items-center justify-center transition-opacity ${
+        className={`pointer-events-auto absolute left-4 bottom-4 sm:left-6 sm:bottom-6 w-28 h-28 rounded-full border-2 border-cyan-500/40 bg-slate-900/60 backdrop-blur-md flex items-center justify-center transition-opacity ${
           isDragging ? 'opacity-100 border-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.4)]' : 'opacity-70'
         }`}
       >
@@ -144,7 +140,7 @@ export const GameControlsMobile: React.FC<GameControlsMobileProps> = ({ onMove, 
         onMouseDown={handleBoostStart}
         onMouseUp={handleBoostEnd}
         style={{ touchAction: 'none' }}
-        className={`pointer-events-auto w-20 h-20 rounded-full flex flex-col items-center justify-center font-orbitron font-bold text-xs tracking-wider transition-all duration-100 ${
+        className={`pointer-events-auto absolute right-4 bottom-4 sm:right-6 sm:bottom-6 w-20 h-20 rounded-full flex flex-col items-center justify-center font-orbitron font-bold text-xs tracking-wider transition-all duration-100 ${
           isBoosting
             ? 'bg-rose-500 scale-95 shadow-[0_0_25px_#f43f5e] text-white border-2 border-white'
             : 'bg-rose-600/80 hover:bg-rose-500 border-2 border-rose-400/80 shadow-[0_0_15px_rgba(244,63,94,0.5)] text-rose-100'

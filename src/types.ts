@@ -112,6 +112,7 @@ export interface TournamentRoom {
   durationSeconds: number; // 180 (3 min)
   timeRemainingSeconds: number;
   nextLaunchSeconds?: number; // 5-minute countdown (300s)
+  launchAt?: string;
   shrinkTriggerSeconds: number; // 60
   arenaRadius: number;
   currentArenaRadius: number;
@@ -122,6 +123,8 @@ export interface TournamentRoom {
   sponsorName?: string;
   eventPrizeUSD?: number;
   registeredPlayers?: TournamentPlayerSlot[];
+  botCount?: number;
+  botDifficulty?: 'normal' | 'hard';
   createdAt: string;
 }
 

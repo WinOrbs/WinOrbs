@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import {
   UserProfile,
   Role,
@@ -69,7 +69,7 @@ interface AppContextType {
   rejectTransaction: (id: string, notes?: string) => void;
   updateExchangeRates: (newConfig: Partial<ExchangeConfig>) => void;
   createTournamentRoom: (config: { name: string; type: 'public' | 'private'; entryFeeUSD: number; maxPlayers: number; isSpecialEvent?: boolean }) => TournamentRoom;
-  adminCreateRoom: (config: { name: string; type: 'public' | 'private'; entryFeeUSD: number; maxPlayers: number; isSpecialEvent?: boolean; durationSeconds?: number; customPotUSD?: number; eventDescription?: string; sponsorName?: string; minPlayersToStart?: number; arenaRadius?: number; broadcastNotification?: boolean }) => TournamentRoom;
+  adminCreateRoom: (config: { name: string; type: 'public' | 'private'; entryFeeUSD: number; maxPlayers: number; isSpecialEvent?: boolean; durationSeconds?: number; customPotUSD?: number; eventDescription?: string; sponsorName?: string; botCount?: number; botDifficulty?: 'normal' | 'hard'; minPlayersToStart?: number; arenaRadius?: number; broadcastNotification?: boolean }) => TournamentRoom;
   adminUpdateRoom: (roomId: string, updates: Partial<TournamentRoom>) => void;
   adminDeleteRoom: (roomId: string) => void;
   joinRoom: (roomId: string, code?: string) => boolean;
@@ -303,6 +303,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [skins] = useState<CosmeticItem[]>(DEFAULT_COSMETICS);
   const [rooms, setRooms] = useState<TournamentRoom[]>([]);
+  const launchRequestsRef = useRef<Set<string>>(new Set());
   const [activeRoom, setActiveRoom] = useState<TournamentRoom | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [platformRevenueUSD, setPlatformRevenueUSD] = useState<number>(() => {
@@ -375,7 +376,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const unsubscribeRooms = subscribeToTournamentRooms(
       (remoteRooms) => {
-        setRooms(remoteRooms);
+        setRooms(remoteRooms.map((room) => ({
+          ...room,
+          nextLaunchSeconds: room.launchAt
+            ? Math.max(0, Math.ceil((new Date(room.launchAt).getTime() - Date.now()) / 1000))
+            : room.nextLaunchSeconds,
+        })));
       },
       (error) => console.warn('Firestore rooms sync:', error.message)
     );
@@ -425,19 +431,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const timer = setInterval(() => {
       setRooms((prev) =>
         prev.map((r) => {
-          if (r.status === 'waiting') {
-            const nextSec = (r.nextLaunchSeconds ?? 300) <= 1 ? 300 : (r.nextLaunchSeconds ?? 300) - 1;
-            return {
-              ...r,
-              nextLaunchSeconds: nextSec,
-            };
+          if (r.status === 'waiting' && r.launchAt) {
+            const nextSec = Math.max(0, Math.ceil((new Date(r.launchAt).getTime() - Date.now()) / 1000));
+            return { ...r, nextLaunchSeconds: nextSec };
           }
           return r;
         })
       );
+
+      rooms.forEach((room) => {
+        if (room.status === 'waiting' && room.launchAt &&
+            new Date(room.launchAt).getTime() <= Date.now() &&
+            room.currentPlayers >= room.minPlayersToStart &&
+            !launchRequestsRef.current.has(room.id)) {
+          launchRequestsRef.current.add(room.id);
+          const startedRoom = { ...room, status: 'in_game' as const, nextLaunchSeconds: 0 };
+          saveTournamentRoom(startedRoom).catch((error) => console.warn('Room launch sync:', error));
+        }
+      });
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [rooms]);
 
   const setVisualMode = (mode: VisualMode) => {
     setVisualModeState(mode);
@@ -924,6 +938,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       durationSeconds: 180,
       timeRemainingSeconds: 180,
       nextLaunchSeconds: 300,
+      launchAt: new Date(Date.now() + 300000).toISOString(),
       shrinkTriggerSeconds: 60,
       arenaRadius: 1800,
       currentArenaRadius: 1800,
@@ -951,6 +966,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     customPotUSD?: number;
     eventDescription?: string;
     sponsorName?: string;
+    botCount?: number;
+    botDifficulty?: 'normal' | 'hard';
     minPlayersToStart?: number;
     arenaRadius?: number;
     broadcastNotification?: boolean;
@@ -979,6 +996,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       durationSeconds: config.durationSeconds || 180,
       timeRemainingSeconds: config.durationSeconds || 180,
       nextLaunchSeconds: 300,
+      launchAt: new Date(Date.now() + 300000).toISOString(),
       shrinkTriggerSeconds: 60,
       arenaRadius: config.arenaRadius || 1800,
       currentArenaRadius: config.arenaRadius || 1800,
@@ -987,6 +1005,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isSpecialEvent: isSpecial,
       eventDescription: config.eventDescription,
       sponsorName: config.sponsorName,
+      botCount: Math.max(0, Math.min(49, config.botCount || 0)),
+      botDifficulty: config.botDifficulty || 'normal',
       registeredPlayers: [],
       createdAt: new Date().toISOString(),
     };

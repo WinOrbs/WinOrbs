@@ -40,6 +40,8 @@ interface AdminRoomModalProps {
     isSpecialEvent: boolean;
     eventDescription?: string;
     sponsorName?: string;
+    botCount: number;
+    botDifficulty: 'normal' | 'hard';
     status?: 'waiting' | 'in_game' | 'finished';
     broadcastNotification?: boolean;
   }) => void;
@@ -69,6 +71,8 @@ export const AdminRoomModal: React.FC<AdminRoomModalProps> = ({
   const [sponsorName, setSponsorName] = useState<string>('');
   const [status, setStatus] = useState<'waiting' | 'in_game' | 'finished'>('waiting');
   const [broadcastNotification, setBroadcastNotification] = useState<boolean>(true);
+  const [botCount, setBotCount] = useState<number>(0);
+  const [botDifficulty, setBotDifficulty] = useState<'normal' | 'hard'>('normal');
 
   // Initialize or reset form values
   useEffect(() => {
@@ -87,6 +91,8 @@ export const AdminRoomModal: React.FC<AdminRoomModalProps> = ({
       setSponsorName(roomToEdit.sponsorName || '');
       setStatus(roomToEdit.status);
       setBroadcastNotification(false);
+      setBotCount(roomToEdit.botCount || 0);
+      setBotDifficulty(roomToEdit.botDifficulty || 'normal');
     } else {
       // Default new room
       setName('');
@@ -103,6 +109,8 @@ export const AdminRoomModal: React.FC<AdminRoomModalProps> = ({
       setSponsorName('');
       setStatus('waiting');
       setBroadcastNotification(true);
+      setBotCount(0);
+      setBotDifficulty('normal');
     }
   }, [roomToEdit, isOpen]);
 
@@ -203,6 +211,8 @@ export const AdminRoomModal: React.FC<AdminRoomModalProps> = ({
       isSpecialEvent,
       eventDescription: isSpecialEvent ? eventDescription.trim() : undefined,
       sponsorName: isSpecialEvent ? sponsorName.trim() : undefined,
+      botCount: Math.max(0, Math.min(49, botCount)),
+      botDifficulty,
       status,
       broadcastNotification,
     });
@@ -449,6 +459,35 @@ export const AdminRoomModal: React.FC<AdminRoomModalProps> = ({
                 <option value={1800}>Estándar (1800px)</option>
                 <option value={2200}>Gigante (2200px)</option>
                 <option value={2600}>Coliseo (2600px)</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 p-3 rounded-2xl bg-cyan-950/20 border border-cyan-500/30">
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                Bots en esta sala
+              </label>
+              <input
+                type="number"
+                min="0"
+                max="49"
+                value={botCount}
+                onChange={(e) => setBotCount(Math.max(0, Math.min(49, parseInt(e.target.value) || 0)))}
+                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white font-orbitron text-xs focus:border-cyan-400 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                Dificultad visible
+              </label>
+              <select
+                value={botDifficulty}
+                onChange={(e) => setBotDifficulty(e.target.value as 'normal' | 'hard')}
+                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white font-orbitron text-xs focus:border-cyan-400 focus:outline-none"
+              >
+                <option value="normal">Normal</option>
+                <option value="hard">Difícil</option>
               </select>
             </div>
           </div>

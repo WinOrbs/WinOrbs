@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { TournamentRoom } from '../../types';
 import {
@@ -35,7 +35,6 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     rooms,
     createTournamentRoom,
     joinRoom,
-    startMatchNow,
     leaderboard,
     exchangeRates,
     switchRole,
@@ -145,12 +144,6 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     }
   };
 
-  const handleLaunchCombat = (room: TournamentRoom) => {
-    startMatchNow(room.id);
-    setWaitingRoomModal(null);
-    onStartGame(room);
-  };
-
   const filteredRooms = rooms.filter((r) => {
     if (activeFilter === 'public') return r.type === 'public';
     if (activeFilter === 'private') return r.type === 'private';
@@ -162,6 +155,18 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   const currentModalRoom = waitingRoomModal
     ? rooms.find((r) => r.id === waitingRoomModal.id) || waitingRoomModal
     : null;
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const activePlayerRoom = rooms.find((room) =>
+      room.status === 'in_game' &&
+      room.registeredPlayers?.some((player) => player.id === currentUser.id)
+    );
+    if (activePlayerRoom) {
+      setWaitingRoomModal(null);
+      onStartGame(activePlayerRoom);
+    }
+  }, [currentUser, onStartGame, rooms]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
@@ -630,22 +635,17 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
               </div>
             </div>
 
-            {/* Launch Action */}
-            <div className="pt-2 flex flex-col sm:flex-row items-center gap-3">
+            {/* Synchronized Launch Status */}
+            <div className="pt-2 flex flex-col items-center gap-3">
+              <p className="text-center text-xs text-cyan-300 font-mono-tech">
+                El combate comenzará automáticamente cuando termine el contador y se alcance el mínimo de jugadores.
+              </p>
               <button
                 type="button"
                 onClick={() => setWaitingRoomModal(null)}
-                className="w-full sm:w-auto px-5 py-3.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-orbitron font-bold text-xs transition-all cursor-pointer"
+                className="w-full px-5 py-3.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-orbitron font-bold text-xs transition-all cursor-pointer"
               >
                 CERRAR VISTA PREVIA
-              </button>
-              <button
-                type="button"
-                onClick={() => handleLaunchCombat(currentModalRoom)}
-                className="w-full sm:flex-1 py-3.5 rounded-2xl bg-gradient-to-r from-cyan-400 via-blue-500 to-fuchsia-500 hover:brightness-110 text-slate-950 font-orbitron font-black text-xs sm:text-sm tracking-wider shadow-[0_0_30px_rgba(6,182,212,0.5)] transition-all flex items-center justify-center gap-2 cursor-pointer animate-bounce"
-              >
-                <Play className="w-4 h-4 fill-slate-950" />
-                <span>¡INICIAR COMBATE YA! (4/4 LISTOS)</span>
               </button>
             </div>
           </div>

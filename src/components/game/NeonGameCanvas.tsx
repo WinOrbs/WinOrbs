@@ -160,8 +160,8 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
     initialPlayers.push(userPlayer);
 
     // Bot Opponents matching exact room current players count
-    const totalRoomPlayers = room?.currentPlayers || (room?.registeredPlayers ? room.registeredPlayers.length : 4);
-    const botCount = Math.max(totalRoomPlayers - 1, 3);
+    const botCount = room?.botCount ?? (room?.entryFeeUSD === 0 ? 3 : 0);
+    const botSpeedMultiplier = room?.botDifficulty === 'hard' ? 1.12 : 1;
     for (let i = 0; i < botCount; i++) {
       const botColorObj = ORB_COLORS[i % ORB_COLORS.length];
       const botAngle = (i / botCount) * Math.PI * 2;
@@ -185,7 +185,7 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
         kills: 0,
         isUser: false,
         isBot: true,
-        speed: 4.2 + Math.random() * 0.6,
+        speed: (4.2 + Math.random() * 0.6) * botSpeedMultiplier,
         boostActive: false,
         angle: Math.random() * Math.PI * 2,
         trailHistory: [],
@@ -390,7 +390,7 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
 
         if (user.boostActive) {
           user.mass -= 0.08;
-          user.score = Math.max(20, Math.floor(user.mass));
+          user.score = Math.max(0, user.score - 0.4);
           user.radius = 22 + Math.sqrt(user.mass) * 1.6;
           if (Math.random() < 0.3) {
             soundFx.playBoost();
@@ -443,9 +443,9 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
             const spawnDist = Math.random() * (currentRadius * 0.4);
             user.x = Math.cos(spawnAngle) * spawnDist;
             user.y = Math.sin(spawnAngle) * spawnDist;
-            user.mass = 45;
-            user.score = 45;
-            user.radius = 28;
+            user.mass = Math.max(25, user.mass * 0.75);
+            user.score = Math.max(0, Math.floor(user.score * 0.75));
+            user.radius = 22 + Math.sqrt(user.mass) * 1.6;
             user.isAlive = true;
             user.trailHistory = [];
             spawnExplosionParticles(user.x, user.y, '#06b6d4', 25);
