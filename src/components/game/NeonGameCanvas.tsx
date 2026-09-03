@@ -82,6 +82,7 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
     setSoundEnabled,
     exchangeRates,
     finishMatchPot,
+    skins,
   } = useApp();
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -130,6 +131,10 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
     : room.hostId;
   const [hostLiveId, setHostLiveId] = useState<string | null>(designatedHostId || null);
   const isWorldHost = !!currentUser && hostLiveId === currentUser.id;
+  // Mirror of the live host flag for long-lived closures (game loop, world
+  // subscription) whose effect deps do not change when authority flips.
+  const isWorldHostRef = useRef<boolean>(isWorldHost);
+  isWorldHostRef.current = isWorldHost;
   const orbsRef = useRef<OrbEntity[]>([]);
   const particlesRef = useRef<ParticleEntity[]>([]);
   const cameraRef = useRef<{ x: number; y: number; zoom: number }>({ x: 0, y: 0, zoom: 1 });
@@ -165,7 +170,21 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
   useEffect(() => {
     const initialPlayers: GamePlayerEntity[] = [];
 
-    // User Player
+    // User Player (colors resolved from the admin-managed cosmetics catalog,
+    // falling back to the legacy built-in skin palette)
+    const equippedSkinItem = skins.find(
+      (item) => item.id === currentUser?.equippedSkin && item.type === 'skin'
+    );
+    const legacySkinColor =
+      currentUser?.equippedSkin === 'skin_plasma_pink' ? '#f43f5e' :
+      currentUser?.equippedSkin === 'skin_electric_lime' ? '#22c55e' :
+      currentUser?.equippedSkin === 'skin_gold_titan' ? '#eab308' :
+      currentUser?.equippedSkin === 'skin_void_darkness' ? '#8b5cf6' : '#06b6d4';
+    const legacySkinGlow =
+      currentUser?.equippedSkin === 'skin_plasma_pink' ? 'rgba(244,63,94,0.9)' :
+      currentUser?.equippedSkin === 'skin_electric_lime' ? 'rgba(34,197,94,0.9)' :
+      currentUser?.equippedSkin === 'skin_gold_titan' ? 'rgba(234,179,8,1)' :
+      currentUser?.equippedSkin === 'skin_void_darkness' ? 'rgba(139,92,246,0.9)' : 'rgba(6,182,212,0.9)';
     const userPlayer: GamePlayerEntity = {
       id: currentUser?.id || 'user_player',
       name: currentUser?.name || 'CyberWarrior',
@@ -176,16 +195,10 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
       radius: 30,
       mass: 50,
       score: 50,
-      color: currentUser?.equippedSkin === 'skin_plasma_pink' ? '#f43f5e' :
-             currentUser?.equippedSkin === 'skin_electric_lime' ? '#22c55e' :
-             currentUser?.equippedSkin === 'skin_gold_titan' ? '#eab308' :
-             currentUser?.equippedSkin === 'skin_void_darkness' ? '#8b5cf6' : '#06b6d4',
-      glowColor: currentUser?.equippedSkin === 'skin_plasma_pink' ? 'rgba(244,63,94,0.9)' :
-                 currentUser?.equippedSkin === 'skin_electric_lime' ? 'rgba(34,197,94,0.9)' :
-                 currentUser?.equippedSkin === 'skin_gold_titan' ? 'rgba(234,179,8,1)' :
-                 currentUser?.equippedSkin === 'skin_void_darkness' ? 'rgba(139,92,246,0.9)' : 'rgba(6,182,212,0.9)',
-      secondaryColor: '#ffffff',
-      trailColor: currentUser?.equippedTrail === 'trail_solar_flare' ? '#f97316' : '#06b6d4',
+      color: equippedSkinItem?.color || legacySkinColor,
+      glowColor: equippedSkinItem?.glowColor || legacySkinGlow,
+      secondaryColor: equippedSkinItem?.secondaryColor || '#ffffff',
+      trailColor: equippedSkinItem?.secondaryColor || (currentUser?.equippedTrail === 'trail_solar_flare' ? '#f97316' : '#06b6d4'),
       crown: currentUser?.equippedCrown || (currentUser?.vipTier === 'vip_titan' ? 'crown_cyber_emperor' : undefined),
       isAlive: true,
       kills: 0,
@@ -285,7 +298,7 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
     if (currentUser && room) {
       matchSessionTokenRef.current = generateMatchSessionToken(room, currentUser);
     }
-  }, [currentUser, room]);
+  }, [currentUser, room, skins]);
 
   useEffect(() => {
     if (!currentUser || !room?.id) return;
@@ -414,6 +427,10 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
       // Ignore stale world snapshots: they belong to dead matches and would
       // resurrect ghost players frozen in the arena.
       if (now - (world.updatedAt || 0) > 10000) return;
+      // The world host IS the authority: adopting its own echo would pin the
+      // local simulation to a ~250ms-old snapshot and revert every score gain
+      // between publishes (the "score never adds up" bug).
+      if (isWorldHostRef.current) return;
       if (world.updatedAt > (remoteWorldRef.current?.updatedAt || 0)) {
         remoteWorldRef.current = world;
         world.players.forEach((player) => {
@@ -754,13 +771,24 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
         }
         player.x += (remote.x - player.x) * 0.45;
         player.y += (remote.y - player.y) * 0.45;
-        player.score = remote.score;
-        player.mass = remote.mass;
-        player.radius = remote.radius;
-        player.angle = remote.angle;
-        player.kills = remote.kills;
-        player.isAlive = remote.isAlive;
-        player.boostActive = remote.boostActive;
+        if (!isWorldHostRef.current) {
+          // Plain client: the host owns the simulation, so mirror everything.
+          player.score = remote.score;
+          player.mass = remote.mass;
+          player.radius = remote.radius;
+          player.angle = remote.angle;
+          player.kills = remote.kills;
+          player.isAlive = remote.isAlive;
+          player.boostActive = remote.boostActive;
+        } else {
+          // World host: the local simulation already computed this player's
+          // accumulating stats (score/mass/radius/kills). Copying the remote's
+          // lagged echo back over them wiped every gain between publishes.
+          // Only track movement inputs and the remote-owned death state.
+          player.angle = remote.angle;
+          player.boostActive = remote.boostActive;
+          player.isAlive = remote.isAlive;
+        }
         if (player.trailHistory.length > 20) player.trailHistory.shift();
         player.trailHistory.push({ x: player.x, y: player.y, alpha: 0.7 });
       });
@@ -773,7 +801,7 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
       }
 
       const world = remoteWorldRef.current;
-      if (world) {
+      if (world && !isWorldHostRef.current) {
         const ownWorldPlayer = world.players.find((player) => player.id === currentUser?.id);
         const localPlayer = playersRef.current.find((player) => player.isUser);
         if (ownWorldPlayer && localPlayer) {
@@ -781,7 +809,25 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
           localPlayer.mass = ownWorldPlayer.mass;
           localPlayer.radius = ownWorldPlayer.radius;
           localPlayer.kills = ownWorldPlayer.kills;
-          localPlayer.isAlive = ownWorldPlayer.isAlive;
+          // Death handshake: a local wall-crash owns its respawn countdown, so
+          // never resurrect while it is pending (the host's snapshot lags and
+          // would revive the player ON the barrier, looping the death forever).
+          const localRespawnPending = !localPlayer.isAlive && (localPlayer.respawnTimer ?? 0) > 0;
+          if (!localRespawnPending) {
+            if (localPlayer.isAlive && !ownWorldPlayer.isAlive) {
+              // Host verdict: devoured by a bigger player. Seed the respawn the
+              // host runs on its side so this client respawns instead of
+              // staying dead forever.
+              localPlayer.respawnTimer = 150;
+              spawnExplosionParticles(localPlayer.x, localPlayer.y, localPlayer.color, 40);
+              soundFx.playPlayerKill();
+              killFeedRef.current.unshift({
+                text: `☠️ ¡${localPlayer.name} fue devorado por un rival superior!`,
+                time: Date.now(),
+              });
+            }
+            localPlayer.isAlive = ownWorldPlayer.isAlive;
+          }
         }
         const worldOrbs = new Map(world.orbs.map((orb) => [orb.id, orb]));
         orbsRef.current.forEach((orb) => {

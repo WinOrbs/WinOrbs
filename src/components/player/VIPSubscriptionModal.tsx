@@ -12,57 +12,11 @@ interface VIPSubscriptionModalProps {
 }
 
 export const VIPSubscriptionModal: React.FC<VIPSubscriptionModalProps> = ({ isOpen, onClose }) => {
-  const { currentUser, subscribeVIP } = useApp();
+  const { currentUser, subscribeVIP, vipPlans } = useApp();
 
   if (!isOpen) return null;
 
-  const plans = [
-    {
-      id: 'vip_bronze',
-      name: 'Bronze Cyber VIP',
-      priceUSD: 4.99,
-      period: '/mes',
-      color: 'from-amber-700 to-amber-900',
-      borderColor: 'border-amber-600/40',
-      perks: [
-        'Comisión reducida al 1.5% en retiros',
-        'Insignia Bronce en salas de chat',
-        'Estela básica Neón Prisma gratis',
-        'Acceso prioritario a torneos de $10',
-      ],
-    },
-    {
-      id: 'vip_neon',
-      name: 'Neon Master VIP',
-      priceUSD: 14.99,
-      period: '/mes',
-      popular: true,
-      color: 'from-cyan-600 via-blue-700 to-fuchsia-700',
-      borderColor: 'border-cyan-400',
-      perks: [
-        '0% Comisión en todos los retiros de fondos',
-        'Multiplicador 1.25x en Puntos de Torneo',
-        'Skin Plasma Nova Rosa + Estela Solar Flare',
-        'Insignia Neón Animada en el Leaderboard',
-        'Acreditación prioritaria de depósitos (5 min)',
-      ],
-    },
-    {
-      id: 'vip_titan',
-      name: 'Titan Imperial VIP',
-      priceUSD: 29.99,
-      period: '/mes',
-      color: 'from-yellow-500 via-amber-600 to-orange-700',
-      borderColor: 'border-yellow-400',
-      perks: [
-        '0% Comisión de por vida en retiros',
-        'Skin Exclusiva Legendaria: Titán Áureo VIP ($12 valor)',
-        'Corona Holográfica Dorada permanente en partidas',
-        'Creación de Salas Privadas Ilimitadas gratis',
-        'Soporte VIP 24/7 con canal directo por WhatsApp/Telegram',
-      ],
-    },
-  ];
+  const plans = vipPlans;
 
   const handleSubscribe = (tier: 'vip_bronze' | 'vip_neon' | 'vip_titan', price: number) => {
     const success = subscribeVIP(tier, price);

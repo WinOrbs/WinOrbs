@@ -35,6 +35,12 @@ const MainAppContent: React.FC = () => {
 
   const { logout } = useApp();
 
+  // If in Admin Mode, render the isolated Admin Super-Dashboard ONLY if unlocked and authorized.
+  // NOTE: computed here but returned AFTER every hook call below — returning early
+  // before a hook would violate the Rules of Hooks and crash React into a black
+  // screen the moment the admin PIN unlocks the role switch.
+  const showAdminDashboard = currentRole === 'admin' && isAdminUnlocked && isAuthorizedAdmin;
+
   const handleConfirmLogout = () => {
     if (currentView === 'game') {
       leaveRoom();
@@ -42,11 +48,6 @@ const MainAppContent: React.FC = () => {
     }
     logout();
   };
-
-  // If in Admin Mode, render the isolated Admin Super-Dashboard ONLY if unlocked and authorized
-  if (currentRole === 'admin' && isAdminUnlocked && isAuthorizedAdmin) {
-    return <AdminDashboard />;
-  }
 
   const handleStartGame = useCallback((room: TournamentRoom) => {
     // joinRoom is now idempotent: rejoins are free (no double entry fee) and it
@@ -65,6 +66,10 @@ const MainAppContent: React.FC = () => {
     setWalletInitialTab(tab);
     setShowWalletModal(true);
   };
+
+  if (showAdminDashboard) {
+    return <AdminDashboard />;
+  }
 
   return (
     <div className="min-h-screen bg-[#05050a] text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-black relative overflow-x-hidden">

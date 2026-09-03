@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { Transaction } from '../../types';
 import { LogoutConfirmModal } from '../auth/LogoutConfirmModal';
 import { AdminRoomsManager } from './AdminRoomsManager';
+import { AdminCatalogManager } from './AdminCatalogManager';
 import {
   Shield,
   CheckCircle,
@@ -36,10 +37,18 @@ export const AdminDashboard: React.FC = () => {
     sendPushBroadcast,
     logout,
     lockAdmin,
+    skins,
+    vipPlans,
+    gameConfig,
+    addCosmetic,
+    updateCosmetic,
+    deleteCosmetic,
+    updateVipPlan,
+    updateGameConfig,
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'deposits' | 'withdrawals' | 'rates' | 'rooms' | 'broadcast'
+    'overview' | 'deposits' | 'withdrawals' | 'rates' | 'rooms' | 'catalog' | 'broadcast'
   >('deposits');
   const [showLogoutModal, setShowLogoutModal] = useState<boolean>(false);
 
@@ -222,6 +231,7 @@ export const AdminDashboard: React.FC = () => {
               <option value="withdrawals">💸 Retiros ({pendingWithdrawals.length})</option>
               <option value="rates">💱 Tasas & Comisiones</option>
               <option value="rooms">🕹️ Salas & Eventos ({rooms.length})</option>
+              <option value="catalog">🛍️ Skins, VIP & Jugabilidad</option>
               <option value="broadcast">📢 Notificaciones Push</option>
             </select>
           </div>
@@ -242,6 +252,7 @@ export const AdminDashboard: React.FC = () => {
               },
               { id: 'rates', label: '💱 Tasas & Comisiones' },
               { id: 'rooms', label: `🕹️ Salas & Eventos (${rooms.length})` },
+              { id: 'catalog', label: '🛍️ Skins, VIP & Jugabilidad' },
               { id: 'broadcast', label: '📢 Notificaciones Push' },
             ].map((tab) => (
               <button
@@ -695,7 +706,23 @@ export const AdminDashboard: React.FC = () => {
         )}
 
         {/* ========================================================================= */}
-        {/* TAB 6: PUSH NOTIFICATIONS BROADCAST */}
+        {/* TAB 6: CATALOG — SKINS / VIP PRICES / GAMEPLAY */}
+        {/* ========================================================================= */}
+        {activeTab === 'catalog' && (
+          <AdminCatalogManager
+            skins={skins}
+            vipPlans={vipPlans}
+            gameConfig={gameConfig}
+            onAddCosmetic={addCosmetic}
+            onUpdateCosmetic={updateCosmetic}
+            onDeleteCosmetic={deleteCosmetic}
+            onUpdateVipPlan={updateVipPlan}
+            onUpdateGameConfig={updateGameConfig}
+          />
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 7: PUSH NOTIFICATIONS BROADCAST */}
         {/* ========================================================================= */}
         {activeTab === 'broadcast' && (
           <div className="max-w-2xl bg-[#080b20] border-2 border-purple-500/40 rounded-3xl p-6 sm:p-8 space-y-5 shadow-2xl">

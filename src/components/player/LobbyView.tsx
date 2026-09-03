@@ -42,6 +42,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     switchRole,
     isAdminUnlocked,
     isAuthorizedAdmin,
+    gameConfig,
   } = useApp();
 
   const [activeFilter, setActiveFilter] = useState<'all' | 'public' | 'private' | 'events'>('all');
@@ -61,12 +62,14 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
         const online = Object.values(entries || {}).filter(
           (entry) => entry?.state && entry.state !== 'offline' && now - (entry.lastSeen || 0) < 90000
         ).length;
-        setOnlinePlayersCount(online);
+        // The locally connected user is always online: floor the counter at 1
+        // so a stalled/failed presence sync never shows a false "0 en línea".
+        setOnlinePlayersCount(currentUser ? Math.max(online, 1) : online);
       },
       (error) => console.warn('Presence sync:', error.message)
     );
     return unsubscribe;
-  }, []);
+  }, [currentUser?.id]);
 
   // Create Room form state (restricted $0.20 to $5.00 for standard games)
   const [roomName, setRoomName] = useState<string>('⚡ Torneo Relámpago Neón');
@@ -94,8 +97,12 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
       }
       return;
     }
-    if (entryFeeUSD > 5.00) {
-      alert('El monto máximo de entrada para salas estándar es $5.00 USD. Montos mayores son reservados para eventos especiales habilitados por el Administrador.');
+    if (entryFeeUSD < gameConfig.minEntryFeeUSD) {
+      alert(`El monto mínimo de entrada para salas estándar es $${gameConfig.minEntryFeeUSD.toFixed(2)} USD.`);
+      return;
+    }
+    if (entryFeeUSD > gameConfig.maxEntryFeeUSD) {
+      alert(`El monto máximo de entrada para salas estándar es $${gameConfig.maxEntryFeeUSD.toFixed(2)} USD. Montos mayores son reservados para eventos especiales habilitados por el Administrador.`);
       return;
     }
     if (currentUser.balanceUSD < entryFeeUSD) {
@@ -193,7 +200,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     const remaining = startedTs
       ? activePlayerRoom.durationSeconds - (Date.now() - startedTs) / 1000
       : activePlayerRoom.durationSeconds;
-    if (remaining <= 5) return;
+    if (remaining <= 0) return;
 
     const launchKey = `${activePlayerRoom.id}:${activePlayerRoom.matchStartedAt}`;
     if (autoLaunchedRef.current.has(launchKey)) return;
@@ -254,7 +261,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
               Domina la Arena Neón y Conquista el <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-amber-300 to-orange-400">80% del Pote</span>
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 font-sans leading-relaxed">
-              Las salas esperan a los 4 gladiadores y lanzan cada 5 minutos. La entrada se deduce al inscribirte y va directo al pote no reembolsable. Entradas de $0.20 hasta $5.00 USD.
+              Las salas esperan a {gameConfig.defaultMinPlayersToStart} gladiadores y lanzan cada {Math.round(gameConfig.launchWindowSeconds / 60)} minutos. La entrada se deduce al inscribirte y va directo al pote no reembolsable. Entradas de ${gameConfig.minEntryFeeUSD.toFixed(2)} hasta ${gameConfig.maxEntryFeeUSD.toFixed(2)} USD.
             </p>
           </div>
 
@@ -718,7 +725,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
               Crear Sala de Torneo
             </h3>
             <p className="text-xs text-slate-400 font-mono-tech mb-4">
-              Configura tu sala (Rango permitido: $0.20 - $5.00 USD)
+              Configura tu sala (Rango permitido: ${gameConfig.minEntryFeeUSD.toFixed(2)} - ${gameConfig.maxEntryFeeUSD.toFixed(2)} USD)
             </p>
 
             <form onSubmit={handleCreateRoomSubmit} className="space-y-4">
@@ -756,8 +763,8 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                   </label>
                   <input
                     type="number"
-                    min="0.20"
-                    max="5.00"
+                    min={gameConfig.minEntryFeeUSD}
+                    max={gameConfig.maxEntryFeeUSD}
                     step="0.10"
                     value={entryFeeUSD}
                     onChange={(e) => setEntryFeeUSD(Math.max(0.20, parseFloat(e.target.value) || 0.20))}

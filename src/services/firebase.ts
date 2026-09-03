@@ -828,6 +828,33 @@ export async function validateMatchVictoryCloud(
 }
 
 // ==========================================
+// 4.5 PLATFORM CONFIG (Admin-manageable catalog / VIP prices / gameplay)
+// ==========================================
+// Stored in the public `config` collection: readable by everyone (shop, lobby),
+// writable only by the platform admin (see firestore.rules).
+
+export async function savePlatformConfig(configId: string, data: unknown): Promise<void> {
+  if (!db) throw new Error('Firebase Firestore no está configurado.');
+  await setDoc(doc(db, 'config', configId), {
+    payload: data,
+    syncedAt: serverTimestamp(),
+  }, { merge: true });
+}
+
+export async function loadPlatformConfig<T>(configId: string): Promise<T | null> {
+  if (!db) return null;
+  try {
+    const snapshot = await getDoc(doc(db, 'config', configId));
+    if (!snapshot.exists()) return null;
+    const raw = snapshot.data() as { payload?: T } | undefined;
+    return raw?.payload ?? null;
+  } catch (err) {
+    console.warn(`Platform config "${configId}" load skipped:`, err);
+    return null;
+  }
+}
+
+// ==========================================
 // 4. USER PRESENCE ENGINE (Realtime Database)
 // ==========================================
 

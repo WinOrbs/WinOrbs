@@ -12,6 +12,8 @@ import {
   PaymentMethodType,
   MatchSessionToken,
   MatchTelemetry,
+  VIPPlanConfig,
+  GameConfig,
 } from '../types';
 import { soundFx } from '../services/soundSynth';
 import {
@@ -34,6 +36,8 @@ import {
   setUserPresenceState,
   clearUserPresence,
   removeMatchPlayer,
+  savePlatformConfig,
+  loadPlatformConfig,
 } from '../services/firebase';
 
 interface AppContextType {
@@ -87,6 +91,14 @@ interface AppContextType {
   markNotificationAsRead: (id: string) => void;
   markAllNotificationsRead: () => void;
   finishMatchPot: (roomId: string, winnerId: string, winnerName: string, matchStats?: { score: number; kills: number }, token?: MatchSessionToken | null) => Promise<{ success: boolean; reason?: string }>;
+  // Admin catalog & gameplay management (Skins / VIP prices / room defaults)
+  vipPlans: VIPPlanConfig[];
+  gameConfig: GameConfig;
+  addCosmetic: (item: CosmeticItem) => void;
+  updateCosmetic: (id: string, updates: Partial<CosmeticItem>) => void;
+  deleteCosmetic: (id: string) => void;
+  updateVipPlan: (id: VIPPlanConfig['id'], updates: Partial<VIPPlanConfig>) => void;
+  updateGameConfig: (updates: Partial<GameConfig>) => void;
 }
 const DEFAULT_EXCHANGE_CONFIG: ExchangeConfig = {
   vesUsdRate: 68.50,
@@ -238,6 +250,60 @@ const DEFAULT_COSMETICS: CosmeticItem[] = [
   },
 ];
 
+const DEFAULT_VIP_PLANS: VIPPlanConfig[] = [
+  {
+    id: 'vip_bronze',
+    name: 'Bronze Cyber VIP',
+    priceUSD: 4.99,
+    period: '/mes',
+    perks: [
+      'Comisión reducida al 1.5% en retiros',
+      'Insignia Bronce en salas de chat',
+      'Estela básica Neón Prisma gratis',
+      'Acceso prioritario a torneos de $10',
+    ],
+  },
+  {
+    id: 'vip_neon',
+    name: 'Neon Master VIP',
+    priceUSD: 14.99,
+    period: '/mes',
+    popular: true,
+    perks: [
+      '0% Comisión en todos los retiros de fondos',
+      'Multiplicador 1.25x en Puntos de Torneo',
+      'Skin Plasma Nova Rosa + Estela Solar Flare',
+      'Insignia Neón Animada en el Leaderboard',
+      'Acreditación prioritaria de depósitos (5 min)',
+    ],
+  },
+  {
+    id: 'vip_titan',
+    name: 'Titan Imperial VIP',
+    priceUSD: 29.99,
+    period: '/mes',
+    perks: [
+      '0% Comisión de por vida en retiros',
+      'Skin Exclusiva Legendaria: Titán Áureo VIP ($12 valor)',
+      'Corona Holográfica Dorada permanente en partidas',
+      'Creación de Salas Privadas Ilimitadas gratis',
+      'Soporte VIP 24/7 con canal directo por WhatsApp/Telegram',
+    ],
+  },
+];
+
+const DEFAULT_GAME_CONFIG: GameConfig = {
+  defaultDurationSeconds: 180,
+  defaultMinPlayersToStart: 2, // duel-friendly quorum so rooms actually launch
+  defaultArenaRadius: 1800,
+  defaultBotCount: 0,
+  defaultBotDifficulty: 'normal',
+  defaultShrinkTriggerSeconds: 60,
+  minEntryFeeUSD: 0.10,
+  maxEntryFeeUSD: 5.00,
+  launchWindowSeconds: 300,
+};
+
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -306,7 +372,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return saved ? JSON.parse(saved) : [];
   });
 
-  const [skins] = useState<CosmeticItem[]>(DEFAULT_COSMETICS);
+  // Admin-manageable catalogs (skins shop, VIP prices, gameplay defaults).
+  // Persisted locally for instant boot and synced to the public `config`
+  // Firestore collection so every client sees the same catalog.
+  const [skins, setSkins] = useState<CosmeticItem[]>(() => {
+    const saved = localStorage.getItem('neon_cosmetics');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {
+        /* fall through to defaults */
+      }
+    }
+    return DEFAULT_COSMETICS;
+  });
+
+  const [vipPlans, setVipPlans] = useState<VIPPlanConfig[]>(() => {
+    const saved = localStorage.getItem('neon_vip_plans');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch {
+        /* fall through to defaults */
+      }
+    }
+    return DEFAULT_VIP_PLANS;
+  });
+
+  const [gameConfig, setGameConfig] = useState<GameConfig>(() => {
+    const saved = localStorage.getItem('neon_game_config');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return { ...DEFAULT_GAME_CONFIG, ...parsed };
+      } catch {
+        return DEFAULT_GAME_CONFIG;
+      }
+    }
+    return DEFAULT_GAME_CONFIG;
+  });
+
   const [rooms, setRooms] = useState<TournamentRoom[]>([]);
   const launchRequestsRef = useRef<Set<string>>(new Set());
   const roomResetsRef = useRef<Set<string>>(new Set());
@@ -520,6 +627,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem('neon_dev_revenue', platformRevenueUSD.toString());
   }, [platformRevenueUSD]);
+
+  useEffect(() => {
+    localStorage.setItem('neon_cosmetics', JSON.stringify(skins));
+  }, [skins]);
+
+  useEffect(() => {
+    localStorage.setItem('neon_vip_plans', JSON.stringify(vipPlans));
+  }, [vipPlans]);
+
+  useEffect(() => {
+    localStorage.setItem('neon_game_config', JSON.stringify(gameConfig));
+  }, [gameConfig]);
+
+  // Pull the admin-published catalog/VIP prices/gameplay defaults from the
+  // public `config` collection (readable by everyone, per firestore.rules).
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const [remoteCosmetics, remoteVipPlans, remoteGameConfig] = await Promise.all([
+        loadPlatformConfig<CosmeticItem[]>('cosmetics'),
+        loadPlatformConfig<VIPPlanConfig[]>('vip_plans'),
+        loadPlatformConfig<GameConfig>('game'),
+      ]);
+      if (cancelled) return;
+      if (Array.isArray(remoteCosmetics) && remoteCosmetics.length > 0) {
+        setSkins(remoteCosmetics);
+      }
+      if (Array.isArray(remoteVipPlans) && remoteVipPlans.length > 0) {
+        setVipPlans(remoteVipPlans);
+      }
+      if (remoteGameConfig && typeof remoteGameConfig === 'object') {
+        setGameConfig((prev) => ({ ...prev, ...remoteGameConfig }));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Matchmaking Launch Cycle countdown ticker + finished-room reset cycle
   useEffect(() => {
@@ -1087,6 +1232,66 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     soundFx.playNotificationPing();
   };
 
+  // ==========================================
+  // ADMIN CATALOG & GAMEPLAY MANAGEMENT
+  // (Skins / Trails / Crowns, VIP prices, room defaults)
+  // ==========================================
+  const publishCosmetics = (catalog: CosmeticItem[]) => {
+    savePlatformConfig('cosmetics', catalog).catch((error) =>
+      console.warn('Cosmetics catalog sync:', error)
+    );
+  };
+
+  const addCosmetic = (item: CosmeticItem) => {
+    setSkins((prev) => {
+      if (prev.some((existing) => existing.id === item.id)) return prev;
+      const next = [...prev, item];
+      publishCosmetics(next);
+      return next;
+    });
+    soundFx.playBoost();
+  };
+
+  const updateCosmetic = (id: string, updates: Partial<CosmeticItem>) => {
+    setSkins((prev) => {
+      const next = prev.map((item) => (item.id === id ? { ...item, ...updates, id } : item));
+      publishCosmetics(next);
+      return next;
+    });
+    soundFx.playNotificationPing();
+  };
+
+  const deleteCosmetic = (id: string) => {
+    setSkins((prev) => {
+      const next = prev.filter((item) => item.id !== id);
+      publishCosmetics(next);
+      return next;
+    });
+    soundFx.playNotificationPing();
+  };
+
+  const updateVipPlan = (id: VIPPlanConfig['id'], updates: Partial<VIPPlanConfig>) => {
+    setVipPlans((prev) => {
+      const next = prev.map((plan) => (plan.id === id ? { ...plan, ...updates, id } : plan));
+      savePlatformConfig('vip_plans', next).catch((error) =>
+        console.warn('VIP plans sync:', error)
+      );
+      return next;
+    });
+    soundFx.playNotificationPing();
+  };
+
+  const updateGameConfig = (updates: Partial<GameConfig>) => {
+    setGameConfig((prev) => {
+      const next = { ...prev, ...updates };
+      savePlatformConfig('game', next).catch((error) =>
+        console.warn('Game config sync:', error)
+      );
+      return next;
+    });
+    soundFx.playNotificationPing();
+  };
+
   const createTournamentRoom = (config: {
     name: string;
     type: 'public' | 'private';
@@ -1127,16 +1332,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       winnerRewardUSD: winnerCut,
       devFeeUSD: devCut,
       maxPlayers: config.maxPlayers,
-      minPlayersToStart: 4,
+      minPlayersToStart: Math.max(2, gameConfig.defaultMinPlayersToStart),
       currentPlayers: totalParticipants,
       status: 'waiting',
-      durationSeconds: 180,
-      timeRemainingSeconds: 180,
-      nextLaunchSeconds: 300,
-      launchAt: new Date(Date.now() + 300000).toISOString(),
-      shrinkTriggerSeconds: 60,
-      arenaRadius: 1800,
-      currentArenaRadius: 1800,
+      durationSeconds: gameConfig.defaultDurationSeconds,
+      timeRemainingSeconds: gameConfig.defaultDurationSeconds,
+      nextLaunchSeconds: gameConfig.launchWindowSeconds,
+      launchAt: new Date(Date.now() + gameConfig.launchWindowSeconds * 1000).toISOString(),
+      shrinkTriggerSeconds: gameConfig.defaultShrinkTriggerSeconds,
+      arenaRadius: gameConfig.defaultArenaRadius,
+      currentArenaRadius: gameConfig.defaultArenaRadius,
       hostId: currentUser.id,
       hostName: currentUser.name,
       isSpecialEvent: config.isSpecialEvent ?? false,
@@ -1237,21 +1442,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const adminUpdateRoom = (roomId: string, updates: Partial<TournamentRoom>) => {
     const existingRoom = rooms.find((room) => room.id === roomId);
+    // Normalize the shared match clock for manual status changes so the
+    // lifecycle ticker never fights the admin panel:
+    // - forcing 'in_game' starts a fresh clock (or keeps a live one)
+    // - any other status clears the clock (orphan reset ignores it)
+    let normalizedUpdates: Partial<TournamentRoom> = { ...updates };
     if (existingRoom) {
-      const updatedRoom = { ...existingRoom, ...updates };
+      const merged: TournamentRoom = { ...existingRoom, ...updates };
       if (updates.potUSD !== undefined) {
-        updatedRoom.winnerRewardUSD = (updates.potUSD * exchangeRates.winnerPotPercent) / 100;
-        updatedRoom.devFeeUSD = (updates.potUSD * exchangeRates.platformPotPercent) / 100;
+        merged.winnerRewardUSD = (updates.potUSD * exchangeRates.winnerPotPercent) / 100;
+        merged.devFeeUSD = (updates.potUSD * exchangeRates.platformPotPercent) / 100;
       }
-      saveTournamentRoom(updatedRoom).catch((error) => console.warn('Room sync:', error));
+      if (merged.status === 'in_game') {
+        const startedTs = merged.matchStartedAt ? new Date(merged.matchStartedAt).getTime() : 0;
+        const clockAlive = startedTs > 0 &&
+          Date.now() - startedTs < (merged.durationSeconds || 180) * 1000 + 600000;
+        if (!clockAlive) {
+          merged.matchStartedAt = new Date().toISOString();
+        }
+        merged.finishedAt = '';
+        merged.cancelled = false;
+      } else {
+        merged.matchStartedAt = '';
+      }
+      normalizedUpdates = merged;
+      saveTournamentRoom(merged).catch((error) => console.warn('Room sync:', error));
     }
     setRooms((prev) =>
       prev.map((r) => {
         if (r.id === roomId) {
-          const updated = { ...r, ...updates };
-          if (updates.potUSD !== undefined) {
-            updated.winnerRewardUSD = (updates.potUSD * exchangeRates.winnerPotPercent) / 100;
-            updated.devFeeUSD = (updates.potUSD * exchangeRates.platformPotPercent) / 100;
+          const updated = { ...r, ...normalizedUpdates };
+          if (normalizedUpdates.potUSD !== undefined) {
+            updated.winnerRewardUSD = (normalizedUpdates.potUSD * exchangeRates.winnerPotPercent) / 100;
+            updated.devFeeUSD = (normalizedUpdates.potUSD * exchangeRates.platformPotPercent) / 100;
           }
           return updated;
         }
@@ -1260,7 +1483,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
 
     if (activeRoom && activeRoom.id === roomId) {
-      setActiveRoom((prev) => (prev ? { ...prev, ...updates } : null));
+      setActiveRoom((prev) => (prev ? { ...prev, ...normalizedUpdates } : null));
     }
     soundFx.playNotificationPing();
   };
@@ -1289,6 +1512,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // REJOIN (already registered): never charge again. This also allows re-entering
     // an ongoing match after a refresh without being considered a new player.
     if (isAlreadyRegistered) {
+      // Guard: never drop a player into a match whose shared clock already
+      // expired (it would end the match the instant they spawn and feel like
+      // being kicked out right after entering).
+      const startedTs = targetRoom.matchStartedAt
+        ? new Date(targetRoom.matchStartedAt).getTime()
+        : 0;
+      const clockExpired =
+        targetRoom.status === 'in_game' &&
+        startedTs > 0 &&
+        Date.now() - startedTs > (targetRoom.durationSeconds || 180) * 1000;
+      if (clockExpired) {
+        alert('La partida de esta sala ya finalizó. Espera a que se habilite una nueva ronda.');
+        return false;
+      }
       setActiveRoom(targetRoom);
       void setUserPresenceState(currentUser.id, 'in_game');
       return true;
@@ -1747,6 +1984,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         buyCosmetic,
         equipCosmetic,
         subscribeVIP,
+        vipPlans,
+        gameConfig,
+        addCosmetic,
+        updateCosmetic,
+        deleteCosmetic,
+        updateVipPlan,
+        updateGameConfig,
         sendPushBroadcast,
         markNotificationAsRead,
         markAllNotificationsRead,

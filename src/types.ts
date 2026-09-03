@@ -172,6 +172,27 @@ export interface LeaderboardEntry {
 }
 
 // In-Game Physics Entities
+export interface VIPPlanConfig {
+  id: 'vip_bronze' | 'vip_neon' | 'vip_titan';
+  name: string;
+  priceUSD: number;
+  period: string;
+  popular?: boolean;
+  perks: string[];
+}
+
+// Admin-manageable gameplay defaults for player-created rooms and lobby limits
+export interface GameConfig {
+  defaultDurationSeconds: number; // match length in seconds (180)
+  defaultMinPlayersToStart: number; // quorum to auto-launch (2 = duel)
+  defaultArenaRadius: number; // arena radius in world units (1800)
+  defaultBotCount: number; // filler bots in player rooms (0 = none)
+  defaultBotDifficulty: 'normal' | 'hard';
+  defaultShrinkTriggerSeconds: number; // zone shrink countdown trigger (60)
+  minEntryFeeUSD: number; // minimum entry fee for player rooms (0.10)
+  maxEntryFeeUSD: number; // maximum entry fee for player rooms (5.00)
+  launchWindowSeconds: number; // waiting room countdown before launch (300)
+}
 export interface GamePlayerEntity {
   id: string;
   name: string;

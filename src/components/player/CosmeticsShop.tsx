@@ -9,6 +9,20 @@ import {
   Zap,
 } from 'lucide-react';
 
+// Fallback shown when the admin empties the cosmetics catalog
+const EMPTY_CATALOG_ITEM: CosmeticItem = {
+  id: 'catalog_empty',
+  name: 'Catálogo en mantenimiento',
+  type: 'skin',
+  priceUSD: 0,
+  rarity: 'common',
+  description: 'El administrador está actualizando la tienda. Vuelve en unos minutos.',
+  color: '#06b6d4',
+  secondaryColor: '#3b82f6',
+  glowColor: 'rgba(6, 182, 212, 0.8)',
+  pattern: 'pulse',
+};
+
 export const CosmeticsShop: React.FC = () => {
   const {
     currentUser,
@@ -18,7 +32,7 @@ export const CosmeticsShop: React.FC = () => {
   } = useApp();
 
   const [activeCategory, setActiveCategory] = useState<'all' | 'skin' | 'trail' | 'crown'>('all');
-  const [previewItem, setPreviewItem] = useState<CosmeticItem>(skins[0]);
+  const [previewItem, setPreviewItem] = useState<CosmeticItem>(skins[0] ?? EMPTY_CATALOG_ITEM);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 
   // Live 3D-like Neon Avatar Preview Animation
