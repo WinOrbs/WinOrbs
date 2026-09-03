@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { CosmeticItem, VIPPlanConfig, GameConfig } from '../../types';
+import { normalizeImageUrl } from '../../services/imageUtils';
 import {
   Plus,
   Trash2,
@@ -124,6 +125,20 @@ export const AdminCatalogManager: React.FC<AdminCatalogManagerProps> = ({
     }));
   };
 
+  // Convierte un enlace compartido de Google Drive a una URL directa cargable.
+  const handleDriveLink = () => {
+    const raw = window.prompt(
+      'Pega aquí el enlace de compartir de Google Drive de tu skin.\n\nEjemplo:\nhttps://drive.google.com/file/d/ABC123.../view\n\n⚠️ El archivo debe estar compartido con «Cualquier persona con el enlace».'
+    );
+    if (!raw || !raw.trim()) return;
+    const normalized = normalizeImageUrl(raw);
+    if (!normalized) {
+      alert('No se pudo leer el enlace de Google Drive. Copia el enlace completo de compartir del archivo.');
+      return;
+    }
+    setForm((prev) => ({ ...prev, imageUrl: normalized }));
+  };
+
   const handleCosmeticSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const payload: CosmeticItem = {
@@ -137,7 +152,7 @@ export const AdminCatalogManager: React.FC<AdminCatalogManagerProps> = ({
       secondaryColor: form.secondaryColor,
       glowColor: form.glowColor,
       pattern: form.pattern,
-      imageUrl: form.imageUrl.trim() || undefined,
+      imageUrl: normalizeImageUrl(form.imageUrl) || undefined,
     };
     if (editingId) {
       onUpdateCosmetic(editingId, payload);
@@ -332,11 +347,11 @@ export const AdminCatalogManager: React.FC<AdminCatalogManagerProps> = ({
                 </label>
                 <div className="flex items-center gap-3">
                   <div
-                    className="w-14 h-14 rounded-2xl border border-white/30 shrink-0 flex items-center justify-center overflow-hidden bg-slate-950"
+                    className="w-14 h-14 rounded-full border border-white/30 shrink-0 flex items-center justify-center overflow-hidden bg-black/50"
                     style={{ boxShadow: form.imageUrl ? `0 0 18px ${form.glowColor}` : 'none' }}
                   >
                     {form.imageUrl ? (
-                      <img src={form.imageUrl} alt="Preview" className="w-full h-full object-cover" />
+                      <img src={normalizeImageUrl(form.imageUrl)} alt="Preview" className="w-full h-full object-contain" />
                     ) : (
                       <Palette className="w-5 h-5 text-slate-600" />
                     )}
@@ -345,25 +360,37 @@ export const AdminCatalogManager: React.FC<AdminCatalogManagerProps> = ({
                     type="url"
                     value={form.imageUrl}
                     onChange={(e) => setForm((prev) => ({ ...prev, imageUrl: e.target.value }))}
+                    onBlur={() =>
+                      setForm((prev) => (prev.imageUrl ? { ...prev, imageUrl: normalizeImageUrl(prev.imageUrl) } : prev))
+                    }
                     className={inputClass}
-                    placeholder="https://.../tu-skin.png  (URL directa del archivo)"
+                    placeholder="Pega un enlace de Google Drive o URL directa de la imagen"
                   />
                 </div>
-                <div className="flex items-center justify-between gap-2 mt-2">
-                  <span className="text-[10px] text-slate-500 font-mono-tech leading-relaxed">
-                    Sube tu skin a un hosting público (Imgur, PostImages, Cloudinary, o Firebase Storage) y pega aquí la
-                    URL directa de la imagen. PNG cuadrado 512×512 con fondo transparente es lo ideal. Sin imagen, se usa el color.
-                  </span>
+                <div className="flex flex-wrap items-center gap-2 mt-2">
+                  <button
+                    type="button"
+                    id="admin-upload-from-drive-btn"
+                    onClick={handleDriveLink}
+                    className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-blue-600 to-emerald-600 hover:brightness-110 text-white text-[10px] font-orbitron font-bold flex items-center gap-1.5 shadow-[0_0_10px_rgba(59,130,246,0.35)]"
+                  >
+                    ☁️ IMPORTAR DESDE GOOGLE DRIVE
+                  </button>
                   {form.imageUrl && (
                     <button
                       type="button"
                       onClick={() => setForm((prev) => ({ ...prev, imageUrl: '' }))}
-                      className="shrink-0 px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-400/40 text-rose-300 text-[10px] font-orbitron font-bold"
+                      className="px-2.5 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-400/40 text-rose-300 text-[10px] font-orbitron font-bold"
                     >
                       QUITAR
                     </button>
                   )}
                 </div>
+                <span className="text-[10px] text-slate-500 font-mono-tech mt-1.5 block leading-relaxed">
+                  Puedes pegar el <b>enlace de compartir de Google Drive</b> (el archivo debe estar compartido con
+                  «Cualquier persona con el enlace») o una URL directa (Imgur, Cloudinary, Firebase Storage). PNG
+                  cuadrado 512×512 con fondo transparente es lo ideal. Sin imagen se usa el color.
+                </span>
               </div>
             </div>
 
@@ -395,11 +422,11 @@ export const AdminCatalogManager: React.FC<AdminCatalogManagerProps> = ({
               className="flex items-center gap-3 p-3 rounded-2xl bg-[#0c102a]/80 border border-slate-800 hover:border-fuchsia-500/40 transition-all"
             >
               <div
-                className="w-11 h-11 rounded-2xl shrink-0 border border-white/30 flex items-center justify-center text-black overflow-hidden"
+                className="w-11 h-11 rounded-full shrink-0 border border-white/30 flex items-center justify-center text-black overflow-hidden bg-black/40"
                 style={{ backgroundColor: item.color, boxShadow: `0 0 18px ${item.glowColor}` }}
               >
                 {item.imageUrl ? (
-                  <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                  <img src={normalizeImageUrl(item.imageUrl)} alt={item.name} className="w-full h-full object-contain" />
                 ) : item.type === 'crown' ? '👑' : item.type === 'trail' ? '✨' : '⬤'}
               </div>
               <div className="min-w-0 flex-1">

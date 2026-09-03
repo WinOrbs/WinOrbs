@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { CosmeticItem } from '../../types';
+import { normalizeImageUrl } from '../../services/imageUtils';
 import {
   Sparkles,
   ShoppingBag,
@@ -49,7 +50,7 @@ export const CosmeticsShop: React.FC = () => {
     // Cargar la imagen personalizada de la skin (si la tiene)
     if (previewItem.imageUrl) {
       const img = new Image();
-      img.src = previewItem.imageUrl;
+      img.src = normalizeImageUrl(previewItem.imageUrl);
       previewImageRef.current = img;
     } else {
       previewImageRef.current = null;
@@ -80,9 +81,17 @@ export const CosmeticsShop: React.FC = () => {
       ctx.beginPath();
       ctx.arc(cx, cy, radius, 0, Math.PI * 2);
       if (previewImg && previewImg.complete && previewImg.naturalWidth > 0) {
+        // La imagen se encaja conservando su proporción (contain) para no deformarla
+        ctx.save();
         ctx.clip();
         ctx.shadowBlur = 0;
-        ctx.drawImage(previewImg, cx - radius, cy - radius, radius * 2, radius * 2);
+        const iw = previewImg.naturalWidth;
+        const ih = previewImg.naturalHeight;
+        const scale = Math.min((radius * 2) / iw, (radius * 2) / ih);
+        const dw = iw * scale;
+        const dh = ih * scale;
+        ctx.drawImage(previewImg, cx - dw / 2, cy - dh / 2, dw, dh);
+        ctx.restore();
       } else {
         const grad = ctx.createRadialGradient(cx - 15, cy - 15, 0, cx, cy, radius);
         grad.addColorStop(0, '#ffffff');
@@ -92,7 +101,10 @@ export const CosmeticsShop: React.FC = () => {
         ctx.fill();
       }
 
-      // Neon Rim
+      // Neon Rim: se redibuja el aro FUERA del clip para que se vea completo
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.shadowBlur = 0;
       ctx.strokeStyle = previewItem.color;
       ctx.lineWidth = 4;
       ctx.stroke();
@@ -287,14 +299,14 @@ export const CosmeticsShop: React.FC = () => {
 
                   <div className="flex items-center gap-3">
                     <div
-                      className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border border-white/30 overflow-hidden"
+                      className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 border border-white/30 overflow-hidden bg-black/40"
                       style={{
                         backgroundColor: item.color,
                         boxShadow: `0 0 20px ${item.glowColor}`,
                       }}
                     >
                       {item.imageUrl ? (
-                        <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                        <img src={normalizeImageUrl(item.imageUrl)} alt={item.name} className="w-full h-full object-contain" />
                       ) : item.type === 'crown' ? (
                         <Crown className="w-6 h-6 text-black" />
                       ) : item.type === 'trail' ? (

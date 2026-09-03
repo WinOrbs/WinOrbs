@@ -23,6 +23,7 @@ import {
   subscribeToMatchWorld,
 } from '../../services/firebase';
 import { GameControlsMobile } from './GameControlsMobile';
+import { normalizeImageUrl } from '../../services/imageUtils';
 import {
   Trophy,
   Volume2,
@@ -71,6 +72,26 @@ function stableSpawnPosition(id: string, index: number): { x: number; y: number 
   const angle = (Math.abs(hash) % 360) * (Math.PI / 180);
   const distance = 300 + (Math.abs(hash) % 500);
   return { x: Math.cos(angle) * distance, y: Math.sin(angle) * distance };
+}
+
+/**
+ * Dibuja una imagen de skin centrada en (x, y) dentro de un circulo de `size`
+ * de diámetro, PRESERVANDO su proporción original (contain, sin deformar).
+ * Si la imagen no es cuadrada no se estira: se encaja con letterbox invisible.
+ */
+function drawSkinImageContain(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  x: number,
+  y: number,
+  size: number
+): void {
+  const iw = img.naturalWidth || 1;
+  const ih = img.naturalHeight || 1;
+  const scale = Math.min(size / iw, size / ih);
+  const drawW = iw * scale;
+  const drawH = ih * scale;
+  ctx.drawImage(img, x - drawW / 2, y - drawH / 2, drawW, drawH);
 }
 
 export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) => {
@@ -158,11 +179,13 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
   const skinImageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const getSkinImage = (url?: string): HTMLImageElement | null => {
     if (!url) return null;
-    const cached = skinImageCacheRef.current.get(url);
+    const normalized = normalizeImageUrl(url);
+    if (!normalized) return null;
+    const cached = skinImageCacheRef.current.get(normalized);
     if (cached) return cached.complete && cached.naturalWidth > 0 ? cached : null;
     const img = new Image();
-    img.src = url;
-    skinImageCacheRef.current.set(url, img);
+    img.src = normalized;
+    skinImageCacheRef.current.set(normalized, img);
     return null;
   };
 
@@ -1085,8 +1108,7 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
             ctx.beginPath();
             ctx.arc(0, 0, p.radius, 0, Math.PI * 2);
             ctx.clip();
-            const imgSize = p.radius * 2;
-            ctx.drawImage(skinImg, -p.radius, -p.radius, imgSize, imgSize);
+            drawSkinImageContain(ctx, skinImg, 0, 0, p.radius * 2);
             ctx.restore();
           }
 
@@ -1120,8 +1142,7 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
             ctx.beginPath();
             ctx.arc(0, 0, p.radius, 0, Math.PI * 2);
             ctx.clip();
-            const imgSize = p.radius * 2;
-            ctx.drawImage(flatSkinImg, -p.radius, -p.radius, imgSize, imgSize);
+            drawSkinImageContain(ctx, flatSkinImg, 0, 0, p.radius * 2);
             ctx.restore();
           }
 
