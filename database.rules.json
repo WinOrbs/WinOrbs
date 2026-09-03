@@ -1,7 +1,17 @@
 {
   "rules": {
+    "presence": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
     "matches": {
       "$roomId": {
+        "host": {
+          ".read": "auth != null",
+          ".write": "auth != null && (!data.exists() || !data.child('heartbeatAt').exists() || data.child('uid').val() === auth.uid || now - data.child('heartbeatAt').val() > 8000)"
+        },
         "players": {
           "$playerId": {
             ".read": "auth != null",
@@ -11,7 +21,7 @@
         },
         "world": {
           ".read": "auth != null",
-          ".write": "auth != null",
+          ".write": "auth != null && (!root.child('matches').child($roomId).child('host').child('heartbeatAt').exists() || auth.uid === root.child('matches').child($roomId).child('host').child('uid').val() || now - root.child('matches').child($roomId).child('host').child('heartbeatAt').val() > 8000)",
           ".validate": "newData.hasChildren(['orbs', 'players', 'updatedAt'])"
         }
       }

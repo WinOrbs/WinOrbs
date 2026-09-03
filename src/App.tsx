@@ -17,7 +17,7 @@ import { TournamentRoom } from './types';
 import { isLocalAuthFallback } from './services/firebase';
 
 const MainAppContent: React.FC = () => {
-  const { currentRole, currentUser, activeRoom, leaveRoom, rooms, isAdminUnlocked, isAuthorizedAdmin, joinRoom } = useApp();
+  const { currentRole, activeRoom, leaveRoom, isAdminUnlocked, isAuthorizedAdmin, joinRoom } = useApp();
 
   // Navigation views: 'lobby' | 'game' | 'shop'
   const [currentView, setCurrentView] = useState<'lobby' | 'game' | 'shop'>('lobby');
@@ -49,15 +49,14 @@ const MainAppContent: React.FC = () => {
   }
 
   const handleStartGame = useCallback((room: TournamentRoom) => {
-    const isRegistered = room.registeredPlayers?.some((player) => player.id === currentUser?.id);
-    if (!isRegistered) joinRoom(room.id);
+    // joinRoom is now idempotent: rejoins are free (no double entry fee) and it
+    // blocks rooms that already launched. It also keeps activeRoom in sync.
+    const joined = joinRoom(room.id);
+    if (!joined) return;
     setCurrentView('game');
-  }, [currentUser?.id, joinRoom]);
+  }, [joinRoom]);
 
   const handleExitGame = () => {
-    if (activeRoom) {
-      sessionStorage.setItem(`winorbs_abandoned_room_${activeRoom.id}`, 'true');
-    }
     leaveRoom();
     setCurrentView('lobby');
   };
@@ -113,9 +112,9 @@ const MainAppContent: React.FC = () => {
 
         {currentView === 'shop' && <CosmeticsShop />}
 
-        {currentView === 'game' && (activeRoom || rooms[0]) && (
+        {currentView === 'game' && activeRoom && (
           <NeonGameCanvas
-            room={activeRoom || rooms[0]}
+            room={activeRoom}
             onExit={handleExitGame}
           />
         )}

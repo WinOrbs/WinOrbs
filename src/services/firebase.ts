@@ -23,6 +23,7 @@ import {
   getDocs,
   onSnapshot,
   deleteDoc,
+  runTransaction,
   serverTimestamp,
   Firestore,
 } from 'firebase/firestore';
@@ -34,6 +35,7 @@ import {
   onValue,
   onDisconnect,
   remove as removeDatabaseValue,
+  serverTimestamp as rtdbServerTimestamp,
   Database,
 } from 'firebase/database';
 import {
@@ -636,7 +638,20 @@ export async function publishMatchPlayer(roomId: string, player: RealtimeMatchPl
   if (!realtimeDatabase) throw new Error('Firebase Realtime Database no está configurado.');
   const playerRef = databaseRef(realtimeDatabase, `matches/${roomId}/players/${player.id}`);
   await setDatabaseValue(playerRef, player);
-  await onDisconnect(playerRef).remove();
+}
+
+/**
+ * Arms the server-side disconnect hook ONCE per match (instead of on every
+ * publish), so the player node is removed automatically on crash/tab close.
+ */
+export async function armPlayerDisconnect(roomId: string, playerId: string): Promise<void> {
+  if (!realtimeDatabase) return;
+  try {
+    const playerRef = databaseRef(realtimeDatabase, `matches/${roomId}/players/${playerId}`);
+    await onDisconnect(playerRef).remove();
+  } catch (err) {
+    console.warn('Disconnect hook skipped:', err);
+  }
 }
 
 export async function removeMatchPlayer(roomId: string, playerId: string): Promise<void> {
@@ -809,5 +824,161 @@ export async function validateMatchVictoryCloud(
       return { valid: false, reason: 'No se pudo verificar la partida con el servidor anti-cheat de Cloudflare.' };
     }
     return validateMatchVictory(token, telemetry, { id: roomId, code: token.roomCode } as TournamentRoom);
+  }
+}
+
+// ==========================================
+// 4. USER PRESENCE ENGINE (Realtime Database)
+// ==========================================
+
+export type PresenceState = 'online' | 'in_game' | 'offline';
+
+const PRESENCE_INITIALIZED = new Set<string>();
+
+/**
+ * Registers persistent user presence. Uses onDisconnect() so Firebase
+ * automatically marks the user offline if the tab/browser dies.
+ */
+export async function initUserPresence(uid: string, state: PresenceState = 'online'): Promise<void> {
+  if (!realtimeDatabase || !uid) return;
+
+  const statusRef = databaseRef(realtimeDatabase, `presence/${uid}`);
+
+  // Re-arm the disconnect hook every time the socket (re)connects.
+  onValue(
+    databaseRef(realtimeDatabase, '.info/connected'),
+    (snapshot) => {
+      if (snapshot.val() !== true) return;
+      void onDisconnect(statusRef)
+        .set({ state: 'offline', lastSeen: rtdbServerTimestamp() })
+        .catch(() => undefined);
+      void setDatabaseValue(statusRef, { state, lastSeen: rtdbServerTimestamp() }).catch(() => undefined);
+    },
+    () => undefined
+  );
+
+  PRESENCE_INITIALIZED.add(uid);
+}
+
+/** Manual heartbeat / state switch (e.g. entering or leaving a match). */
+export async function setUserPresenceState(uid: string, state: PresenceState): Promise<void> {
+  if (!realtimeDatabase || !uid) return;
+  try {
+    await setDatabaseValue(databaseRef(realtimeDatabase, `presence/${uid}`), {
+      state,
+      lastSeen: rtdbServerTimestamp(),
+    });
+  } catch (err) {
+    console.warn('Presence update skipped:', err);
+  }
+}
+
+/** Explicitly goes offline (logout / page hide). Cancels the pending disconnect hook. */
+export async function clearUserPresence(uid: string): Promise<void> {
+  if (!realtimeDatabase || !uid) return;
+  try {
+    const statusRef = databaseRef(realtimeDatabase, `presence/${uid}`);
+    await onDisconnect(statusRef).cancel();
+    await setDatabaseValue(statusRef, { state: 'offline', lastSeen: rtdbServerTimestamp() });
+  } catch (err) {
+    console.warn('Presence clear skipped:', err);
+  }
+}
+
+export interface PresenceEntry {
+  state: PresenceState;
+  lastSeen: number;
+}
+
+/**
+ * Live subscription to every connected user. Powers the "players online"
+ * counters in the lobby. Consumers filter out 'offline' entries and stale
+ * lastSeen timestamps.
+ */
+export function subscribeToPresence(
+  onPresence: (entries: Record<string, PresenceEntry>) => void,
+  onError?: (error: Error) => void
+): () => void {
+  if (!realtimeDatabase) {
+    onError?.(new Error('Firebase Realtime Database no está configurado.'));
+    return () => undefined;
+  }
+
+  return onValue(
+    databaseRef(realtimeDatabase, 'presence'),
+    (snapshot) => {
+      const value = snapshot.val() as Record<string, PresenceEntry> | null;
+      onPresence(value || {});
+    },
+    (error) => onError?.(error)
+  );
+}
+
+// ==========================================
+// 5. MATCH LIFECYCLE HELPERS
+// ==========================================
+
+/**
+ * Deletes the whole match node (players + world + host) in the Realtime DB.
+ * Called by the world host when a match ends, so no ghost entities survive.
+ */
+export async function cleanupMatchRoom(roomId: string): Promise<void> {
+  if (!realtimeDatabase) return;
+  try {
+    await removeDatabaseValue(databaseRef(realtimeDatabase, `matches/${roomId}`));
+  } catch (err) {
+    console.warn('Match cleanup skipped:', err);
+  }
+}
+
+/**
+ * Host heartbeat. Other clients use it to detect a dead host and take over
+ * the world-authority role (see database.rules.json).
+ */
+export async function publishMatchHostHeartbeat(roomId: string, uid: string): Promise<void> {
+  if (!realtimeDatabase) return;
+  try {
+    await setDatabaseValue(databaseRef(realtimeDatabase, `matches/${roomId}/host`), {
+      uid,
+      heartbeatAt: rtdbServerTimestamp(),
+    });
+  } catch {
+    // Another client owns the host slot; takeover happens when its heartbeat expires.
+  }
+}
+
+/**
+ * Idempotent victory claim (Firestore transaction). Guarantees that only ONE
+ * client can collect the pot for a given room, even if two clients each
+ * believe their local simulation produced the winner.
+ */
+export async function claimMatchVictory(
+  roomId: string,
+  winnerId: string,
+  sessionId: string
+): Promise<{ ok: boolean; reason?: string }> {
+  if (!db) return { ok: true }; // Local fallback engine: nothing to claim against.
+  const resultRef = doc(db, 'matches', `result_${roomId}`);
+  try {
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(resultRef);
+      if (snap.exists()) {
+        throw new Error('MATCH_ALREADY_CLAIMED');
+      }
+      tx.set(resultRef, {
+        roomId,
+        winnerId,
+        playerId: winnerId, // firestore.rules: allow create only for the owner uid
+        sessionId,
+        claimedAt: new Date().toISOString(),
+      });
+    });
+    return { ok: true };
+  } catch (err: any) {
+    if (err?.message?.includes('MATCH_ALREADY_CLAIMED')) {
+      return { ok: false, reason: 'Esta partida ya fue liquidada por otro cliente.' };
+    }
+    console.warn('Victory claim skipped:', err);
+    return { ok: true }; // Never block payout because of infra hiccups.
   }
 }

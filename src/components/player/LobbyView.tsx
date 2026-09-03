@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { TournamentRoom } from '../../types';
+import { subscribeToPresence } from '../../services/firebase';
 import {
   Play,
   Plus,
@@ -35,6 +36,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     rooms,
     createTournamentRoom,
     joinRoom,
+    leaveRoom,
     leaderboard,
     exchangeRates,
     switchRole,
@@ -47,7 +49,24 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   const [waitingRoomModal, setWaitingRoomModal] = useState<TournamentRoom | null>(null);
   const [privateCodeInput, setPrivateCodeInput] = useState<string>('');
   const [selectedPrivateRoomId, setSelectedPrivateRoomId] = useState<string | null>(null);
-  const autoStartedRoomsRef = useRef<Set<string>>(new Set());
+  // Launch-cycle guard: each match launch may auto-start the game only once.
+  const autoLaunchedRef = useRef<Set<string>>(new Set());
+
+  // Live online players (presence engine, Realtime DB)
+  const [onlinePlayersCount, setOnlinePlayersCount] = useState<number>(0);
+  useEffect(() => {
+    const unsubscribe = subscribeToPresence(
+      (entries) => {
+        const now = Date.now();
+        const online = Object.values(entries || {}).filter(
+          (entry) => entry?.state && entry.state !== 'offline' && now - (entry.lastSeen || 0) < 90000
+        ).length;
+        setOnlinePlayersCount(online);
+      },
+      (error) => console.warn('Presence sync:', error.message)
+    );
+    return unsubscribe;
+  }, []);
 
   // Create Room form state (restricted $0.20 to $5.00 for standard games)
   const [roomName, setRoomName] = useState<string>('⚡ Torneo Relámpago Neón');
@@ -125,7 +144,6 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
 
     const success = joinRoom(room.id);
     if (success) {
-      sessionStorage.removeItem(`winorbs_abandoned_room_${room.id}`);
       const updated = rooms.find((r) => r.id === room.id) || room;
       setWaitingRoomModal(updated);
     }
@@ -137,7 +155,6 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
 
     const success = joinRoom(selectedPrivateRoomId, privateCodeInput.trim().toUpperCase());
     if (success) {
-      sessionStorage.removeItem(`winorbs_abandoned_room_${selectedPrivateRoomId}`);
       const room = rooms.find((r) => r.id === selectedPrivateRoomId);
       if (room) setWaitingRoomModal(room);
       setSelectedPrivateRoomId(null);
@@ -160,20 +177,31 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     : null;
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || !waitingRoomModal) return;
     const activePlayerRoom = rooms.find((room) =>
+      room.id === waitingRoomModal.id &&
       room.status === 'in_game' &&
       room.registeredPlayers?.some((player) => player.id === currentUser.id)
     );
-    if (activePlayerRoom) {
-      const wasAbandoned = sessionStorage.getItem(`winorbs_abandoned_room_${activePlayerRoom.id}`) === 'true';
-      if (!wasAbandoned && !autoStartedRoomsRef.current.has(activePlayerRoom.id)) {
-        autoStartedRoomsRef.current.add(activePlayerRoom.id);
-        setWaitingRoomModal(null);
-        onStartGame(activePlayerRoom);
-      }
-    }
-  }, [currentUser, onStartGame, rooms]);
+    if (!activePlayerRoom) return;
+
+    // Only auto-launch while the shared match clock is actually live (never
+    // resurrect stale matches) and only once per launch cycle.
+    const startedTs = activePlayerRoom.matchStartedAt
+      ? new Date(activePlayerRoom.matchStartedAt).getTime()
+      : 0;
+    const remaining = startedTs
+      ? activePlayerRoom.durationSeconds - (Date.now() - startedTs) / 1000
+      : activePlayerRoom.durationSeconds;
+    if (remaining <= 5) return;
+
+    const launchKey = `${activePlayerRoom.id}:${activePlayerRoom.matchStartedAt}`;
+    if (autoLaunchedRef.current.has(launchKey)) return;
+    autoLaunchedRef.current.add(launchKey);
+
+    setWaitingRoomModal(null);
+    onStartGame(activePlayerRoom);
+  }, [currentUser, onStartGame, rooms, waitingRoomModal]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
@@ -212,9 +240,15 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
 
         <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
           <div className="space-y-2 max-w-xl">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-cyan-950/80 border border-cyan-400/50 text-cyan-300 text-xs font-orbitron font-bold shadow-[0_0_12px_rgba(6,182,212,0.3)]">
-              <Radio className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
-              <span className="break-words">SALA DE ESPERA • LANZAMIENTOS CADA 5 MINUTOS (MÍNIMO 4 JUGADORES)</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-cyan-950/80 border border-cyan-400/50 text-cyan-300 text-xs font-orbitron font-bold shadow-[0_0_12px_rgba(6,182,212,0.3)]">
+                <Radio className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+                <span className="break-words">SALA DE ESPERA • LANZAMIENTOS CADA 5 MINUTOS (MÍNIMO 4 JUGADORES)</span>
+              </div>
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-950/80 border border-emerald-400/50 text-emerald-300 text-xs font-orbitron font-bold shadow-[0_0_12px_rgba(16,185,129,0.3)]">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
+                <span className="break-words">{onlinePlayersCount} EN LÍNEA AHORA</span>
+              </div>
             </div>
             <h1 className="text-2xl sm:text-4xl font-orbitron font-black text-white leading-tight">
               Domina la Arena Neón y Conquista el <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-amber-300 to-orange-400">80% del Pote</span>
@@ -390,10 +424,16 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                             className={`text-[10px] px-2 py-0.5 rounded-full font-mono-tech font-bold uppercase ${
                               room.status === 'in_game'
                                 ? 'bg-rose-950/80 text-rose-300 border border-rose-500/50 animate-pulse shadow-[0_0_8px_#f43f5e]'
+                                : room.cancelled && room.status === 'finished'
+                                ? 'bg-slate-800 text-slate-400 border border-slate-600/60'
                                 : 'bg-amber-950/80 text-amber-300 border border-amber-500/50'
                             }`}
                           >
-                            {room.status === 'in_game' ? 'En Combate' : '⏳ Esperando'}
+                            {room.status === 'in_game'
+                              ? 'En Combate'
+                              : room.cancelled && room.status === 'finished'
+                              ? '✖️ Cancelada • Reembolso'
+                              : '⏳ Esperando'}
                           </span>
                           {room.status === 'waiting' && (
                             <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 font-mono-tech font-bold">
@@ -649,10 +689,21 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
               </p>
               <button
                 type="button"
-                onClick={() => setWaitingRoomModal(null)}
-                className="w-full px-5 py-3.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-orbitron font-bold text-xs transition-all cursor-pointer"
+                id="leave-room-btn"
+                onClick={() => {
+                  if (currentModalRoom) leaveRoom(currentModalRoom.id);
+                  setWaitingRoomModal(null);
+                }}
+                className="w-full px-5 py-3.5 rounded-2xl bg-gradient-to-r from-rose-500 to-red-600 hover:brightness-110 text-white font-orbitron font-bold text-xs tracking-wider transition-all shadow-[0_0_20px_rgba(244,63,94,0.35)] cursor-pointer"
               >
-                CERRAR VISTA PREVIA
+                SALIR DE LA SALA (REEMBOLSO AUTOMÁTICO)
+              </button>
+              <button
+                type="button"
+                onClick={() => setWaitingRoomModal(null)}
+                className="w-full px-5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-orbitron font-bold text-[11px] transition-all cursor-pointer"
+              >
+                MANTENERME EN LA SALA Y CERRAR VISTA PREVIA
               </button>
             </div>
           </div>

@@ -1035,7 +1035,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
             ) : (
               <div className="space-y-2.5">
                 {filteredTxs.map((tx) => {
-                  const isPos = tx.type === 'deposit' || tx.type === 'pot_win';
+                  const isPos = tx.type === 'deposit' || tx.type === 'pot_win' || tx.type === 'refund';
                   return (
                     <div
                       key={tx.id}
@@ -1049,6 +1049,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                               ? 'bg-cyan-500/20 text-cyan-400'
                               : tx.type === 'pot_win'
                               ? 'bg-yellow-500/20 text-yellow-400'
+                              : tx.type === 'refund'
+                              ? 'bg-emerald-500/20 text-emerald-400'
                               : tx.type === 'withdrawal'
                               ? 'bg-rose-500/20 text-rose-400'
                               : 'bg-purple-500/20 text-purple-400'
@@ -1058,6 +1060,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                             <ArrowDownLeft className="w-4 h-4" />
                           ) : tx.type === 'pot_win' ? (
                             <DollarSign className="w-4 h-4" />
+                          ) : tx.type === 'refund' ? (
+                            <ArrowDownLeft className="w-4 h-4" />
                           ) : tx.type === 'withdrawal' ? (
                             <ArrowUpRight className="w-4 h-4" />
                           ) : (
@@ -1071,6 +1075,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                                 ? 'Recarga de Saldo'
                                 : tx.type === 'pot_win'
                                 ? '🏆 Premio 80% Pote'
+                                : tx.type === 'refund'
+                                ? '↩️ Reembolso de Entrada'
                                 : tx.type === 'withdrawal'
                                 ? 'Retiro de Ganancias'
                                 : 'Compra de Cosmético'}

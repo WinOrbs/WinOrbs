@@ -12,7 +12,10 @@ import { soundFx } from '../../services/soundSynth';
 import {
   generateMatchSessionToken,
   publishMatchPlayer,
+  armPlayerDisconnect,
   removeMatchPlayer,
+  cleanupMatchRoom,
+  publishMatchHostHeartbeat,
   RealtimeMatchPlayer,
   RealtimeMatchWorld,
   publishMatchWorld,
@@ -85,8 +88,15 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Match State
-  const [timeLeft, setTimeLeft] = useState<number>(room?.durationSeconds || 180);
-  const timeLeftRef = useRef<number>(room?.durationSeconds || 180);
+  // Shared match clock: derived from room.matchStartedAt so every client
+  // (re)joining the same match counts down to the exact same final second.
+  const matchStartTsRef = useRef<number>(
+    room?.matchStartedAt ? new Date(room.matchStartedAt).getTime() : Date.now()
+  );
+  const [timeLeft, setTimeLeft] = useState<number>(() =>
+    Math.max(0, Math.ceil((room?.durationSeconds || 180) - (Date.now() - matchStartTsRef.current) / 1000))
+  );
+  const timeLeftRef = useRef<number>(timeLeft);
   const [matchEnded, setMatchEnded] = useState<boolean>(false);
   const matchEndedRef = useRef<boolean>(false);
   const [winnerInfo, setWinnerInfo] = useState<{ id: string; name: string; score: number; kills: number } | null>(null);
@@ -113,9 +123,13 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
   const playersRef = useRef<GamePlayerEntity[]>([]);
   const remotePlayersRef = useRef<Map<string, RealtimeMatchPlayer>>(new Map());
   const remoteWorldRef = useRef<RealtimeMatchWorld | null>(null);
-  const isWorldHost = currentUser?.id === (room.hostId === 'admin_master'
+  // Host authority with live failover: the designated host while it publishes,
+  // otherwise the oldest registered player still online (stale-host takeover).
+  const designatedHostId = room.hostId === 'admin_master'
     ? room.registeredPlayers?.[0]?.id
-    : room.hostId);
+    : room.hostId;
+  const [hostLiveId, setHostLiveId] = useState<string | null>(designatedHostId || null);
+  const isWorldHost = !!currentUser && hostLiveId === currentUser.id;
   const orbsRef = useRef<OrbEntity[]>([]);
   const particlesRef = useRef<ParticleEntity[]>([]);
   const cameraRef = useRef<{ x: number; y: number; zoom: number }>({ x: 0, y: 0, zoom: 1 });
@@ -276,15 +290,47 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
   useEffect(() => {
     if (!currentUser || !room?.id) return;
 
+    const FRESH_WINDOW = 8000;
+
     const unsubscribe = subscribeToMatchPlayers(
       room.id,
       (players) => {
+        const now = Date.now();
+        // Only keep players that are actively publishing (ghost/CDT cleanup).
+        const fresh = players.filter((player) => now - (player.updatedAt || 0) < FRESH_WINDOW);
+
         remotePlayersRef.current = new Map(
-          players.filter((player) => player.id !== currentUser.id).map((player) => [player.id, player])
+          fresh
+            .filter((player) => player.id !== currentUser.id)
+            .map((player) => [player.id, player])
         );
+
+        // Live host election: designated host while online, otherwise the oldest
+        // registered player that is still publishing state.
+        const designated = room.hostId === 'admin_master'
+          ? room.registeredPlayers?.[0]?.id
+          : room.hostId;
+        const freshIds = fresh.map((player) => player.id);
+        let live: string | null = null;
+        if (designated && freshIds.includes(designated)) {
+          live = designated;
+        } else {
+          for (const slot of room.registeredPlayers || []) {
+            if (freshIds.includes(slot.id)) {
+              live = slot.id;
+              break;
+            }
+          }
+          if (!live && freshIds.length > 0) live = freshIds[0];
+        }
+        setHostLiveId((prev) => (prev === live ? prev : live));
       },
       (error) => console.warn('Realtime match sync:', error.message)
     );
+
+    // Disconnect hook armed ONCE per match: Firebase removes the player node
+    // automatically on crash / tab close.
+    void armPlayerDisconnect(room.id, currentUser.id);
 
     const publish = () => {
       const player = playersRef.current.find((candidate) => candidate.isUser);
@@ -308,7 +354,7 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
       }).catch((error: unknown) => console.warn('Realtime match publish:', error));
     };
 
-    const publishTimer = window.setInterval(publish, 100);
+    const publishTimer = window.setInterval(publish, 200);
     publish();
     return () => {
       window.clearInterval(publishTimer);
@@ -350,9 +396,24 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
     return () => window.clearInterval(publishTimer);
   }, [isWorldHost, room?.id]);
 
+  // Host heartbeat: proves authority liveness. If it goes stale (>8s) another
+  // client takes over the world role (see database.rules.json takeover rule).
+  useEffect(() => {
+    if (!isWorldHost || !room?.id || !currentUser?.id) return;
+    void publishMatchHostHeartbeat(room.id, currentUser.id);
+    const heartbeatTimer = window.setInterval(() => {
+      void publishMatchHostHeartbeat(room.id, currentUser.id);
+    }, 2000);
+    return () => window.clearInterval(heartbeatTimer);
+  }, [isWorldHost, room?.id, currentUser?.id]);
+
   useEffect(() => {
     if (!currentUser || !room?.id) return;
     const unsubscribe = subscribeToMatchWorld(room.id, (world) => {
+      const now = Date.now();
+      // Ignore stale world snapshots: they belong to dead matches and would
+      // resurrect ghost players frozen in the arena.
+      if (now - (world.updatedAt || 0) > 10000) return;
       if (world.updatedAt > (remoteWorldRef.current?.updatedAt || 0)) {
         remoteWorldRef.current = world;
         world.players.forEach((player) => {
@@ -391,6 +452,14 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
           },
           matchSessionTokenRef.current
         );
+
+        // World host wipes the realtime match node shortly after settlement so
+        // no ghost players/world survive in the database.
+        if (isWorldHost) {
+          window.setTimeout(() => {
+            void cleanupMatchRoom(room.id);
+          }, 3000);
+        }
       }
 
       if (topWinner.isUser) {
@@ -402,24 +471,22 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
         });
       }
     }
-  }, [finishMatchPot, room]);
+  }, [finishMatchPot, room, isWorldHost]);
 
-  // Match Countdown Timer Interval (Pure decrement)
+  // Match Countdown Timer (derived from the shared matchStartedAt clock so
+  // every client finishes at the same real-world moment)
   useEffect(() => {
     if (matchEnded) return;
 
     const timerInterval = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timerInterval);
-          return 0;
-        }
-        return prev - 1;
-      });
+      const duration = room?.durationSeconds || 180;
+      const remaining = duration - (Date.now() - matchStartTsRef.current) / 1000;
+      const next = Math.max(0, Math.ceil(remaining));
+      setTimeLeft((prev) => (prev === next ? prev : next));
     }, 1000);
 
     return () => clearInterval(timerInterval);
-  }, [matchEnded]);
+  }, [matchEnded, room?.durationSeconds]);
 
   // Handle side-effects cleanly in response to timeLeft changes
   useEffect(() => {
@@ -697,6 +764,13 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
         if (player.trailHistory.length > 20) player.trailHistory.shift();
         player.trailHistory.push({ x: player.x, y: player.y, alpha: 0.7 });
       });
+
+      // Ghost cleanup: drop remote entities that stopped publishing state.
+      if (playersRef.current.some((candidate) => candidate.isRemote)) {
+        playersRef.current = playersRef.current.filter(
+          (candidate) => !candidate.isRemote || remotePlayersRef.current.has(candidate.id)
+        );
+      }
 
       const world = remoteWorldRef.current;
       if (world) {

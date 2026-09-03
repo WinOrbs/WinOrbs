@@ -4,7 +4,7 @@ export type VisualMode = 'isometric' | 'minimalist';
 
 export type PaymentMethodType = 'pago_movil' | 'usdt_trc20' | 'usdt_bep20' | 'international_wire';
 
-export type TransactionType = 'deposit' | 'withdrawal' | 'pot_win' | 'entry_fee' | 'cosmetic_buy' | 'vip_subscription';
+export type TransactionType = 'deposit' | 'withdrawal' | 'pot_win' | 'entry_fee' | 'cosmetic_buy' | 'vip_subscription' | 'refund';
 
 export type TransactionStatus = 'pending' | 'approved' | 'rejected';
 
@@ -94,6 +94,7 @@ export interface TournamentPlayerSlot {
   avatar: string;
   ready: boolean;
   isUser?: boolean;
+  joinedAt?: string; // ISO timestamp: permite purgar registros abandonados
 }
 
 export interface TournamentRoom {
@@ -113,6 +114,10 @@ export interface TournamentRoom {
   timeRemainingSeconds: number;
   nextLaunchSeconds?: number; // 5-minute countdown (300s)
   launchAt?: string;
+  matchStartedAt?: string; // ISO: reloj de partida compartido (sincroniza el fin entre clientes). '' = sin partida
+  finishedAt?: string; // ISO: momento de liquidación (programa el reset a waiting). '' = activa/en espera
+  cancelled?: boolean; // sala cancelada por no alcanzar quórum (habilita reembolso reclamable)
+  refundedUserIds?: string[]; // usuarios que ya reclamaron su reembolso de entrada
   shrinkTriggerSeconds: number; // 60
   arenaRadius: number;
   currentArenaRadius: number;

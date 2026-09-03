@@ -29,6 +29,11 @@ import {
   saveTournamentRoom,
   deleteTournamentRoom,
   validateMatchVictoryCloud,
+  claimMatchVictory,
+  initUserPresence,
+  setUserPresenceState,
+  clearUserPresence,
+  removeMatchPlayer,
 } from '../services/firebase';
 
 interface AppContextType {
@@ -74,7 +79,7 @@ interface AppContextType {
   adminDeleteRoom: (roomId: string) => void;
   joinRoom: (roomId: string, code?: string) => boolean;
   startMatchNow: (roomId: string) => void;
-  leaveRoom: () => void;
+  leaveRoom: (roomId?: string) => void;
   buyCosmetic: (item: CosmeticItem) => boolean;
   equipCosmetic: (type: 'skin' | 'trail' | 'crown', id: string) => void;
   subscribeVIP: (tier: 'vip_bronze' | 'vip_neon' | 'vip_titan', priceUSD: number) => boolean;
@@ -304,6 +309,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [skins] = useState<CosmeticItem[]>(DEFAULT_COSMETICS);
   const [rooms, setRooms] = useState<TournamentRoom[]>([]);
   const launchRequestsRef = useRef<Set<string>>(new Set());
+  const roomResetsRef = useRef<Set<string>>(new Set());
+  const refundClaimsRef = useRef<Set<string>>(new Set());
   const [activeRoom, setActiveRoom] = useState<TournamentRoom | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [platformRevenueUSD, setPlatformRevenueUSD] = useState<number>(() => {
@@ -402,6 +409,94 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [currentUser]);
 
+  // Presence engine: heartbeat + graceful offline on tab close / logout.
+  // onDisconnect() in initUserPresence covers crashes, kill-switches and lost connections.
+  useEffect(() => {
+    const uid = currentUser?.id;
+    if (!uid) return;
+
+    void initUserPresence(uid, 'online');
+    const heartbeat = setInterval(() => {
+      void setUserPresenceState(uid, activeRoom ? 'in_game' : 'online');
+    }, 45000);
+
+    const goOffline = () => {
+      void setUserPresenceState(uid, 'offline');
+    };
+    window.addEventListener('pagehide', goOffline);
+    window.addEventListener('beforeunload', goOffline);
+
+    return () => {
+      clearInterval(heartbeat);
+      window.removeEventListener('pagehide', goOffline);
+      window.removeEventListener('beforeunload', goOffline);
+      void setUserPresenceState(uid, 'offline');
+    };
+  }, [currentUser?.id, activeRoom?.id]);
+
+  // Self-refund claim: if a room the user paid for got cancelled (launch window
+  // expired without quorum), credit the entry fee back the first time this
+  // client sees the cancellation. The claim is persisted on the room document
+  // (refundedUserIds) so no other session can claim it twice.
+  useEffect(() => {
+    if (!currentUser) return;
+    rooms.forEach((room) => {
+      if (!room.cancelled || room.status !== 'finished') return;
+      if (!(room.registeredPlayers || []).some((p) => p.id === currentUser.id)) return;
+      if ((room.refundedUserIds || []).includes(currentUser.id)) return;
+
+      const claimKey = `${room.id}:${currentUser.id}`;
+      if (refundClaimsRef.current.has(claimKey)) return;
+      refundClaimsRef.current.add(claimKey);
+
+      const entryFee = room.entryFeeUSD || 0;
+      if (entryFee <= 0) return;
+
+      const refundedUser: UserProfile = {
+        ...currentUser,
+        balanceUSD: currentUser.balanceUSD + entryFee,
+        balanceVES: (currentUser.balanceUSD + entryFee) * exchangeRates.vesUsdRate,
+      };
+      setCurrentUser(refundedUser);
+
+      const refundTx: Transaction = {
+        id: `ref-${Date.now().toString().slice(-6)}`,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userPhone: currentUser.phone,
+        type: 'refund',
+        amountUSD: entryFee,
+        amountVES: entryFee * exchangeRates.vesUsdRate,
+        method: 'pago_movil',
+        status: 'approved',
+        referenceNumber: `REF-${room.code}-${Date.now().toString().slice(-4)}`,
+        adminNotes: `Reembolso automático: ${room.name} fue cancelada por no alcanzar el mínimo de jugadores.`,
+        createdAt: new Date().toISOString(),
+      };
+      setTransactions((prev) => [refundTx, ...prev]);
+      saveTransactionToFirestore(refundTx).catch(console.warn);
+
+      const refundNotif: AppNotification = {
+        id: `notif-ref-${Date.now()}`,
+        userId: currentUser.id,
+        title: '↩️ Sala Cancelada • Entrada Reembolsada',
+        message: `${room.name} no alcanzó el mínimo de ${room.minPlayersToStart} jugadores. Se devolvieron $${entryFee.toFixed(2)} USD a tu saldo.`,
+        type: 'security',
+        read: false,
+        timestamp: 'Justo ahora',
+        amountUSD: entryFee,
+      };
+      setNotifications((prev) => [refundNotif, ...prev]);
+
+      const claimedRoom: TournamentRoom = {
+        ...room,
+        refundedUserIds: [...(room.refundedUserIds || []), currentUser.id],
+      };
+      saveTournamentRoom(claimedRoom).catch((error) => console.warn('Refund claim sync:', error));
+      soundFx.playCashCoin();
+    });
+  }, [rooms, currentUser, exchangeRates.vesUsdRate]);
+
   useEffect(() => {
     localStorage.setItem('neon_role', activeRole);
   }, [activeRole]);
@@ -426,7 +521,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem('neon_dev_revenue', platformRevenueUSD.toString());
   }, [platformRevenueUSD]);
 
-  // Matchmaking Launch Cycle countdown ticker
+  // Matchmaking Launch Cycle countdown ticker + finished-room reset cycle
   useEffect(() => {
     const timer = setInterval(() => {
       setRooms((prev) =>
@@ -440,13 +535,110 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
 
       rooms.forEach((room) => {
+        // 1. Launch waiting rooms whose countdown expired with quorum.
+        //    Key includes launchAt so a re-launched room (after reset) is allowed again.
         if (room.status === 'waiting' && room.launchAt &&
             new Date(room.launchAt).getTime() <= Date.now() &&
             room.currentPlayers >= room.minPlayersToStart &&
-            !launchRequestsRef.current.has(room.id)) {
-          launchRequestsRef.current.add(room.id);
-          const startedRoom = { ...room, status: 'in_game' as const, nextLaunchSeconds: 0 };
+            !launchRequestsRef.current.has(room.id + room.launchAt)) {
+          launchRequestsRef.current.add(room.id + room.launchAt);
+          const startedRoom = {
+            ...room,
+            status: 'in_game' as const,
+            nextLaunchSeconds: 0,
+            matchStartedAt: new Date().toISOString(), // shared clock: every client finishes together
+            finishedAt: '',
+          };
           saveTournamentRoom(startedRoom).catch((error) => console.warn('Room launch sync:', error));
+        }
+
+        // 2. Recycle finished rooms back into the waiting pool (~90s after payout).
+        //    Cancelled rooms are skipped: they keep registered slots open for the
+        //    24h self-refund window (see rule 5).
+        if (room.status === 'finished' && !room.cancelled && room.finishedAt &&
+            Date.now() - new Date(room.finishedAt).getTime() > 90000 &&
+            !roomResetsRef.current.has(room.id + room.finishedAt)) {
+          roomResetsRef.current.add(room.id + room.finishedAt);
+          const resetRoom: TournamentRoom = {
+            ...room,
+            status: 'waiting',
+            registeredPlayers: [],
+            currentPlayers: 0,
+            potUSD: 0,
+            winnerRewardUSD: 0,
+            devFeeUSD: 0,
+            timeRemainingSeconds: room.durationSeconds,
+            matchStartedAt: '',
+            finishedAt: '',
+            launchAt: new Date(Date.now() + 300000).toISOString(),
+            nextLaunchSeconds: 300,
+          };
+          saveTournamentRoom(resetRoom).catch((error) => console.warn('Room reset sync:', error));
+        }
+
+        // 3. Recycle orphaned in_game rooms (pre-fix data or matches abandoned by
+        //    every player): if the shared clock says the match is long over, reset.
+        const startedTs = room.matchStartedAt ? new Date(room.matchStartedAt).getTime() : 0;
+        const matchExpired = !startedTs ||
+          Date.now() - startedTs > (room.durationSeconds || 180) * 1000 + 600000;
+        if (room.status === 'in_game' && matchExpired &&
+            !roomResetsRef.current.has(room.id + ':orphan')) {
+          roomResetsRef.current.add(room.id + ':orphan');
+          const orphanReset: TournamentRoom = {
+            ...room,
+            status: 'waiting',
+            registeredPlayers: [],
+            currentPlayers: 0,
+            potUSD: 0,
+            winnerRewardUSD: 0,
+            devFeeUSD: 0,
+            timeRemainingSeconds: room.durationSeconds,
+            matchStartedAt: '',
+            finishedAt: '',
+            launchAt: new Date(Date.now() + 300000).toISOString(),
+            nextLaunchSeconds: 300,
+          };
+          saveTournamentRoom(orphanReset).catch((error) => console.warn('Orphan room reset:', error));
+        }
+
+        // 4. Cancel waiting rooms whose launch window expired without quorum.
+        //    Players reclaim their entry fee via the self-refund claim effect.
+        if (room.status === 'waiting' && room.launchAt &&
+            new Date(room.launchAt).getTime() <= Date.now() &&
+            room.currentPlayers < room.minPlayersToStart &&
+            !roomResetsRef.current.has(room.id + room.launchAt + ':cancel')) {
+          roomResetsRef.current.add(room.id + room.launchAt + ':cancel');
+          const cancelledRoom: TournamentRoom = {
+            ...room,
+            status: 'finished',
+            finishedAt: new Date().toISOString(),
+            cancelled: true,
+          };
+          saveTournamentRoom(cancelledRoom).catch((error) => console.warn('Room cancel sync:', error));
+        }
+
+        // 5. Purge cancelled rooms 24h after cancellation (refund window elapsed).
+        if (room.status === 'finished' && room.cancelled && room.finishedAt &&
+            Date.now() - new Date(room.finishedAt).getTime() > 86400000 &&
+            !roomResetsRef.current.has(room.id + room.finishedAt + ':purge')) {
+          roomResetsRef.current.add(room.id + room.finishedAt + ':purge');
+          const purgeRoom: TournamentRoom = {
+            ...room,
+            status: 'waiting',
+            registeredPlayers: [],
+            currentPlayers: 0,
+            potUSD: 0,
+            winnerRewardUSD: 0,
+            devFeeUSD: 0,
+            timeRemainingSeconds: room.durationSeconds,
+            matchStartedAt: '',
+            finishedAt: '',
+            cancelled: false,
+            refundedUserIds: [],
+            launchAt: new Date(Date.now() + 300000).toISOString(),
+            nextLaunchSeconds: 300,
+          };
+          saveTournamentRoom(purgeRoom).catch((error) => console.warn('Cancelled room purge:', error));
         }
       });
     }, 1000);
@@ -648,6 +840,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const logout = async () => {
+    if (currentUser) {
+      await clearUserPresence(currentUser.id).catch(() => undefined);
+    }
     await signOutFirebase();
     setCurrentUser(null);
     setIsAdminUnlocked(false);
@@ -915,7 +1110,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     saveUserProfileToFirestore(updatedUser).catch(console.warn);
 
     const initialParticipants = [
-      { id: currentUser.id, name: currentUser.name, avatar: currentUser.avatar, ready: true, isUser: true },
+      { id: currentUser.id, name: currentUser.name, avatar: currentUser.avatar, ready: true, isUser: true, joinedAt: new Date().toISOString() },
     ];
     const totalParticipants = initialParticipants.length;
     const roomPot = totalParticipants * config.entryFeeUSD;
@@ -1088,6 +1283,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
 
+    const existingPlayers = targetRoom.registeredPlayers || [];
+    const isAlreadyRegistered = existingPlayers.some((p) => p.id === currentUser.id);
+
+    // REJOIN (already registered): never charge again. This also allows re-entering
+    // an ongoing match after a refresh without being considered a new player.
+    if (isAlreadyRegistered) {
+      setActiveRoom(targetRoom);
+      void setUserPresenceState(currentUser.id, 'in_game');
+      return true;
+    }
+
+    // NEW registration: only while the room has not launched (kills the
+    // "join in-progress room -> instant relaunch" loop).
+    if (targetRoom.status !== 'waiting') {
+      alert('Esta sala ya está en combate o finalizada. No es posible inscribirse ahora.');
+      return false;
+    }
+
     if (currentUser.balanceUSD < targetRoom.entryFeeUSD) {
       alert(`Saldo insuficiente. La entrada requiere $${targetRoom.entryFeeUSD.toFixed(2)} USD.`);
       return false;
@@ -1103,20 +1316,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     saveUserProfileToFirestore(updatedUser).catch(console.warn);
 
     // Register player slot
-    const existingPlayers = targetRoom.registeredPlayers || [];
-    const isAlreadyRegistered = existingPlayers.some((p) => p.id === currentUser.id);
-    const updatedPlayers = isAlreadyRegistered
-      ? existingPlayers
-      : [
-          {
-            id: currentUser.id,
-            name: currentUser.name,
-            avatar: currentUser.avatar,
-            ready: true,
-            isUser: true,
-          },
-          ...existingPlayers,
-        ].slice(0, targetRoom.maxPlayers);
+    const updatedPlayers = [
+      {
+        id: currentUser.id,
+        name: currentUser.name,
+        avatar: currentUser.avatar,
+        ready: true,
+        isUser: true,
+        joinedAt: new Date().toISOString(),
+      },
+      ...existingPlayers,
+    ].slice(0, targetRoom.maxPlayers);
 
     const activePlayerCount = updatedPlayers.length;
     const newPot = activePlayerCount * targetRoom.entryFeeUSD;
@@ -1135,6 +1345,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setRooms((prev) => prev.map((r) => (r.id === roomId ? updatedRoom : r)));
     saveTournamentRoom(updatedRoom).catch((error) => console.warn('Room sync:', error));
     setActiveRoom(updatedRoom);
+    void setUserPresenceState(currentUser.id, 'in_game');
     soundFx.playBoost();
     return true;
   };
@@ -1146,7 +1357,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const startedRoom: TournamentRoom = {
       ...room,
       status: 'in_game',
-      timeRemainingSeconds: 180,
+      timeRemainingSeconds: room.durationSeconds || 180,
+      matchStartedAt: new Date().toISOString(), // shared clock
+      finishedAt: '',
       arenaRadius: room.arenaRadius || 1800,
       currentArenaRadius: room.arenaRadius || 1800,
     };
@@ -1157,8 +1370,84 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     soundFx.playVictoryFanfare();
   };
 
-  const leaveRoom = () => {
-    setActiveRoom(null);
+  const leaveRoom = (roomId?: string) => {
+    const target = (roomId ? rooms.find((r) => r.id === roomId) : null) || activeRoom;
+    if (!target) {
+      setActiveRoom(null);
+      return;
+    }
+
+    const uid = currentUser?.id;
+    if (uid && (target.registeredPlayers || []).some((p) => p.id === uid)) {
+      const remainingPlayers = (target.registeredPlayers || []).filter((p) => p.id !== uid);
+
+      if (remainingPlayers.length === 0 && target.hostId === uid) {
+        // Empty player-created room: remove it entirely to avoid ghost rooms.
+        setRooms((prev) => prev.filter((r) => r.id !== target.id));
+        deleteTournamentRoom(target.id).catch((error) => console.warn('Room delete sync:', error));
+      } else {
+        // Fees are only refundable / pot only recalculated BEFORE the match launches.
+        const shouldRefund = target.status === 'waiting';
+        const newPot = shouldRefund ? remainingPlayers.length * target.entryFeeUSD : target.potUSD;
+        const updatedRoom: TournamentRoom = {
+          ...target,
+          registeredPlayers: remainingPlayers,
+          currentPlayers: shouldRefund ? remainingPlayers.length : target.currentPlayers,
+          potUSD: newPot,
+          winnerRewardUSD: (newPot * exchangeRates.winnerPotPercent) / 100,
+          devFeeUSD: (newPot * exchangeRates.platformPotPercent) / 100,
+        };
+        setRooms((prev) => prev.map((r) => (r.id === target.id ? updatedRoom : r)));
+        saveTournamentRoom(updatedRoom).catch((error) => console.warn('Room leave sync:', error));
+
+        if (shouldRefund && target.entryFeeUSD > 0 && currentUser) {
+          const refundedUser: UserProfile = {
+            ...currentUser,
+            balanceUSD: currentUser.balanceUSD + target.entryFeeUSD,
+            balanceVES: (currentUser.balanceUSD + target.entryFeeUSD) * exchangeRates.vesUsdRate,
+          };
+          setCurrentUser(refundedUser);
+
+          const refundTx: Transaction = {
+            id: `ref-${Date.now().toString().slice(-6)}`,
+            userId: currentUser.id,
+            userName: currentUser.name,
+            userPhone: currentUser.phone,
+            type: 'refund',
+            amountUSD: target.entryFeeUSD,
+            amountVES: target.entryFeeUSD * exchangeRates.vesUsdRate,
+            method: 'pago_movil',
+            status: 'approved',
+            referenceNumber: `REF-${target.code}-${Date.now().toString().slice(-4)}`,
+            adminNotes: `Reembolso automático de entrada por salir de ${target.name} antes del lanzamiento.`,
+            createdAt: new Date().toISOString(),
+          };
+          setTransactions((prev) => [refundTx, ...prev]);
+          saveTransactionToFirestore(refundTx).catch(console.warn);
+
+          const refundNotif: AppNotification = {
+            id: `notif-ref-${Date.now()}`,
+            userId: currentUser.id,
+            title: '↩️ Saliste de la Sala • Entrada Reembolsada',
+            message: `Abandonaste ${target.name} antes del lanzamiento. Se devolvieron $${target.entryFeeUSD.toFixed(2)} USD a tu saldo.`,
+            type: 'security',
+            read: false,
+            timestamp: 'Justo ahora',
+            amountUSD: target.entryFeeUSD,
+          };
+          setNotifications((prev) => [refundNotif, ...prev]);
+        }
+      }
+
+      // Always drop the realtime match entity + presence flag.
+      removeMatchPlayer(target.id, uid).catch(() => undefined);
+      void setUserPresenceState(uid, 'online');
+    }
+
+    if (!activeRoom || activeRoom.id === target.id) {
+      setActiveRoom(null);
+    }
+    soundFx.playNotificationPing();
   };
 
   const buyCosmetic = (item: CosmeticItem): boolean => {
@@ -1296,6 +1585,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const room = rooms.find((r) => r.id === roomId) || activeRoom;
     if (!room) return { success: false, reason: 'Sala no encontrada.' };
 
+    // Freeze the room as finished: nobody can (re)join and the reset cycle kicks in.
+    const finishedRoom: TournamentRoom = {
+      ...room,
+      status: 'finished',
+      finishedAt: new Date().toISOString(),
+      timeRemainingSeconds: 0,
+    };
+    setRooms((prev) => prev.map((r) => (r.id === room.id ? finishedRoom : r)));
+    saveTournamentRoom(finishedRoom).catch((error) => console.warn('Room finish sync:', error));
+
     const isUserWinner = currentUser && (currentUser.id === winnerId || winnerName === currentUser.name);
 
     // If real user won, perform cryptographic and physical anti-cheat verification
@@ -1315,6 +1614,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           alert(`⚠️ Alerta de Seguridad Anti-Trampas: ${validation.reason}`);
           return { success: false, reason: validation.reason };
         }
+      }
+
+      // Idempotency: only ONE client per room may collect the pot (transaction in Firestore).
+      const claim = await claimMatchVictory(room.id, currentUser.id, token?.sessionId || '');
+      if (!claim.ok) {
+        console.warn('Victory claim rejected:', claim.reason);
+        return { success: false, reason: claim.reason };
       }
 
       const potTotal = Math.max(room.potUSD, room.entryFeeUSD * (room.registeredPlayers?.length || 1));
