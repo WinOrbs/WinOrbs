@@ -123,7 +123,7 @@ const MainAppContent: React.FC = () => {
           <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
-              <span className="text-slate-300">Servidores Neón .IO Operativos • Tasa Pago Móvil y Binance USDT Conectados</span>
+              <span className="text-slate-300 break-words">Servidores WinOrbs Operativos • Tasa Pago Móvil y Binance USDT Conectados</span>
             </div>
             <div className="flex items-center gap-4 text-[11px]">
               <span className="text-yellow-400 font-bold">80% Ganador / 20% Mantenimiento</span>

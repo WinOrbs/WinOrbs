@@ -20,6 +20,7 @@ import {
   Skull,
   Timer,
   AlertTriangle,
+  Settings,
 } from 'lucide-react';
 
 interface NeonGameCanvasProps {
@@ -37,8 +38,16 @@ const ORB_COLORS = [
 ];
 
 const BOT_NAMES = [
-  'ViperX_VZ', 'CyberGhost', 'MatrixNeo', 'CryptoLord', 'ShadowKira',
-  'SolarKnight', 'NeonDragon', 'QuantumPro', 'AlphaWolf', 'HyperVolt',
+  'Andres', 'Manuel', 'Jesus', 'Juan', 'Kate', 'Maria', 'Luis', 'Ana', 
+  'Carlos', 'Sofia', 'Diego', 'Valeria', 'Jorge', 'Camila', 'Miguel', 
+  'Isabella', 'David', 'Lucia', 'Daniel', 'Gabriela', 'Sebastian', 
+  'Paula', 'Alejandro', 'Carolina', 'Fernando', 'Natalia', 'Ricardo',
+  'Daniela', 'Javier', 'Mariana', 'Eduardo', 'Fernanda', 'Andresito', 
+  'Marcos', 'Juliana', 'Pablo', 'Camilo', 'Adriana', 'Nicolas', 'Catalina', 
+  'Santiago', 'Valentina', 'Emiliano', 'Antonella', 'Matias', 'Renata', 'Thiago', 
+  'Mia', 'Lautaro', 'Alma', 'Bruno', 'Amelia', 'Gael', 'Elena', 'Ian', 'Aitana', 
+  'Thierry', 'Luna', 'Maximiliano', 'Ariana', 'Leandro', 'Isis', 'Dante', 'Alondra', 
+  'Bastian', 'Noa',
 ];
 
 export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) => {
@@ -63,6 +72,12 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
   const [winnerInfo, setWinnerInfo] = useState<{ id: string; name: string; score: number; kills: number } | null>(null);
   const [isMobile, setIsMobile] = useState<boolean>(false);
   const [showForfeitConfirm, setShowForfeitConfirm] = useState<boolean>(false);
+  const [mobileControlSize, setMobileControlSize] = useState<number>(() => {
+    const saved = localStorage.getItem('winorbs_mobile_control_size');
+    const parsed = saved ? Number(saved) : 112;
+    return Number.isFinite(parsed) ? Math.max(96, Math.min(180, parsed)) : 112;
+  });
+  const [showMobileSettings, setShowMobileSettings] = useState(false);
   const [, setIsShrinking] = useState<boolean>(false);
 
   // Keep refs in sync for render loop
@@ -834,13 +849,13 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-screen bg-[#070913] overflow-hidden select-none font-sans"
+      className="relative w-full h-[100dvh] min-h-[100svh] bg-[#070913] overflow-hidden select-none font-sans"
     >
       {/* HTML5 Game Canvas */}
       <canvas ref={canvasRef} className="absolute inset-0 block w-full h-full cursor-crosshair" />
 
       {/* TOP HUD BAR */}
-      <div className="absolute top-0 left-0 right-0 p-4 pointer-events-none z-10 flex justify-between items-start">
+      <div className="absolute top-0 left-0 right-0 p-2 sm:p-4 pointer-events-none z-10 flex justify-between items-start gap-2">
         {/* Left: Exit & Pot Info */}
         <div className="flex flex-col gap-2 pointer-events-auto">
           <button
@@ -854,7 +869,7 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
           </button>
 
           {/* Live Pot Box */}
-          <div className="p-3 rounded-xl bg-slate-900/85 border border-cyan-500/30 backdrop-blur-md shadow-lg flex flex-col gap-1 max-w-[210px]">
+          <div className="p-2 sm:p-3 rounded-xl bg-slate-900/85 border border-cyan-500/30 backdrop-blur-md shadow-lg flex flex-col gap-1 w-[min(210px,42vw)]">
             <div className="flex items-center justify-between text-xs">
               <span className="text-slate-400 font-mono-tech uppercase">Pote Acumulado:</span>
               <span className="font-orbitron font-bold text-yellow-400 text-sm">
@@ -865,9 +880,9 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
               <div className="bg-gradient-to-r from-yellow-400 to-amber-500 h-full w-[80%]" title="80% al Ganador" />
               <div className="bg-cyan-500 h-full w-[20%]" title="20% Mantenimiento" />
             </div>
-            <div className="flex justify-between text-[10px] text-slate-400 font-mono-tech pt-0.5">
-              <span className="text-amber-300">🏆 80% Ganador: ${(room.potUSD * (exchangeRates.winnerPotPercent / 100)).toFixed(2)}</span>
-              <span className="text-cyan-300">⚙️ 20%: ${(room.potUSD * (exchangeRates.platformPotPercent / 100)).toFixed(2)}</span>
+            <div className="hidden sm:flex justify-between text-[10px] text-slate-400 font-mono-tech pt-0.5 gap-2">
+              <span className="text-amber-300 truncate">🏆 80% Ganador: ${(room.potUSD * (exchangeRates.winnerPotPercent / 100)).toFixed(2)}</span>
+              <span className="text-cyan-300 truncate">⚙️ 20%: ${(room.potUSD * (exchangeRates.platformPotPercent / 100)).toFixed(2)}</span>
             </div>
           </div>
         </div>
@@ -896,12 +911,24 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
         </div>
 
         {/* Right: Controls (Render Mode & Sound) & Match Leaderboard */}
-        <div className="flex flex-col items-end gap-2 pointer-events-auto">
+        <div className="flex flex-col items-end gap-2 pointer-events-auto min-w-0">
           <div className="flex items-center gap-2">
+            {isMobile && (
+              <button
+                id="game-mobile-settings-btn"
+                type="button"
+                onClick={() => setShowMobileSettings((visible) => !visible)}
+                className="sm:hidden p-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-700 text-cyan-300 backdrop-blur-md"
+                title="Configurar controles táctiles"
+                aria-label="Configurar controles táctiles"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+            )}
             <button
               id="game-visual-toggle"
               onClick={() => setVisualMode(visualMode === 'isometric' ? 'minimalist' : 'isometric')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-300 backdrop-blur-md transition-colors"
+              className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-300 backdrop-blur-md transition-colors"
               title="Cambiar Motor Gráfico"
             >
               <Eye className="w-3.5 h-3.5 text-purple-400" />
@@ -919,8 +946,33 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
             </button>
           </div>
 
+          {isMobile && showMobileSettings && (
+            <div className="sm:hidden absolute top-12 right-0 z-30 w-[min(220px,70vw)] p-3 rounded-xl bg-slate-900/95 border border-cyan-500/40 shadow-xl backdrop-blur-md">
+              <div className="flex items-center justify-between gap-2">
+                <label htmlFor="game-mobile-control-size" className="text-[10px] font-orbitron font-bold text-slate-200">
+                  Tamaño del control
+                </label>
+                <span className="text-[10px] font-mono-tech text-cyan-300">{mobileControlSize}px</span>
+              </div>
+              <input
+                id="game-mobile-control-size"
+                type="range"
+                min="96"
+                max="180"
+                step="4"
+                value={mobileControlSize}
+                onChange={(event) => {
+                  const size = Number(event.target.value);
+                  setMobileControlSize(size);
+                  localStorage.setItem('winorbs_mobile_control_size', String(size));
+                }}
+                className="mt-2 w-full accent-cyan-400"
+              />
+            </div>
+          )}
+
           {/* Room Live Top 5 Leaderboard */}
-          <div className="p-3 rounded-xl bg-slate-900/85 border border-slate-800 backdrop-blur-md min-w-[170px]">
+          <div className="hidden sm:block p-3 rounded-xl bg-slate-900/85 border border-slate-800 backdrop-blur-md w-[170px] max-w-[35vw]">
             <div className="flex items-center gap-1.5 text-xs font-orbitron font-bold text-slate-300 pb-1.5 border-b border-slate-800 mb-1.5">
               <Trophy className="w-3.5 h-3.5 text-yellow-400" />
               <span>TABLA EN VIVO</span>
@@ -972,6 +1024,7 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
       {/* Mobile Touch Virtual Joystick & Turbo Boost button */}
       {isMobile && (
         <GameControlsMobile
+          controlSize={mobileControlSize}
           onMove={(dx, dy) => {
             joystickVectorRef.current = { x: dx, y: dy };
           }}

@@ -4,24 +4,31 @@ import { Zap } from 'lucide-react';
 interface GameControlsMobileProps {
   onMove: (dx: number, dy: number) => void;
   onBoost: (active: boolean) => void;
+  controlSize: number;
 }
 
-export const GameControlsMobile: React.FC<GameControlsMobileProps> = ({ onMove, onBoost }) => {
+export const GameControlsMobile: React.FC<GameControlsMobileProps> = ({ onMove, onBoost, controlSize }) => {
   const joystickRef = useRef<HTMLDivElement>(null);
-  const touchActiveRef = useRef(false);
+  const joystickOriginRef = useRef({ x: 70, y: 70 });
+  const boostTouchIdRef = useRef<number | null>(null);
+  const touchIdRef = useRef<number | null>(null);
   const [knobPos, setKnobPos] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [touchId, setTouchId] = useState<number | null>(null);
+  const [joystickOrigin, setJoystickOrigin] = useState<{ x: number; y: number } | null>(null);
   const [isBoosting, setIsBoosting] = useState(false);
 
-  const maxRadius = 45;
+  const size = Math.max(96, Math.min(180, controlSize));
+  const maxRadius = size * 0.32;
 
   const handleTouchStart = (e: React.TouchEvent) => {
-    const touch = e.touches[0];
+    const touch = e.changedTouches[0];
     if (touchId !== null) return;
+    joystickOriginRef.current = { x: touch.clientX, y: touch.clientY };
+    setJoystickOrigin(joystickOriginRef.current);
     setIsDragging(true);
+    touchIdRef.current = touch.identifier;
     setTouchId(touch.identifier);
-    touchActiveRef.current = true;
     handleTouchMove(e);
   };
 
@@ -29,23 +36,21 @@ export const GameControlsMobile: React.FC<GameControlsMobileProps> = ({ onMove, 
     if (!joystickRef.current) return;
     let touch: React.Touch | undefined;
     for (let i = 0; i < e.changedTouches.length; i++) {
-      if (e.changedTouches[i].identifier === touchId) {
+      if (e.changedTouches[i].identifier === touchIdRef.current) {
         touch = e.changedTouches[i];
         break;
       }
     }
     if (!touch) {
       for (let i = 0; i < e.touches.length; i++) {
-        if (e.touches[i].identifier === touchId) {
+        if (e.touches[i].identifier === touchIdRef.current) {
           touch = e.touches[i];
           break;
         }
       }
     }
     if (!touch) return;
-    const rect = joystickRef.current.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
+    const { x: centerX, y: centerY } = joystickOriginRef.current;
 
     const dx = touch.clientX - centerX;
     const dy = touch.clientY - centerY;
@@ -69,29 +74,33 @@ export const GameControlsMobile: React.FC<GameControlsMobileProps> = ({ onMove, 
   const handleTouchEnd = (e: React.TouchEvent) => {
     let ended = false;
     for (let i = 0; i < e.changedTouches.length; i++) {
-      if (e.changedTouches[i].identifier === touchId) {
+      if (e.changedTouches[i].identifier === touchIdRef.current) {
         ended = true;
         break;
       }
     }
     if (!ended) return;
     setIsDragging(false);
+    touchIdRef.current = null;
     setTouchId(null);
-    touchActiveRef.current = false;
+    setJoystickOrigin(null);
     setKnobPos({ x: 0, y: 0 });
     onMove(0, 0);
   };
 
   const handleBoostStart = (e: React.TouchEvent | React.MouseEvent) => {
-    if (touchActiveRef.current) return;
     e.preventDefault();
+    if ('changedTouches' in e) {
+      boostTouchIdRef.current = e.changedTouches[0]?.identifier ?? null;
+    }
     setIsBoosting(true);
     onBoost(true);
   };
 
   const handleBoostEnd = (e: React.TouchEvent | React.MouseEvent) => {
-    if (touchActiveRef.current) return;
     e.preventDefault();
+    if ('changedTouches' in e && e.changedTouches[0]?.identifier !== boostTouchIdRef.current) return;
+    boostTouchIdRef.current = null;
     setIsBoosting(false);
     onBoost(false);
   };
@@ -105,8 +114,16 @@ export const GameControlsMobile: React.FC<GameControlsMobileProps> = ({ onMove, 
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         onTouchCancel={handleTouchEnd}
-        style={{ touchAction: 'none' }}
-        className={`pointer-events-auto relative w-28 h-28 rounded-full border-2 border-cyan-500/40 bg-slate-900/60 backdrop-blur-md flex items-center justify-center transition-opacity ${
+        style={{
+          touchAction: 'none',
+          width: size,
+          height: size,
+          left: joystickOrigin ? joystickOrigin.x - size / 2 : undefined,
+          top: joystickOrigin ? joystickOrigin.y - size / 2 : undefined,
+          bottom: joystickOrigin ? undefined : '1.5rem',
+          right: joystickOrigin ? undefined : 'auto',
+        }}
+        className={`pointer-events-auto absolute w-28 h-28 rounded-full border-2 border-cyan-500/40 bg-slate-900/60 backdrop-blur-md flex items-center justify-center transition-opacity ${
           isDragging ? 'opacity-100 border-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.4)]' : 'opacity-70'
         }`}
       >

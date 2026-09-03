@@ -49,7 +49,6 @@ interface AppContextType {
   soundEnabled: boolean;
   isAdminUnlocked: boolean;
   isAuthorizedAdmin: boolean;
-  // Auth Methods
   setCurrentUser: (user: UserProfile | null) => void;
   switchRole: (role: Role) => void;
   verifyAdminPin: (pin: string) => boolean;
@@ -64,46 +63,13 @@ interface AppContextType {
   loginUser: (email: string, phone: string) => Promise<boolean>;
   verifyPhoneSMS: (code: string) => Promise<boolean>;
   logout: () => void;
-  // Financial Methods
-  requestDeposit: (data: {
-    amountUSD: number;
-    method: PaymentMethodType;
-    referenceNumber: string;
-    receiptUrl?: string;
-    details?: Record<string, string>;
-  }) => Promise<Transaction>;
-  requestWithdrawal: (data: {
-    amountUSD: number;
-    method: PaymentMethodType;
-    destinationAddressOrBank: string;
-    securityPin: string;
-    accountHolder: string;
-  }) => Promise<Transaction>;
+  requestDeposit: (data: { amountUSD: number; method: PaymentMethodType; referenceNumber: string; receiptUrl?: string; details?: Record<string, string> }) => Promise<Transaction>;
+  requestWithdrawal: (data: { amountUSD: number; method: PaymentMethodType; destinationAddressOrBank: string; securityPin: string; accountHolder: string }) => Promise<Transaction>;
   approveTransaction: (id: string, notes?: string) => void;
   rejectTransaction: (id: string, notes?: string) => void;
   updateExchangeRates: (newConfig: Partial<ExchangeConfig>) => void;
-  // Tournament Methods
-  createTournamentRoom: (config: {
-    name: string;
-    type: 'public' | 'private';
-    entryFeeUSD: number;
-    maxPlayers: number;
-    isSpecialEvent?: boolean;
-  }) => TournamentRoom;
-  adminCreateRoom: (config: {
-    name: string;
-    type: 'public' | 'private';
-    entryFeeUSD: number;
-    maxPlayers: number;
-    isSpecialEvent?: boolean;
-    durationSeconds?: number;
-    customPotUSD?: number;
-    eventDescription?: string;
-    sponsorName?: string;
-    minPlayersToStart?: number;
-    arenaRadius?: number;
-    broadcastNotification?: boolean;
-  }) => TournamentRoom;
+  createTournamentRoom: (config: { name: string; type: 'public' | 'private'; entryFeeUSD: number; maxPlayers: number; isSpecialEvent?: boolean }) => TournamentRoom;
+  adminCreateRoom: (config: { name: string; type: 'public' | 'private'; entryFeeUSD: number; maxPlayers: number; isSpecialEvent?: boolean; durationSeconds?: number; customPotUSD?: number; eventDescription?: string; sponsorName?: string; minPlayersToStart?: number; arenaRadius?: number; broadcastNotification?: boolean }) => TournamentRoom;
   adminUpdateRoom: (roomId: string, updates: Partial<TournamentRoom>) => void;
   adminDeleteRoom: (roomId: string) => void;
   joinRoom: (roomId: string, code?: string) => boolean;
@@ -115,15 +81,8 @@ interface AppContextType {
   sendPushBroadcast: (title: string, message: string, target?: 'all' | string) => void;
   markNotificationAsRead: (id: string) => void;
   markAllNotificationsRead: () => void;
-  finishMatchPot: (
-    roomId: string,
-    winnerId: string,
-    winnerName: string,
-    matchStats?: { score: number; kills: number },
-    token?: MatchSessionToken | null
-  ) => Promise<{ success: boolean; reason?: string }>;
+  finishMatchPot: (roomId: string, winnerId: string, winnerName: string, matchStats?: { score: number; kills: number }, token?: MatchSessionToken | null) => Promise<{ success: boolean; reason?: string }>;
 }
-
 const DEFAULT_EXCHANGE_CONFIG: ExchangeConfig = {
   vesUsdRate: 68.50,
   usdtRate: 1.00,
@@ -274,154 +233,6 @@ const DEFAULT_COSMETICS: CosmeticItem[] = [
   },
 ];
 
-// Clean Real Tournament Rooms
-const INITIAL_TOURNAMENT_ROOMS: TournamentRoom[] = [
-  {
-    id: 'room-1',
-    name: '⚡ Torneo Flash Micro ($0.20)',
-    code: 'FLASH-20',
-    type: 'public',
-    entryFeeUSD: 0.20,
-    potUSD: 0.00,
-    winnerRewardUSD: 0.00,
-    devFeeUSD: 0.00,
-    maxPlayers: 15,
-    minPlayersToStart: 4,
-    currentPlayers: 0,
-    status: 'waiting',
-    durationSeconds: 180,
-    timeRemainingSeconds: 180,
-    nextLaunchSeconds: 300,
-    shrinkTriggerSeconds: 60,
-    arenaRadius: 1600,
-    currentArenaRadius: 1600,
-    hostId: 'system',
-    hostName: 'Arena Matchmaker',
-    registeredPlayers: [],
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'room-2',
-    name: '🌟 Copa Neón Caracas ($0.50)',
-    code: 'CCS-50',
-    type: 'public',
-    entryFeeUSD: 0.50,
-    potUSD: 0.00,
-    winnerRewardUSD: 0.00,
-    devFeeUSD: 0.00,
-    maxPlayers: 15,
-    minPlayersToStart: 4,
-    currentPlayers: 0,
-    status: 'waiting',
-    durationSeconds: 180,
-    timeRemainingSeconds: 180,
-    nextLaunchSeconds: 300,
-    shrinkTriggerSeconds: 60,
-    arenaRadius: 1700,
-    currentArenaRadius: 1700,
-    hostId: 'system',
-    hostName: 'Arena Matchmaker',
-    registeredPlayers: [],
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'room-3',
-    name: '🚀 Duelo Gladiadores ($1.00)',
-    code: 'DUEL-100',
-    type: 'public',
-    entryFeeUSD: 1.00,
-    potUSD: 0.00,
-    winnerRewardUSD: 0.00,
-    devFeeUSD: 0.00,
-    maxPlayers: 15,
-    minPlayersToStart: 4,
-    currentPlayers: 0,
-    status: 'waiting',
-    durationSeconds: 180,
-    timeRemainingSeconds: 180,
-    nextLaunchSeconds: 300,
-    shrinkTriggerSeconds: 60,
-    arenaRadius: 1800,
-    currentArenaRadius: 1800,
-    hostId: 'system',
-    hostName: 'Arena Matchmaker',
-    registeredPlayers: [],
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'room-4',
-    name: '💎 Torneo Pro Cyber ($2.00)',
-    code: 'PRO-200',
-    type: 'public',
-    entryFeeUSD: 2.00,
-    potUSD: 0.00,
-    winnerRewardUSD: 0.00,
-    devFeeUSD: 0.00,
-    maxPlayers: 15,
-    minPlayersToStart: 4,
-    currentPlayers: 0,
-    status: 'waiting',
-    durationSeconds: 180,
-    timeRemainingSeconds: 180,
-    nextLaunchSeconds: 300,
-    shrinkTriggerSeconds: 60,
-    arenaRadius: 1800,
-    currentArenaRadius: 1800,
-    hostId: 'system',
-    hostName: 'Arena Matchmaker',
-    registeredPlayers: [],
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'room-5',
-    name: '🔥 Master Clash Venezuela ($5.00)',
-    code: 'MASTER-500',
-    type: 'public',
-    entryFeeUSD: 5.00,
-    potUSD: 0.00,
-    winnerRewardUSD: 0.00,
-    devFeeUSD: 0.00,
-    maxPlayers: 15,
-    minPlayersToStart: 4,
-    currentPlayers: 0,
-    status: 'waiting',
-    durationSeconds: 180,
-    timeRemainingSeconds: 180,
-    nextLaunchSeconds: 300,
-    shrinkTriggerSeconds: 60,
-    arenaRadius: 1900,
-    currentArenaRadius: 1900,
-    hostId: 'system',
-    hostName: 'Arena Matchmaker',
-    registeredPlayers: [],
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'room-6',
-    name: '🎮 Sala de Práctica Libre ($0.00)',
-    code: 'FREE-PRACTICE',
-    type: 'public',
-    entryFeeUSD: 0.00,
-    potUSD: 0.00,
-    winnerRewardUSD: 0.00,
-    devFeeUSD: 0.00,
-    maxPlayers: 15,
-    minPlayersToStart: 1,
-    currentPlayers: 0,
-    status: 'waiting',
-    durationSeconds: 180,
-    timeRemainingSeconds: 180,
-    nextLaunchSeconds: 120,
-    shrinkTriggerSeconds: 60,
-    arenaRadius: 1500,
-    currentArenaRadius: 1500,
-    hostId: 'system',
-    hostName: 'Entrenamiento Gratuito',
-    registeredPlayers: [],
-    createdAt: new Date().toISOString(),
-  },
-];
-
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -491,10 +302,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [skins] = useState<CosmeticItem[]>(DEFAULT_COSMETICS);
-  const [rooms, setRooms] = useState<TournamentRoom[]>(() => {
-    const saved = localStorage.getItem('neon_rooms');
-    return saved ? JSON.parse(saved) : INITIAL_TOURNAMENT_ROOMS;
-  });
+  const [rooms, setRooms] = useState<TournamentRoom[]>([]);
   const [activeRoom, setActiveRoom] = useState<TournamentRoom | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [platformRevenueUSD, setPlatformRevenueUSD] = useState<number>(() => {
@@ -567,7 +375,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const unsubscribeRooms = subscribeToTournamentRooms(
       (remoteRooms) => {
-        if (remoteRooms.length > 0) setRooms(remoteRooms);
+        setRooms(remoteRooms);
       },
       (error) => console.warn('Firestore rooms sync:', error.message)
     );
@@ -607,10 +415,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem('neon_notifs', JSON.stringify(notifications));
   }, [notifications]);
-
-  useEffect(() => {
-    localStorage.setItem('neon_rooms', JSON.stringify(rooms));
-  }, [rooms]);
 
   useEffect(() => {
     localStorage.setItem('neon_dev_revenue', platformRevenueUSD.toString());
@@ -1082,6 +886,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     isSpecialEvent?: boolean;
   }): TournamentRoom => {
     if (!currentUser) throw new Error('Debes iniciar sesión para crear salas');
+    if (config.entryFeeUSD <= 0) throw new Error('Las salas creadas por jugadores deben tener una entrada pagada');
     if (currentUser.balanceUSD < config.entryFeeUSD) {
       throw new Error('Saldo insuficiente para pagar la entrada al torneo');
     }

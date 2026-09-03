@@ -202,7 +202,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
           <div className="space-y-2 max-w-xl">
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-cyan-950/80 border border-cyan-400/50 text-cyan-300 text-xs font-orbitron font-bold shadow-[0_0_12px_rgba(6,182,212,0.3)]">
               <Radio className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
-              <span>SALA DE ESPERA • LANZAMIENTOS CADA 5 MINUTOS (MÍNIMO 4 JUGADORES)</span>
+              <span className="break-words">SALA DE ESPERA • LANZAMIENTOS CADA 5 MINUTOS (MÍNIMO 4 JUGADORES)</span>
             </div>
             <h1 className="text-2xl sm:text-4xl font-orbitron font-black text-white leading-tight">
               Domina la Arena Neón y Conquista el <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-amber-300 to-orange-400">80% del Pote</span>
@@ -231,6 +231,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
               <HelpCircle className="w-4 h-4 text-amber-400" />
               <span>GUÍA TUTORIAL</span>
             </button>
+
           </div>
         </div>
 
@@ -701,7 +702,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                     max="5.00"
                     step="0.10"
                     value={entryFeeUSD}
-                    onChange={(e) => setEntryFeeUSD(parseFloat(e.target.value) || 0.20)}
+                    onChange={(e) => setEntryFeeUSD(Math.max(0.20, parseFloat(e.target.value) || 0.20))}
                     className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white font-orbitron text-xs focus:border-cyan-400 focus:outline-none"
                     required
                   />

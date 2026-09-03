@@ -83,7 +83,7 @@ export const LogoutConfirmModal: React.FC<LogoutConfirmModalProps> = ({
             {hasActiveSession ? '¡TORNEO EN CURSO!' : '¿Cerrar Sesión?'}
           </h3>
           <p className="text-xs text-slate-400 font-mono-tech mt-1">
-            Confirmación de Seguridad Neón .IO
+            Confirmación de Seguridad WinOrbs
           </p>
         </div>
 
@@ -121,7 +121,7 @@ export const LogoutConfirmModal: React.FC<LogoutConfirmModalProps> = ({
             <p>
               Estás dentro de una sala de batalla activa:{' '}
               <strong className="text-white">
-                {activeRoom?.name || 'Torneo Neón .IO'}
+                {activeRoom?.name || 'Torneo WinOrbs'}
               </strong>
               .
             </p>

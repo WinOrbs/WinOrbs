@@ -46,7 +46,8 @@ service cloud.firestore {
     // Tournament Rooms Collection
     match /rooms/{roomId} {
       allow read: if true;
-      allow create, update: if isAuthenticated();
+      allow create, update: if isAuthenticated() &&
+        (isAdmin() || request.resource.data.entryFeeUSD > 0);
       allow delete: if isAdmin();
     }
 

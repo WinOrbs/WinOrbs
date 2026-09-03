@@ -128,7 +128,7 @@ export const PlayerNavbar: React.FC<PlayerNavbarProps> = ({
             <div>
               <div className="flex items-center gap-1">
                 <span className="font-orbitron font-extrabold text-xs sm:text-base tracking-wider text-white">
-                  NEON<span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-fuchsia-400">CLASH</span>
+                  Win<span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-fuchsia-400">Orbs</span>
                 </span>
                 <span className="hidden sm:inline-block text-[10px] font-mono-tech px-1.5 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-400/40 text-cyan-300 shadow-[0_0_8px_rgba(6,182,212,0.3)]">
                   v2.5
