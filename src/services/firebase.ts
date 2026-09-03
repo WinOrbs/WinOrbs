@@ -531,19 +531,44 @@ export function subscribeToTournamentRooms(
   onRooms: (rooms: TournamentRoom[]) => void,
   onError?: (error: Error) => void
 ): () => void {
-  if (!db) return () => undefined;
+  if (!db) {
+    onError?.(new Error('Firebase Firestore no está configurado.'));
+    return () => undefined;
+  }
 
   return onSnapshot(
-    query(collection(db, 'rooms'), orderBy('createdAt', 'desc'), limit(100)),
-    (snapshot) => onRooms(snapshot.docs.map((room) => room.data() as TournamentRoom)),
+    query(collection(db, 'rooms'), limit(100)),
+    (snapshot) => {
+      const rooms = snapshot.docs.map((room) => room.data() as TournamentRoom);
+      rooms.sort((first, second) =>
+        new Date(second.createdAt || 0).getTime() - new Date(first.createdAt || 0).getTime()
+      );
+      onRooms(rooms);
+    },
     (error) => onError?.(error)
   );
 }
 
+function removeUndefinedFields<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map(removeUndefinedFields) as T;
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([, fieldValue]) => fieldValue !== undefined)
+        .map(([key, fieldValue]) => [key, removeUndefinedFields(fieldValue)])
+    ) as T;
+  }
+
+  return value;
+}
+
 export async function saveTournamentRoom(room: TournamentRoom): Promise<void> {
-  if (!db) return;
+  if (!db) throw new Error('Firebase Firestore no está configurado.');
   await setDoc(doc(db, 'rooms', room.id), {
-    ...room,
+    ...removeUndefinedFields(room),
     syncedAt: serverTimestamp(),
   }, { merge: true });
 }

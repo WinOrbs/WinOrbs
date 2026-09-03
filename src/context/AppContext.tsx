@@ -950,7 +950,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setRooms((prev) => [newRoom, ...prev]);
-    saveTournamentRoom(newRoom).catch((error) => console.warn('Room sync:', error));
+    saveTournamentRoom(newRoom).catch((error) => {
+      setRooms((prev) => prev.filter((room) => room.id !== newRoom.id));
+      alert('No se pudo guardar la sala en Firestore. Revisa la autenticación y las reglas de la base de datos.');
+      console.warn('Room sync:', error);
+    });
     setActiveRoom(newRoom);
     soundFx.playBoost();
     return newRoom;
@@ -1012,7 +1016,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setRooms((prev) => [newRoom, ...prev]);
-    saveTournamentRoom(newRoom).catch((error) => console.warn('Room sync:', error));
+    saveTournamentRoom(newRoom).catch((error) => {
+      setRooms((prev) => prev.filter((room) => room.id !== newRoom.id));
+      alert('No se pudo guardar la sala en Firestore. Revisa la autenticación y las reglas de la base de datos.');
+      console.warn('Room sync:', error);
+    });
 
     if (isSpecial || config.broadcastNotification) {
       const broadcastNotif: AppNotification = {
