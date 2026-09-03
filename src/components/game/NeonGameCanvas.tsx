@@ -9,7 +9,16 @@ import {
 } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { soundFx } from '../../services/soundSynth';
-import { generateMatchSessionToken } from '../../services/firebase';
+import {
+  generateMatchSessionToken,
+  publishMatchPlayer,
+  removeMatchPlayer,
+  RealtimeMatchPlayer,
+  RealtimeMatchWorld,
+  publishMatchWorld,
+  subscribeToMatchPlayers,
+  subscribeToMatchWorld,
+} from '../../services/firebase';
 import { GameControlsMobile } from './GameControlsMobile';
 import {
   Trophy,
@@ -49,6 +58,17 @@ const BOT_NAMES = [
   'Thierry', 'Luna', 'Maximiliano', 'Ariana', 'Leandro', 'Isis', 'Dante', 'Alondra', 
   'Bastian', 'Noa',
 ];
+
+function stableSpawnPosition(id: string, index: number): { x: number; y: number } {
+  let hash = index + 1;
+  for (let characterIndex = 0; characterIndex < id.length; characterIndex++) {
+    hash = ((hash << 5) - hash) + id.charCodeAt(characterIndex);
+    hash |= 0;
+  }
+  const angle = (Math.abs(hash) % 360) * (Math.PI / 180);
+  const distance = 300 + (Math.abs(hash) % 500);
+  return { x: Math.cos(angle) * distance, y: Math.sin(angle) * distance };
+}
 
 export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) => {
   const {
@@ -91,6 +111,11 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
 
   // Entities state refs for high FPS loop
   const playersRef = useRef<GamePlayerEntity[]>([]);
+  const remotePlayersRef = useRef<Map<string, RealtimeMatchPlayer>>(new Map());
+  const remoteWorldRef = useRef<RealtimeMatchWorld | null>(null);
+  const isWorldHost = currentUser?.id === (room.hostId === 'admin_master'
+    ? room.registeredPlayers?.[0]?.id
+    : room.hostId);
   const orbsRef = useRef<OrbEntity[]>([]);
   const particlesRef = useRef<ParticleEntity[]>([]);
   const cameraRef = useRef<{ x: number; y: number; zoom: number }>({ x: 0, y: 0, zoom: 1 });
@@ -159,6 +184,36 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
     };
     initialPlayers.push(userPlayer);
 
+    const registeredPlayers = (room.registeredPlayers || [])
+      .filter((player) => player.id !== currentUser?.id)
+      .slice(0, Math.max(0, room.maxPlayers - 1));
+    registeredPlayers.forEach((registeredPlayer, index) => {
+      const position = stableSpawnPosition(registeredPlayer.id, index);
+      initialPlayers.push({
+        id: registeredPlayer.id,
+        name: registeredPlayer.name,
+        x: position.x,
+        y: position.y,
+        vx: 0,
+        vy: 0,
+        radius: 30,
+        mass: 50,
+        score: 50,
+        color: '#38bdf8',
+        glowColor: 'rgba(56, 189, 248, 0.9)',
+        trailColor: '#38bdf8',
+        isAlive: true,
+        kills: 0,
+        isUser: false,
+        isBot: false,
+        isRemote: true,
+        speed: 0,
+        boostActive: false,
+        angle: 0,
+        trailHistory: [],
+      });
+    });
+
     // Bot Opponents matching exact room current players count
     const botCount = room?.botCount ?? (room?.entryFeeUSD === 0 ? 3 : 0);
     const botSpeedMultiplier = room?.botDifficulty === 'hard' ? 1.12 : 1;
@@ -217,6 +272,96 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
       matchSessionTokenRef.current = generateMatchSessionToken(room, currentUser);
     }
   }, [currentUser, room]);
+
+  useEffect(() => {
+    if (!currentUser || !room?.id) return;
+
+    const unsubscribe = subscribeToMatchPlayers(
+      room.id,
+      (players) => {
+        remotePlayersRef.current = new Map(
+          players.filter((player) => player.id !== currentUser.id).map((player) => [player.id, player])
+        );
+      },
+      (error) => console.warn('Realtime match sync:', error.message)
+    );
+
+    const publish = () => {
+      const player = playersRef.current.find((candidate) => candidate.isUser);
+      if (!player) return;
+      void publishMatchPlayer(room.id, {
+        id: currentUser.id,
+        name: player.name,
+        x: player.x,
+        y: player.y,
+        score: player.score,
+        mass: player.mass,
+        radius: player.radius,
+        angle: player.angle,
+        kills: player.kills,
+        isAlive: player.isAlive,
+        boostActive: player.boostActive,
+        color: player.color,
+        glowColor: player.glowColor,
+        trailColor: player.trailColor || player.color,
+        updatedAt: Date.now(),
+      }).catch((error: unknown) => console.warn('Realtime match publish:', error));
+    };
+
+    const publishTimer = window.setInterval(publish, 100);
+    publish();
+    return () => {
+      window.clearInterval(publishTimer);
+      void removeMatchPlayer(room.id, currentUser.id).catch((error: unknown) =>
+        console.warn('Realtime match cleanup:', error)
+      );
+      unsubscribe();
+    };
+  }, [currentUser, room?.id]);
+
+  useEffect(() => {
+    if (!isWorldHost || !room?.id) return;
+
+    const publishWorld = () => {
+      const players = playersRef.current.map((player) => ({
+        id: player.id,
+        name: player.name,
+        x: player.x,
+        y: player.y,
+        score: player.score,
+        mass: player.mass,
+        radius: player.radius,
+        angle: player.angle,
+        kills: player.kills,
+        isAlive: player.isAlive,
+        boostActive: player.boostActive,
+        color: player.color,
+        glowColor: player.glowColor,
+        trailColor: player.trailColor || player.color,
+        updatedAt: Date.now(),
+      }));
+      const orbs = orbsRef.current.map((orb) => ({ id: orb.id, x: orb.x, y: orb.y }));
+      void publishMatchWorld(room.id, { players, orbs, updatedAt: Date.now() })
+        .catch((error: unknown) => console.warn('Realtime world publish:', error));
+    };
+
+    const publishTimer = window.setInterval(publishWorld, 250);
+    publishWorld();
+    return () => window.clearInterval(publishTimer);
+  }, [isWorldHost, room?.id]);
+
+  useEffect(() => {
+    if (!currentUser || !room?.id) return;
+    const unsubscribe = subscribeToMatchWorld(room.id, (world) => {
+      if (world.updatedAt > (remoteWorldRef.current?.updatedAt || 0)) {
+        remoteWorldRef.current = world;
+        world.players.forEach((player) => {
+          if (player.id !== currentUser.id) remotePlayersRef.current.set(player.id, player);
+        });
+      }
+    }, (error) => console.warn('Realtime world sync:', error.message));
+    return unsubscribe;
+  }, [currentUser, room?.id]);
 
   // Finish match callback
   const handleMatchFinished = useCallback(() => {
@@ -512,8 +657,72 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
         }
       });
 
+      remotePlayersRef.current.forEach((remote) => {
+        let player = playersRef.current.find((candidate) => candidate.id === remote.id);
+        if (!player) {
+          player = {
+            id: remote.id,
+            name: remote.name,
+            x: remote.x,
+            y: remote.y,
+            vx: 0,
+            vy: 0,
+            radius: remote.radius,
+            mass: remote.mass,
+            score: remote.score,
+            color: remote.color,
+            glowColor: remote.glowColor,
+            trailColor: remote.trailColor,
+            isAlive: remote.isAlive,
+            kills: remote.kills,
+            isUser: false,
+            isBot: false,
+            isRemote: true,
+            speed: 0,
+            boostActive: remote.boostActive,
+            angle: remote.angle,
+            trailHistory: [],
+          };
+          playersRef.current.push(player);
+        }
+        player.x += (remote.x - player.x) * 0.45;
+        player.y += (remote.y - player.y) * 0.45;
+        player.score = remote.score;
+        player.mass = remote.mass;
+        player.radius = remote.radius;
+        player.angle = remote.angle;
+        player.kills = remote.kills;
+        player.isAlive = remote.isAlive;
+        player.boostActive = remote.boostActive;
+        if (player.trailHistory.length > 20) player.trailHistory.shift();
+        player.trailHistory.push({ x: player.x, y: player.y, alpha: 0.7 });
+      });
+
+      const world = remoteWorldRef.current;
+      if (world) {
+        const ownWorldPlayer = world.players.find((player) => player.id === currentUser?.id);
+        const localPlayer = playersRef.current.find((player) => player.isUser);
+        if (ownWorldPlayer && localPlayer) {
+          localPlayer.score = ownWorldPlayer.score;
+          localPlayer.mass = ownWorldPlayer.mass;
+          localPlayer.radius = ownWorldPlayer.radius;
+          localPlayer.kills = ownWorldPlayer.kills;
+          localPlayer.isAlive = ownWorldPlayer.isAlive;
+        }
+        const worldOrbs = new Map(world.orbs.map((orb) => [orb.id, orb]));
+        orbsRef.current.forEach((orb) => {
+          const sharedOrb = worldOrbs.get(orb.id);
+          if (sharedOrb) {
+            orb.x += (sharedOrb.x - orb.x) * 0.7;
+            orb.y += (sharedOrb.y - orb.y) * 0.7;
+          }
+        });
+      }
+
       // 4. Orb Collisions & Replenishment
-      const activePlayers = playersRef.current.filter((p) => p.isAlive);
+      const activePlayers = isWorldHost
+        ? playersRef.current.filter((p) => p.isAlive)
+        : [];
       orbsRef.current.forEach((orb) => {
         activePlayers.forEach((player) => {
           const dist = Math.hypot(orb.x - player.x, orb.y - player.y);

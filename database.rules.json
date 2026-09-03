@@ -1,0 +1,20 @@
+{
+  "rules": {
+    "matches": {
+      "$roomId": {
+        "players": {
+          "$playerId": {
+            ".read": "auth != null",
+            ".write": "auth != null && auth.uid === $playerId",
+            ".validate": "newData.hasChildren(['id', 'name', 'x', 'y', 'score', 'mass', 'radius', 'angle', 'kills', 'isAlive', 'boostActive', 'updatedAt'])"
+          }
+        },
+        "world": {
+          ".read": "auth != null",
+          ".write": "auth != null",
+          ".validate": "newData.hasChildren(['orbs', 'players', 'updatedAt'])"
+        }
+      }
+    }
+  }
+}

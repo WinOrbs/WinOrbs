@@ -187,6 +187,7 @@ export interface GamePlayerEntity {
   kills: number;
   isUser: boolean;
   isBot: boolean;
+  isRemote?: boolean;
   speed: number;
   boostActive: boolean;
   angle: number;

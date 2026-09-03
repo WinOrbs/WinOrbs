@@ -28,6 +28,15 @@ import {
 } from 'firebase/firestore';
 import { getAnalytics, Analytics } from 'firebase/analytics';
 import {
+  getDatabase,
+  ref as databaseRef,
+  set as setDatabaseValue,
+  onValue,
+  onDisconnect,
+  remove as removeDatabaseValue,
+  Database,
+} from 'firebase/database';
+import {
   UserProfile,
   Transaction,
   LeaderboardEntry,
@@ -51,12 +60,14 @@ const firebaseConfig = {
   messagingSenderId: metaEnv?.VITE_FIREBASE_MESSAGING_SENDER_ID || '372071705684',
   appId: metaEnv?.VITE_FIREBASE_APP_ID || '1:372071705684:web:a831e91ae641a993b151c1',
   measurementId: metaEnv?.VITE_FIREBASE_MEASUREMENT_ID || 'G-C3L75ZD0QZ',
+  databaseURL: metaEnv?.VITE_FIREBASE_DATABASE_URL || 'https://winorbs-1f055-default-rtdb.firebaseio.com',
 };
 
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
 let db: Firestore | null = null;
 let analytics: Analytics | null = null;
+let realtimeDatabase: Database | null = null;
 
 const hasValidApiKey = !!(firebaseConfig.apiKey && firebaseConfig.apiKey.startsWith('AIzaSy') && firebaseConfig.apiKey.length > 25);
 
@@ -69,6 +80,11 @@ if (hasValidApiKey) {
     }
     auth = getAuth(app);
     db = getFirestore(app);
+    try {
+      realtimeDatabase = getDatabase(app);
+    } catch {
+      realtimeDatabase = null;
+    }
     if (typeof window !== 'undefined') {
       try {
         analytics = getAnalytics(app);
@@ -84,7 +100,7 @@ if (hasValidApiKey) {
 }
 
 export const isLocalAuthFallback = !hasValidApiKey;
-export { app, auth, db, analytics };
+export { app, auth, db, analytics, realtimeDatabase };
 
 // ==========================================
 // LOCAL SECURE AUTH ENGINE (SHA-256 CRYPTO)
@@ -576,6 +592,87 @@ export async function saveTournamentRoom(room: TournamentRoom): Promise<void> {
 export async function deleteTournamentRoom(roomId: string): Promise<void> {
   if (!db) return;
   await deleteDoc(doc(db, 'rooms', roomId));
+}
+
+export interface RealtimeMatchPlayer {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  score: number;
+  mass: number;
+  radius: number;
+  angle: number;
+  kills: number;
+  isAlive: boolean;
+  boostActive: boolean;
+  color: string;
+  glowColor: string;
+  trailColor: string;
+  updatedAt: number;
+}
+
+export function subscribeToMatchPlayers(
+  roomId: string,
+  onPlayers: (players: RealtimeMatchPlayer[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  if (!realtimeDatabase) {
+    onError?.(new Error('Firebase Realtime Database no está configurado.'));
+    return () => undefined;
+  }
+
+  return onValue(
+    databaseRef(realtimeDatabase, `matches/${roomId}/players`),
+    (snapshot) => {
+      const value = snapshot.val() as Record<string, RealtimeMatchPlayer> | null;
+      onPlayers(value ? Object.values(value) : []);
+    },
+    (error) => onError?.(error)
+  );
+}
+
+export async function publishMatchPlayer(roomId: string, player: RealtimeMatchPlayer): Promise<void> {
+  if (!realtimeDatabase) throw new Error('Firebase Realtime Database no está configurado.');
+  const playerRef = databaseRef(realtimeDatabase, `matches/${roomId}/players/${player.id}`);
+  await setDatabaseValue(playerRef, player);
+  await onDisconnect(playerRef).remove();
+}
+
+export async function removeMatchPlayer(roomId: string, playerId: string): Promise<void> {
+  if (!realtimeDatabase) return;
+  await removeDatabaseValue(databaseRef(realtimeDatabase, `matches/${roomId}/players/${playerId}`));
+}
+
+export interface RealtimeMatchWorld {
+  orbs: Array<{ id: number; x: number; y: number }>;
+  players: RealtimeMatchPlayer[];
+  updatedAt: number;
+}
+
+export function subscribeToMatchWorld(
+  roomId: string,
+  onWorld: (world: RealtimeMatchWorld) => void,
+  onError?: (error: Error) => void
+): () => void {
+  if (!realtimeDatabase) {
+    onError?.(new Error('Firebase Realtime Database no está configurado.'));
+    return () => undefined;
+  }
+
+  return onValue(
+    databaseRef(realtimeDatabase, `matches/${roomId}/world`),
+    (snapshot) => {
+      const world = snapshot.val() as RealtimeMatchWorld | null;
+      if (world) onWorld(world);
+    },
+    (error) => onError?.(error)
+  );
+}
+
+export async function publishMatchWorld(roomId: string, world: RealtimeMatchWorld): Promise<void> {
+  if (!realtimeDatabase) throw new Error('Firebase Realtime Database no está configurado.');
+  await setDatabaseValue(databaseRef(realtimeDatabase, `matches/${roomId}/world`), world);
 }
 
 // ==========================================

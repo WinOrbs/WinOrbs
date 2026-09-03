@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { TournamentRoom } from '../../types';
 import {
@@ -47,6 +47,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   const [waitingRoomModal, setWaitingRoomModal] = useState<TournamentRoom | null>(null);
   const [privateCodeInput, setPrivateCodeInput] = useState<string>('');
   const [selectedPrivateRoomId, setSelectedPrivateRoomId] = useState<string | null>(null);
+  const autoStartedRoomsRef = useRef<Set<string>>(new Set());
 
   // Create Room form state (restricted $0.20 to $5.00 for standard games)
   const [roomName, setRoomName] = useState<string>('⚡ Torneo Relámpago Neón');
@@ -124,6 +125,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
 
     const success = joinRoom(room.id);
     if (success) {
+      sessionStorage.removeItem(`winorbs_abandoned_room_${room.id}`);
       const updated = rooms.find((r) => r.id === room.id) || room;
       setWaitingRoomModal(updated);
     }
@@ -135,6 +137,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
 
     const success = joinRoom(selectedPrivateRoomId, privateCodeInput.trim().toUpperCase());
     if (success) {
+      sessionStorage.removeItem(`winorbs_abandoned_room_${selectedPrivateRoomId}`);
       const room = rooms.find((r) => r.id === selectedPrivateRoomId);
       if (room) setWaitingRoomModal(room);
       setSelectedPrivateRoomId(null);
@@ -163,8 +166,12 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
       room.registeredPlayers?.some((player) => player.id === currentUser.id)
     );
     if (activePlayerRoom) {
-      setWaitingRoomModal(null);
-      onStartGame(activePlayerRoom);
+      const wasAbandoned = sessionStorage.getItem(`winorbs_abandoned_room_${activePlayerRoom.id}`) === 'true';
+      if (!wasAbandoned && !autoStartedRoomsRef.current.has(activePlayerRoom.id)) {
+        autoStartedRoomsRef.current.add(activePlayerRoom.id);
+        setWaitingRoomModal(null);
+        onStartGame(activePlayerRoom);
+      }
     }
   }, [currentUser, onStartGame, rooms]);
 

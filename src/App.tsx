@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { PlayerNavbar } from './components/player/PlayerNavbar';
 import { LobbyView } from './components/player/LobbyView';
@@ -48,13 +48,16 @@ const MainAppContent: React.FC = () => {
     return <AdminDashboard />;
   }
 
-  const handleStartGame = (room: TournamentRoom) => {
+  const handleStartGame = useCallback((room: TournamentRoom) => {
     const isRegistered = room.registeredPlayers?.some((player) => player.id === currentUser?.id);
     if (!isRegistered) joinRoom(room.id);
     setCurrentView('game');
-  };
+  }, [currentUser?.id, joinRoom]);
 
   const handleExitGame = () => {
+    if (activeRoom) {
+      sessionStorage.setItem(`winorbs_abandoned_room_${activeRoom.id}`, 'true');
+    }
     leaveRoom();
     setCurrentView('lobby');
   };
