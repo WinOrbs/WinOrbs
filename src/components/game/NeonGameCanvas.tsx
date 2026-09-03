@@ -153,6 +153,19 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
   // Anti-Cheat Match Session Token ref
   const matchSessionTokenRef = useRef<MatchSessionToken | null>(null);
 
+  // Skin image cache: loads the decorated skin bitmaps once and reuses them
+  // every draw frame (avoids decoding the image 60 times per second).
+  const skinImageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
+  const getSkinImage = (url?: string): HTMLImageElement | null => {
+    if (!url) return null;
+    const cached = skinImageCacheRef.current.get(url);
+    if (cached) return cached.complete && cached.naturalWidth > 0 ? cached : null;
+    const img = new Image();
+    img.src = url;
+    skinImageCacheRef.current.set(url, img);
+    return null;
+  };
+
   // Sound alert triggered flag for 60s
   const sirenTriggeredRef = useRef<boolean>(false);
 
@@ -199,6 +212,7 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
       glowColor: equippedSkinItem?.glowColor || legacySkinGlow,
       secondaryColor: equippedSkinItem?.secondaryColor || '#ffffff',
       trailColor: equippedSkinItem?.secondaryColor || (currentUser?.equippedTrail === 'trail_solar_flare' ? '#f97316' : '#06b6d4'),
+      skinImageUrl: equippedSkinItem?.imageUrl || undefined,
       crown: currentUser?.equippedCrown || (currentUser?.vipTier === 'vip_titan' ? 'crown_cyber_emperor' : undefined),
       isAlive: true,
       kills: 0,
@@ -363,6 +377,7 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
         color: player.color,
         glowColor: player.glowColor,
         trailColor: player.trailColor || player.color,
+        skinImageUrl: player.skinImageUrl || undefined,
         updatedAt: Date.now(),
       }).catch((error: unknown) => console.warn('Realtime match publish:', error));
     };
@@ -397,6 +412,7 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
         color: player.color,
         glowColor: player.glowColor,
         trailColor: player.trailColor || player.color,
+        skinImageUrl: player.skinImageUrl || undefined,
         updatedAt: Date.now(),
       }));
       const orbs = orbsRef.current.map((orb) => ({ id: orb.id, x: orb.x, y: orb.y }));
@@ -765,6 +781,7 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
             speed: 0,
             boostActive: remote.boostActive,
             angle: remote.angle,
+            skinImageUrl: remote.skinImageUrl || undefined,
             trailHistory: [],
           };
           playersRef.current.push(player);
@@ -1060,6 +1077,19 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
           ctx.fillStyle = grad;
           ctx.fill();
 
+          // Custom skin image (diseñada fuera del juego): recortada en círculo
+          const skinImg = getSkinImage(p.skinImageUrl);
+          if (skinImg) {
+            ctx.save();
+            ctx.shadowBlur = 0;
+            ctx.beginPath();
+            ctx.arc(0, 0, p.radius, 0, Math.PI * 2);
+            ctx.clip();
+            const imgSize = p.radius * 2;
+            ctx.drawImage(skinImg, -p.radius, -p.radius, imgSize, imgSize);
+            ctx.restore();
+          }
+
           // Neon Border Ring
           ctx.strokeStyle = p.color;
           ctx.lineWidth = p.boostActive ? 5 : 3;
@@ -1081,6 +1111,19 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
           ctx.arc(0, 0, p.radius, 0, Math.PI * 2);
           ctx.fillStyle = p.color;
           ctx.fill();
+
+          // Custom skin image (diseñada fuera del juego): recortada en círculo
+          const flatSkinImg = getSkinImage(p.skinImageUrl);
+          if (flatSkinImg) {
+            ctx.save();
+            ctx.shadowBlur = 0;
+            ctx.beginPath();
+            ctx.arc(0, 0, p.radius, 0, Math.PI * 2);
+            ctx.clip();
+            const imgSize = p.radius * 2;
+            ctx.drawImage(flatSkinImg, -p.radius, -p.radius, imgSize, imgSize);
+            ctx.restore();
+          }
 
           ctx.strokeStyle = '#ffffff';
           ctx.lineWidth = 2.5;

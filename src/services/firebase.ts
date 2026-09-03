@@ -611,6 +611,7 @@ export interface RealtimeMatchPlayer {
   color: string;
   glowColor: string;
   trailColor: string;
+  skinImageUrl?: string;
   updatedAt: number;
 }
 

@@ -34,6 +34,8 @@ export const CosmeticsShop: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<'all' | 'skin' | 'trail' | 'crown'>('all');
   const [previewItem, setPreviewItem] = useState<CosmeticItem>(skins[0] ?? EMPTY_CATALOG_ITEM);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  // Image cargada por la skin personalizada (si definió una imageUrl)
+  const previewImageRef = useRef<HTMLImageElement | null>(null);
 
   // Live 3D-like Neon Avatar Preview Animation
   useEffect(() => {
@@ -44,6 +46,15 @@ export const CosmeticsShop: React.FC = () => {
     if (!ctx) return;
 
     let angle = 0;
+    // Cargar la imagen personalizada de la skin (si la tiene)
+    if (previewItem.imageUrl) {
+      const img = new Image();
+      img.src = previewItem.imageUrl;
+      previewImageRef.current = img;
+    } else {
+      previewImageRef.current = null;
+    }
+
     const renderPreview = () => {
       angle += 0.025;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -63,15 +74,23 @@ export const CosmeticsShop: React.FC = () => {
       ctx.shadowColor = previewItem.glowColor || '#06b6d4';
       ctx.shadowBlur = 30 + Math.sin(angle * 2) * 10;
 
-      // Main Core
+      const previewImg = previewImageRef.current;
+
+      // Main Core (imagen personalizada recortada en círculo, o color/glow clásico)
       ctx.beginPath();
       ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-      const grad = ctx.createRadialGradient(cx - 15, cy - 15, 0, cx, cy, radius);
-      grad.addColorStop(0, '#ffffff');
-      grad.addColorStop(0.35, previewItem.color);
-      grad.addColorStop(1, '#050714');
-      ctx.fillStyle = grad;
-      ctx.fill();
+      if (previewImg && previewImg.complete && previewImg.naturalWidth > 0) {
+        ctx.clip();
+        ctx.shadowBlur = 0;
+        ctx.drawImage(previewImg, cx - radius, cy - radius, radius * 2, radius * 2);
+      } else {
+        const grad = ctx.createRadialGradient(cx - 15, cy - 15, 0, cx, cy, radius);
+        grad.addColorStop(0, '#ffffff');
+        grad.addColorStop(0.35, previewItem.color);
+        grad.addColorStop(1, '#050714');
+        ctx.fillStyle = grad;
+        ctx.fill();
+      }
 
       // Neon Rim
       ctx.strokeStyle = previewItem.color;
@@ -268,13 +287,15 @@ export const CosmeticsShop: React.FC = () => {
 
                   <div className="flex items-center gap-3">
                     <div
-                      className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border border-white/30"
+                      className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border border-white/30 overflow-hidden"
                       style={{
                         backgroundColor: item.color,
                         boxShadow: `0 0 20px ${item.glowColor}`,
                       }}
                     >
-                      {item.type === 'crown' ? (
+                      {item.imageUrl ? (
+                        <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                      ) : item.type === 'crown' ? (
                         <Crown className="w-6 h-6 text-black" />
                       ) : item.type === 'trail' ? (
                         <Zap className="w-6 h-6 text-black" />

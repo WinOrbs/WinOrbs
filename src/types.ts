@@ -86,6 +86,13 @@ export interface CosmeticItem {
   secondaryColor?: string;
   glowColor: string;
   pattern: 'pulse' | 'matrix' | 'fire' | 'lightning' | 'galaxy' | 'cyber';
+  /**
+   * URL opcional de una imagen personalizada (skin diseñada fuera del juego).
+   * Acepta cualquier URL directa (https) o data:URI. Se dibuja recortada en
+   * círculo sobre el personaje en el canvas. Recomendado: PNG cuadrado 512x512
+   * con fondo transparente.
+   */
+  imageUrl?: string;
 }
 
 export interface TournamentPlayerSlot {
@@ -219,6 +226,8 @@ export interface GamePlayerEntity {
   angle: number;
   trailHistory: { x: number; y: number; alpha: number }[];
   respawnTimer?: number;
+  /** URL de la imagen personalizada de la skin (se dibuja recortada en círculo). */
+  skinImageUrl?: string;
 }
 
 export interface OrbEntity {

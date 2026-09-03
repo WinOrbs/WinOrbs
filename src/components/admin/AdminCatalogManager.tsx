@@ -34,6 +34,7 @@ interface CosmeticFormState {
   secondaryColor: string;
   glowColor: string;
   pattern: CosmeticItem['pattern'];
+  imageUrl: string;
 }
 
 const EMPTY_FORM: CosmeticFormState = {
@@ -47,6 +48,7 @@ const EMPTY_FORM: CosmeticFormState = {
   secondaryColor: '#a855f7',
   glowColor: 'rgba(6, 182, 212, 0.9)',
   pattern: 'pulse',
+  imageUrl: '',
 };
 
 function hexToGlow(hex: string, alpha = 0.9): string {
@@ -107,6 +109,7 @@ export const AdminCatalogManager: React.FC<AdminCatalogManagerProps> = ({
       secondaryColor: item.secondaryColor || '#a855f7',
       glowColor: item.glowColor,
       pattern: item.pattern,
+      imageUrl: item.imageUrl || '',
     });
     setEditingId(item.id);
     setShowForm(true);
@@ -134,6 +137,7 @@ export const AdminCatalogManager: React.FC<AdminCatalogManagerProps> = ({
       secondaryColor: form.secondaryColor,
       glowColor: form.glowColor,
       pattern: form.pattern,
+      imageUrl: form.imageUrl.trim() || undefined,
     };
     if (editingId) {
       onUpdateCosmetic(editingId, payload);
@@ -322,6 +326,45 @@ export const AdminCatalogManager: React.FC<AdminCatalogManagerProps> = ({
                   placeholder="rgba(168, 85, 247, 0.9)"
                 />
               </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  🖼️ Imagen del Personaje (opcional)
+                </label>
+                <div className="flex items-center gap-3">
+                  <div
+                    className="w-14 h-14 rounded-2xl border border-white/30 shrink-0 flex items-center justify-center overflow-hidden bg-slate-950"
+                    style={{ boxShadow: form.imageUrl ? `0 0 18px ${form.glowColor}` : 'none' }}
+                  >
+                    {form.imageUrl ? (
+                      <img src={form.imageUrl} alt="Preview" className="w-full h-full object-cover" />
+                    ) : (
+                      <Palette className="w-5 h-5 text-slate-600" />
+                    )}
+                  </div>
+                  <input
+                    type="url"
+                    value={form.imageUrl}
+                    onChange={(e) => setForm((prev) => ({ ...prev, imageUrl: e.target.value }))}
+                    className={inputClass}
+                    placeholder="https://.../tu-skin.png  (URL directa del archivo)"
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-2 mt-2">
+                  <span className="text-[10px] text-slate-500 font-mono-tech leading-relaxed">
+                    Sube tu skin a un hosting público (Imgur, PostImages, Cloudinary, o Firebase Storage) y pega aquí la
+                    URL directa de la imagen. PNG cuadrado 512×512 con fondo transparente es lo ideal. Sin imagen, se usa el color.
+                  </span>
+                  {form.imageUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setForm((prev) => ({ ...prev, imageUrl: '' }))}
+                      className="shrink-0 px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-400/40 text-rose-300 text-[10px] font-orbitron font-bold"
+                    >
+                      QUITAR
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div>
@@ -352,10 +395,12 @@ export const AdminCatalogManager: React.FC<AdminCatalogManagerProps> = ({
               className="flex items-center gap-3 p-3 rounded-2xl bg-[#0c102a]/80 border border-slate-800 hover:border-fuchsia-500/40 transition-all"
             >
               <div
-                className="w-11 h-11 rounded-2xl shrink-0 border border-white/30 flex items-center justify-center text-black"
+                className="w-11 h-11 rounded-2xl shrink-0 border border-white/30 flex items-center justify-center text-black overflow-hidden"
                 style={{ backgroundColor: item.color, boxShadow: `0 0 18px ${item.glowColor}` }}
               >
-                {item.type === 'crown' ? '👑' : item.type === 'trail' ? '✨' : '⬤'}
+                {item.imageUrl ? (
+                  <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                ) : item.type === 'crown' ? '👑' : item.type === 'trail' ? '✨' : '⬤'}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
