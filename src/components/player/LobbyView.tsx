@@ -60,7 +60,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
       (entries) => {
         const now = Date.now();
         const online = Object.values(entries || {}).filter(
-          (entry) => entry?.state && entry.state !== 'offline' && now - (entry.lastSeen || 0) < 90000
+          (entry) => entry?.state && entry.state !== 'offline' && now - (entry.lastSeen || 0) < 120000
         ).length;
         // The locally connected user is always online: floor the counter at 1
         // so a stalled/failed presence sync never shows a false "0 en línea".
@@ -126,7 +126,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     }
   };
 
-  const handleJoinClick = (room?: TournamentRoom) => {
+  const handleJoinClick = async (room?: TournamentRoom) => {
     if (!room) return;
     if (!currentUser) {
       if (onOpenAuth) {
@@ -149,7 +149,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
       return;
     }
 
-    const joined = joinRoom(room.id);
+    const joined = await joinRoom(room.id);
     if (joined) {
       // joinRoom returns the freshly-updated room (with the new player slot),
       // so the waiting-room modal opens with the correct registeredPlayers /
@@ -158,11 +158,11 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     }
   };
 
-  const handleJoinPrivateSubmit = (e: React.FormEvent) => {
+  const handleJoinPrivateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPrivateRoomId) return;
 
-    const joined = joinRoom(selectedPrivateRoomId, privateCodeInput.trim().toUpperCase());
+    const joined = await joinRoom(selectedPrivateRoomId, privateCodeInput.trim().toUpperCase());
     if (joined) {
       setWaitingRoomModal(joined);
       setSelectedPrivateRoomId(null);

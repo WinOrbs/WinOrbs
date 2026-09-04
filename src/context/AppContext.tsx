@@ -38,6 +38,8 @@ import {
   removeMatchPlayer,
   cleanupMatchRoom,
   settleMatchTrusted,
+  joinRoomAtomic,
+  leaveRoomAtomic,
   savePlatformConfig,
   loadPlatformConfig,
 } from '../services/firebase';
@@ -83,7 +85,7 @@ interface AppContextType {
   adminCreateRoom: (config: { name: string; type: 'public' | 'private'; entryFeeUSD: number; maxPlayers: number; isSpecialEvent?: boolean; durationSeconds?: number; customPotUSD?: number; eventDescription?: string; sponsorName?: string; botCount?: number; botDifficulty?: 'normal' | 'hard'; minPlayersToStart?: number; arenaRadius?: number; broadcastNotification?: boolean }) => TournamentRoom;
   adminUpdateRoom: (roomId: string, updates: Partial<TournamentRoom>) => void;
   adminDeleteRoom: (roomId: string) => void;
-  joinRoom: (roomId: string, code?: string) => TournamentRoom | null;
+  joinRoom: (roomId: string, code?: string) => Promise<TournamentRoom | null>;
   startMatchNow: (roomId: string) => void;
   leaveRoom: (roomId?: string) => void;
   buyCosmetic: (item: CosmeticItem) => boolean;
@@ -493,27 +495,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const unsubscribeRooms = subscribeToTournamentRooms(
       (remoteRooms) => {
         setRooms((prevRooms) => {
-          // Merge remote rooms with local state to prevent race conditions:
-          // - If a room exists locally with more registeredPlayers, keep the local version
-          //   (this handles the case where a local join hasn't been synced to Firestore yet)
-          // - Otherwise, use the remote version
-          const merged = remoteRooms.map((remoteRoom) => {
-            const localRoom = prevRooms.find((r) => r.id === remoteRoom.id);
-            // Prefer local if it has more registered players (pending sync)
-            if (localRoom && (localRoom.registeredPlayers || []).length > (remoteRoom.registeredPlayers || []).length) {
-              return localRoom;
-            }
-            return {
-              ...remoteRoom,
-              nextLaunchSeconds: remoteRoom.launchAt
-                ? Math.max(0, Math.ceil((new Date(remoteRoom.launchAt).getTime() - Date.now()) / 1000))
-                : remoteRoom.nextLaunchSeconds,
-            };
-          });
-          // Keep local-only rooms that haven't been synced to Firestore yet
+          // The server doc is now the atomic source of truth for membership
+          // (joins/leaves run inside Firestore transactions). Adopt the remote
+          // list and preserve local-only rooms whose creation is still in
+          // flight (they will appear remotely once saved).
           const remoteIds = new Set(remoteRooms.map((r) => r.id));
           const localOnly = prevRooms.filter((r) => !remoteIds.has(r.id));
-          return [...merged, ...localOnly];
+          return [
+            ...remoteRooms.map((room) => ({
+              ...room,
+              nextLaunchSeconds: room.launchAt
+                ? Math.max(0, Math.ceil((new Date(room.launchAt).getTime() - Date.now()) / 1000))
+                : room.nextLaunchSeconds,
+            })),
+            ...localOnly,
+          ];
         });
       },
       (error) => console.warn('Firestore rooms sync:', error.message)
@@ -1568,146 +1564,77 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     soundFx.playNotificationPing();
   };
 
-  const joinRoom = (roomId: string, code?: string): TournamentRoom | null => {
+  const joinRoom = async (roomId: string, code?: string): Promise<TournamentRoom | null> => {
     if (!currentUser) return null;
 
-    // All validation + state derivation lives inside the functional setRooms
-    // updater so a second call stacked in the same tick (rapid double-click,
-    // concurrent joiner, or React StrictMode double-invoke) cannot deduct the
-    // entry fee twice or register the same player twice.
-    let resultRoom: TournamentRoom | null = null;
-    let rejectedReason: string | null = null;
-    let rejectedFeeUSD = 0;
-    let newBalanceUSD: number | null = null;
+    // Local funds guard for NEW registrations (the authoritative slot is owned
+    // by the atomic transaction below; the charge happens only after it OKs).
+    const localRoom = rooms.find((r) => r.id === roomId);
+    if (
+      localRoom &&
+      !(localRoom.registeredPlayers || []).some((p) => p.id === currentUser.id) &&
+      currentUser.balanceUSD < localRoom.entryFeeUSD
+    ) {
+      alert(`Saldo insuficiente. La entrada requiere $${localRoom.entryFeeUSD.toFixed(2)} USD.`);
+      return null;
+    }
 
-    setRooms((prevRooms) => {
-      const targetRoom = prevRooms.find((r) => r.id === roomId);
-      if (!targetRoom) {
-        rejectedReason = 'not_found';
-        return prevRooms;
-      }
+    const slot = {
+      id: currentUser.id,
+      name: currentUser.name,
+      avatar: currentUser.avatar,
+      ready: true,
+      isUser: true,
+      joinedAt: new Date().toISOString(),
+    };
 
-      if (targetRoom.type === 'private' && code && targetRoom.code !== code) {
-        rejectedReason = 'bad_code';
-        return prevRooms;
-      }
-
-      const existingPlayers = targetRoom.registeredPlayers || [];
-      const isAlreadyRegistered = existingPlayers.some((p) => p.id === currentUser.id);
-
-      // REJOIN (already registered): never charge again. This also allows re-entering
-      // an ongoing match after a refresh without being considered a new player.
-      if (isAlreadyRegistered) {
-        // Guard: never drop a player into a match whose shared clock already
-        // expired (it would end the match the instant they spawn and feel like
-        // being kicked out right after entering).
-        const startedTs = targetRoom.matchStartedAt
-          ? new Date(targetRoom.matchStartedAt).getTime()
-          : 0;
-        const clockExpired =
-          targetRoom.status === 'in_game' &&
-          startedTs > 0 &&
-          Date.now() - startedTs > (targetRoom.durationSeconds || 180) * 1000;
-        if (clockExpired) {
-          rejectedReason = 'clock_expired';
-          return prevRooms;
-        }
-        resultRoom = targetRoom;
-        return prevRooms;
-      }
-
-      // NEW registration: only while the room has not launched (kills the
-      // "join in-progress room -> instant relaunch" loop).
-      if (targetRoom.status !== 'waiting') {
-        rejectedReason = 'not_waiting';
-        return prevRooms;
-      }
-
-      if (targetRoom.currentPlayers >= targetRoom.maxPlayers) {
-        rejectedReason = 'full';
-        return prevRooms;
-      }
-
-      const fee = targetRoom.entryFeeUSD;
-      if (currentUser.balanceUSD < fee) {
-        rejectedReason = 'insufficient_funds';
-        rejectedFeeUSD = fee;
-        return prevRooms;
-      }
-
-      // Register player slot (prepend current user, preserve existing players)
-      const newPlayerSlot = {
-        id: currentUser.id,
-        name: currentUser.name,
-        avatar: currentUser.avatar,
-        ready: true,
-        isUser: true,
-        joinedAt: new Date().toISOString(),
-      };
-      // Deduplicate: filter out any existing entry for this user before prepending
-      const dedupedExisting = existingPlayers.filter((p) => p.id !== currentUser.id);
-      const updatedPlayers = [newPlayerSlot, ...dedupedExisting].slice(0, targetRoom.maxPlayers);
-
-      const activePlayerCount = updatedPlayers.length;
-      const newPot = activePlayerCount * targetRoom.entryFeeUSD;
-      const winnerReward = (newPot * exchangeRates.winnerPotPercent) / 100;
-      const devFee = (newPot * exchangeRates.platformPotPercent) / 100;
-
-      const updatedRoom: TournamentRoom = {
-        ...targetRoom,
-        currentPlayers: activePlayerCount,
-        potUSD: newPot,
-        winnerRewardUSD: winnerReward,
-        devFeeUSD: devFee,
-        registeredPlayers: updatedPlayers,
-      };
-
-      resultRoom = updatedRoom;
-      newBalanceUSD = currentUser.balanceUSD - fee;
-      return prevRooms.map((r) => (r.id === roomId ? updatedRoom : r));
+    // ATOMIC JOIN: the transaction reads the FRESH server document, validates
+    // and appends the player in one indivisible step. Two players joining at
+    // the same time can no longer overwrite each other (the old
+    // read-modify-write via saveTournamentRoom dropped concurrent joiners).
+    const outcome = await joinRoomAtomic(roomId, slot, {
+      code: code?.trim().toUpperCase(),
+      winnerPotPercent: exchangeRates.winnerPotPercent,
+      platformPotPercent: exchangeRates.platformPotPercent,
     });
 
-    if (rejectedReason) {
-      if (rejectedReason === 'bad_code') alert('Código de sala privada incorrecto');
-      else if (rejectedReason === 'clock_expired')
+    if (!outcome.ok || !outcome.room) {
+      const reason = outcome.reason;
+      if (reason === 'bad_code') alert('Código de sala privada incorrecto');
+      else if (reason === 'clock_expired')
         alert('La partida de esta sala ya finalizó. Espera a que se habilite una nueva ronda.');
-      else if (rejectedReason === 'not_waiting')
+      else if (reason === 'not_waiting')
         alert('Esta sala ya está en combate o finalizada. No es posible inscribirse ahora.');
-      else if (rejectedReason === 'full')
+      else if (reason === 'full')
         alert('Esta sala ya alcanzó la capacidad máxima.');
-      else if (rejectedReason === 'insufficient_funds')
-        alert(`Saldo insuficiente. La entrada requiere $${rejectedFeeUSD.toFixed(2)} USD.`);
+      else
+        alert('No se pudo entrar a la sala. Revisa tu conexión e inténtalo de nuevo.');
       return null;
     }
 
-    if (!resultRoom || newBalanceUSD === null) {
-      // Rejoin: no charge, but we still need to set the active room.
-      if (resultRoom) {
-        setActiveRoom(resultRoom);
-        void setUserPresenceState(currentUser.id, 'in_game');
-        return resultRoom;
-      }
-      return null;
-    }
+    const targetRoom = outcome.room;
 
-    // Apply the balance deduction exactly once for a new registration.
-    setCurrentUser((prevUser) =>
-      prevUser
-        ? {
-            ...prevUser,
-            balanceUSD: newBalanceUSD as number,
-            balanceVES: (newBalanceUSD as number) * exchangeRates.vesUsdRate,
-          }
-        : prevUser
+    // Adopt the authoritative server room locally (includes OTHER joiners the
+    // optimistic path could not see).
+    setRooms((prev) =>
+      prev.some((r) => r.id === targetRoom.id)
+        ? prev.map((r) => (r.id === targetRoom.id ? targetRoom : r))
+        : [targetRoom, ...prev]
     );
 
-    const targetRoom = resultRoom;
-    saveUserProfileToFirestore({
-      ...currentUser,
-      balanceUSD: newBalanceUSD,
-      balanceVES: newBalanceUSD * exchangeRates.vesUsdRate,
-    }).catch(console.warn);
-    saveTournamentRoom(targetRoom).catch((error) => console.warn('Room sync:', error));
+    // Charge the entry fee exactly once: only for a NEW registration.
+    if (!outcome.alreadyRegistered) {
+      const fee = targetRoom.entryFeeUSD;
+      const newBalance = currentUser.balanceUSD - fee;
+      const updatedUser: UserProfile = {
+        ...currentUser,
+        balanceUSD: newBalance,
+        balanceVES: newBalance * exchangeRates.vesUsdRate,
+      };
+      setCurrentUser(updatedUser);
+      saveUserProfileToFirestore(updatedUser).catch(console.warn);
+    }
+
     setActiveRoom(targetRoom);
     void setUserPresenceState(currentUser.id, 'in_game');
     soundFx.playBoost();
@@ -1742,65 +1669,96 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const uid = currentUser?.id;
-    if (uid && (target.registeredPlayers || []).some((p) => p.id === uid)) {
-      const remainingPlayers = (target.registeredPlayers || []).filter((p) => p.id !== uid);
 
-      if (remainingPlayers.length === 0 && target.hostId === uid) {
-        // Empty player-created room: remove it entirely to avoid ghost rooms.
-        setRooms((prev) => prev.filter((r) => r.id !== target.id));
-        deleteTournamentRoom(target.id).catch((error) => console.warn('Room delete sync:', error));
-      } else {
-        // Fees are only refundable / pot only recalculated BEFORE the match launches.
-        const shouldRefund = target.status === 'waiting';
-        const newPot = shouldRefund ? remainingPlayers.length * target.entryFeeUSD : target.potUSD;
-        const updatedRoom: TournamentRoom = {
-          ...target,
-          registeredPlayers: remainingPlayers,
-          currentPlayers: shouldRefund ? remainingPlayers.length : target.currentPlayers,
-          potUSD: newPot,
-          winnerRewardUSD: (newPot * exchangeRates.winnerPotPercent) / 100,
-          devFeeUSD: (newPot * exchangeRates.platformPotPercent) / 100,
+    const finishLeave = () => {
+      if (!activeRoom || activeRoom.id === target.id) {
+        setActiveRoom(null);
+      }
+      soundFx.playNotificationPing();
+    };
+
+    if (!uid || !(target.registeredPlayers || []).some((p) => p.id === uid)) {
+      if (uid) {
+        removeMatchPlayer(target.id, uid).catch(() => undefined);
+        void setUserPresenceState(uid, 'online');
+      }
+      finishLeave();
+      return;
+    }
+
+    // Optimistic local update so the UI reacts immediately; the authoritative
+    // state comes from the atomic transaction below.
+    const remainingLocal = (target.registeredPlayers || []).filter((p) => p.id !== uid);
+    if (remainingLocal.length === 0 && target.hostId === uid) {
+      setRooms((prev) => prev.filter((r) => r.id !== target.id));
+    } else {
+      const refundLocal = target.status === 'waiting';
+      const potLocal = refundLocal ? remainingLocal.length * target.entryFeeUSD : target.potUSD;
+      setRooms((prev) =>
+        prev.map((r) =>
+          r.id === target.id
+            ? {
+                ...r,
+                registeredPlayers: remainingLocal,
+                currentPlayers: refundLocal ? remainingLocal.length : r.currentPlayers,
+                potUSD: potLocal,
+              }
+            : r
+        )
+      );
+    }
+
+    void (async () => {
+      // ATOMIC LEAVE: reads the fresh server doc so a concurrent joiner is
+      // never wiped by the leave, and the pot is recalculated server-truth.
+      const outcome = await leaveRoomAtomic(target.id, uid, {
+        winnerPotPercent: exchangeRates.winnerPotPercent,
+        platformPotPercent: exchangeRates.platformPotPercent,
+      });
+
+      if (outcome.ok && outcome.room && !outcome.deleted) {
+        setRooms((prev) =>
+          prev.map((r) => (r.id === target.id && outcome.room ? outcome.room : r))
+        );
+      }
+
+      // Refund only when the player was actually removed BEFORE launch.
+      if (outcome.ok && outcome.removed && target.status === 'waiting' && target.entryFeeUSD > 0 && currentUser) {
+        const refundedUser: UserProfile = {
+          ...currentUser,
+          balanceUSD: currentUser.balanceUSD + target.entryFeeUSD,
+          balanceVES: (currentUser.balanceUSD + target.entryFeeUSD) * exchangeRates.vesUsdRate,
         };
-        setRooms((prev) => prev.map((r) => (r.id === target.id ? updatedRoom : r)));
-        saveTournamentRoom(updatedRoom).catch((error) => console.warn('Room leave sync:', error));
+        setCurrentUser(refundedUser);
 
-        if (shouldRefund && target.entryFeeUSD > 0 && currentUser) {
-          const refundedUser: UserProfile = {
-            ...currentUser,
-            balanceUSD: currentUser.balanceUSD + target.entryFeeUSD,
-            balanceVES: (currentUser.balanceUSD + target.entryFeeUSD) * exchangeRates.vesUsdRate,
-          };
-          setCurrentUser(refundedUser);
+        const refundTx: Transaction = {
+          id: `ref-${Date.now().toString().slice(-6)}`,
+          userId: currentUser.id,
+          userName: currentUser.name,
+          userPhone: currentUser.phone,
+          type: 'refund',
+          amountUSD: target.entryFeeUSD,
+          amountVES: target.entryFeeUSD * exchangeRates.vesUsdRate,
+          method: 'pago_movil',
+          status: 'approved',
+          referenceNumber: `REF-${target.code}-${Date.now().toString().slice(-4)}`,
+          adminNotes: `Reembolso automático de entrada por salir de ${target.name} antes del lanzamiento.`,
+          createdAt: new Date().toISOString(),
+        };
+        setTransactions((prev) => [refundTx, ...prev]);
+        saveTransactionToFirestore(refundTx).catch(console.warn);
 
-          const refundTx: Transaction = {
-            id: `ref-${Date.now().toString().slice(-6)}`,
-            userId: currentUser.id,
-            userName: currentUser.name,
-            userPhone: currentUser.phone,
-            type: 'refund',
-            amountUSD: target.entryFeeUSD,
-            amountVES: target.entryFeeUSD * exchangeRates.vesUsdRate,
-            method: 'pago_movil',
-            status: 'approved',
-            referenceNumber: `REF-${target.code}-${Date.now().toString().slice(-4)}`,
-            adminNotes: `Reembolso automático de entrada por salir de ${target.name} antes del lanzamiento.`,
-            createdAt: new Date().toISOString(),
-          };
-          setTransactions((prev) => [refundTx, ...prev]);
-          saveTransactionToFirestore(refundTx).catch(console.warn);
-
-          const refundNotif: AppNotification = {
-            id: `notif-ref-${Date.now()}`,
-            userId: currentUser.id,
-            title: '↩️ Saliste de la Sala • Entrada Reembolsada',
-            message: `Abandonaste ${target.name} antes del lanzamiento. Se devolvieron $${target.entryFeeUSD.toFixed(2)} USD a tu saldo.`,
-            type: 'security',
-            read: false,
-            timestamp: 'Justo ahora',
-            amountUSD: target.entryFeeUSD,
-          };
-          setNotifications((prev) => [refundNotif, ...prev]);
-        }
+        const refundNotif: AppNotification = {
+          id: `notif-ref-${Date.now()}`,
+          userId: currentUser.id,
+          title: '↩️ Saliste de la Sala • Entrada Reembolsada',
+          message: `Abandonaste ${target.name} antes del lanzamiento. Se devolvieron $${target.entryFeeUSD.toFixed(2)} USD a tu saldo.`,
+          type: 'security',
+          read: false,
+          timestamp: 'Justo ahora',
+          amountUSD: target.entryFeeUSD,
+        };
+        setNotifications((prev) => [refundNotif, ...prev]);
       }
 
       // Always drop the realtime match entity + presence flag.
@@ -1810,12 +1768,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         cleanupMatchRoom(target.id).catch(() => undefined);
       }
       void setUserPresenceState(uid, 'online');
-    }
+    })();
 
-    if (!activeRoom || activeRoom.id === target.id) {
-      setActiveRoom(null);
-    }
-    soundFx.playNotificationPing();
+    finishLeave();
   };
 
   const buyCosmetic = (item: CosmeticItem): boolean => {

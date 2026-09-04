@@ -347,7 +347,26 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
     if (currentUser && room) {
       matchSessionTokenRef.current = generateMatchSessionToken(room, currentUser);
     }
-  }, [currentUser, room, skins]);
+    // Granular deps: re-create entities only when the identity/gameplay inputs
+    // change. Depending on the whole `currentUser` object re-created the match
+    // every time the balance moved (and re-rolled the equipped skin look mid
+    // game). Skin/trail/crown changes ARE included so equipping a new skin
+    // updates the player look without losing the match.
+  }, [
+    currentUser?.id,
+    currentUser?.name,
+    currentUser?.equippedSkin,
+    currentUser?.equippedTrail,
+    currentUser?.equippedCrown,
+    currentUser?.vipTier,
+    room?.id,
+    room?.registeredPlayers,
+    room?.maxPlayers,
+    room?.botCount,
+    room?.botDifficulty,
+    room?.entryFeeUSD,
+    skins,
+  ]);
 
   useEffect(() => {
     if (!currentUser || !room?.id) return;

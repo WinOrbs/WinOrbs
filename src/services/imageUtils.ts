@@ -1,11 +1,15 @@
 /**
  * Utilidades para imágenes de skins.
  *
- * Google Drive no permite enlazar imágenes directamente con su URL de compartir.
- * Esta utilidad extrae el ID del archivo y lo convierte a una URL de THUMBNAIL
- * (drive.google.com/thumbnail?id=..&sz=..), que es el endpoint oficial que
- * devuelve SIEMPRE una imagen real (funciona en <img> sin cookies ni redirecciones).
- * El antiguo "uc?export=view" devuelve una página HTML o 403 en muchos archivos.
+ * Google Drive no permite enlazar imágenes directamente con su URL de compartir
+ * y sus thumbnails TAMPOCO envían cabeceras CORS (Access-Control-Allow-Origin),
+ * lo que impide dibujarlas en <canvas> con crossOrigin='anonymous' y hacer
+ * fetch() de ellas.
+ *
+ * Estrategia: se extrae el ID del archivo, se construye la URL de thumbnail
+ * oficial (drive.google.com/thumbnail?id=..&sz=..) y se enruta por el proxy
+ * wsrv.nl, que reenvía la imagen con ACAO: *. Así funcionan <img>, canvas y
+ * fetch en producción sin tocar la imagen original.
  */
 
 /** Extrae el ID de archivo de Google Drive desde cualquier formato de enlace. */
@@ -44,20 +48,33 @@ function isGoogleDrive(input: string): boolean {
 }
 
 /**
+ * Proxy de imágenes con CORS abierto. Google Drive NO envía cabeceras
+ * Access-Control-Allow-Origin en sus thumbnails, lo que rompe:
+ *  - el dibujado en canvas (img.crossOrigin='anonymous' falla)
+ *  - cualquier fetch() de la imagen
+ * wsrv.nl (images.weserv.nl) reenvía la imagen incluyendo ACAO: *.
+ */
+function proxyUrl(url: string): string {
+  return `https://wsrv.nl/?url=${encodeURIComponent(url.replace(/^https?:\/\//, ''))}&output=webp&q=85`;
+}
+
+/**
  * Normaliza cualquier URL de imagen (incluyendo enlaces compartidos de Google
- * Drive) a una URL directa y cargable por el navegador.
+ * Drive) a una URL directa y cargable por el navegador Y por el canvas.
  */
 export function normalizeImageUrl(input: string | null | undefined): string {
   if (!input) return '';
   const url = input.trim();
   if (!url) return '';
 
-  // Ya es una URL de thumbnail de Drive: conservarla tal cual
-  if (url.includes('thumbnail?id=')) return url;
-
+  // URLs de Drive (thumbnail o enlace compartido): enrutar por proxy CORS
   if (isGoogleDrive(url)) {
     const id = extractGoogleDriveId(url);
-    if (id) return `https://drive.google.com/thumbnail?id=${id}&sz=w1000`;
+    if (id) {
+      const thumbnail = `https://drive.google.com/thumbnail?id=${id}&sz=w1000`;
+      return proxyUrl(thumbnail);
+    }
+    return proxyUrl(url);
   }
 
   // Cualquier otra URL directa (Imgur, Cloudinary, Firebase Storage, etc.)

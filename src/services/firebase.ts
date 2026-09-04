@@ -47,6 +47,7 @@ import {
   MatchTelemetry,
   MatchValidationResult,
   TournamentRoom,
+  TournamentPlayerSlot,
 } from '../types';
 
 // Standard Firebase Configuration (can be configured via environment or fallback credentials)
@@ -601,6 +602,150 @@ export async function saveTournamentRoom(room: TournamentRoom): Promise<void> {
 export async function deleteTournamentRoom(roomId: string): Promise<void> {
   if (!db) return;
   await deleteDoc(doc(db, 'rooms', roomId));
+}
+
+// ==========================================
+// ATOMIC ROOM JOIN / LEAVE (Firestore transactions)
+// ==========================================
+// Joining by read-modify-write overwrites concurrent joiners (two players
+// joining at the same time clobber each other and only one survives). These
+// transactions read the FRESH server doc inside the transaction, so every
+// concurrent joiner is preserved.
+
+export interface RoomJoinOutcome {
+  ok: boolean;
+  reason?: 'not_found' | 'bad_code' | 'clock_expired' | 'not_waiting' | 'full';
+  /** true when the player was ALREADY registered (rejoin: never charge again) */
+  alreadyRegistered?: boolean;
+  room?: TournamentRoom;
+}
+
+export async function joinRoomAtomic(
+  roomId: string,
+  player: TournamentPlayerSlot,
+  opts: {
+    code?: string;
+    winnerPotPercent: number;
+    platformPotPercent: number;
+  }
+): Promise<RoomJoinOutcome> {
+  if (!db) return { ok: false, reason: 'not_found' };
+  const roomRef = doc(db, 'rooms', roomId);
+  try {
+    return await runTransaction(db, async (tx) => {
+      const snap = await tx.get(roomRef);
+      if (!snap.exists()) return { ok: false as const, reason: 'not_found' as const };
+      const room = snap.data() as TournamentRoom;
+
+      if (room.type === 'private' && opts.code && room.code !== opts.code) {
+        return { ok: false as const, reason: 'bad_code' as const };
+      }
+
+      const existing = room.registeredPlayers || [];
+      const already = existing.some((p) => p.id === player.id);
+
+      if (already) {
+        // REJOIN: never charge again. Guard: never drop a player into a match
+        // whose shared clock already expired.
+        const startedTs = room.matchStartedAt
+          ? new Date(room.matchStartedAt).getTime()
+          : 0;
+        const clockExpired =
+          room.status === 'in_game' &&
+          startedTs > 0 &&
+          Date.now() - startedTs > (room.durationSeconds || 180) * 1000;
+        if (clockExpired) return { ok: false as const, reason: 'clock_expired' as const };
+        return { ok: true as const, alreadyRegistered: true as const, room };
+      }
+
+      // NEW registration: only while the room has not launched.
+      if (room.status !== 'waiting') {
+        return { ok: false as const, reason: 'not_waiting' as const };
+      }
+      const maxPlayers = room.maxPlayers || 0;
+      if (maxPlayers > 0 && existing.length >= maxPlayers) {
+        return { ok: false as const, reason: 'full' as const };
+      }
+
+      const updatedPlayers = [
+        player,
+        ...existing.filter((p) => p.id !== player.id),
+      ].slice(0, maxPlayers || undefined);
+
+      const count = updatedPlayers.length;
+      const pot = count * (room.entryFeeUSD || 0);
+      const winnerPct = opts.winnerPotPercent;
+      const platformPct = opts.platformPotPercent;
+
+      const updatedRoom: TournamentRoom = {
+        ...room,
+        currentPlayers: count,
+        potUSD: pot,
+        winnerRewardUSD: (pot * winnerPct) / 100,
+        devFeeUSD: (pot * platformPct) / 100,
+        registeredPlayers: updatedPlayers,
+        syncedAt: undefined,
+      } as TournamentRoom;
+
+      tx.set(roomRef, { ...removeUndefinedFields(updatedRoom), syncedAt: serverTimestamp() });
+      return { ok: true as const, alreadyRegistered: false as const, room: updatedRoom };
+    });
+  } catch (err) {
+    console.warn('Atomic join failed:', err);
+    return { ok: false, reason: 'not_found' };
+  }
+}
+
+export interface RoomLeaveOutcome {
+  ok: boolean;
+  /** true when the whole match node was deleted (host left an empty room) */
+  deleted?: boolean;
+  /** true when the player was registered and got removed (refund eligible) */
+  removed?: boolean;
+  room?: TournamentRoom;
+}
+
+export async function leaveRoomAtomic(
+  roomId: string,
+  uid: string,
+  opts: { winnerPotPercent: number; platformPotPercent: number }
+): Promise<RoomLeaveOutcome> {
+  if (!db) return { ok: false };
+  const roomRef = doc(db, 'rooms', roomId);
+  try {
+    return await runTransaction(db, async (tx) => {
+      const snap = await tx.get(roomRef);
+      if (!snap.exists()) return { ok: false as const };
+      const room = snap.data() as TournamentRoom;
+      const existing = room.registeredPlayers || [];
+      if (!existing.some((p) => p.id === uid)) {
+        return { ok: true as const, removed: false as const, room };
+      }
+      const remaining = existing.filter((p) => p.id !== uid);
+
+      if (remaining.length === 0 && room.hostId === uid) {
+        // Empty player-created room: remove entirely to avoid ghost rooms.
+        tx.delete(roomRef);
+        return { ok: true as const, deleted: true as const, removed: true as const };
+      }
+
+      const shouldRefund = room.status === 'waiting';
+      const pot = shouldRefund ? remaining.length * (room.entryFeeUSD || 0) : room.potUSD;
+      const updatedRoom: TournamentRoom = {
+        ...room,
+        registeredPlayers: remaining,
+        currentPlayers: shouldRefund ? remaining.length : room.currentPlayers,
+        potUSD: pot,
+        winnerRewardUSD: (pot * opts.winnerPotPercent) / 100,
+        devFeeUSD: (pot * opts.platformPotPercent) / 100,
+      };
+      tx.set(roomRef, { ...removeUndefinedFields(updatedRoom), syncedAt: serverTimestamp() });
+      return { ok: true as const, removed: true as const, room: updatedRoom };
+    });
+  } catch (err) {
+    console.warn('Atomic leave failed:', err);
+    return { ok: false };
+  }
 }
 
 export interface RealtimeMatchPlayer {
