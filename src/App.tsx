@@ -71,6 +71,7 @@ const MainAppContent: React.FC = () => {
   const handleStartGame = useCallback((room: TournamentRoom) => {
     // joinRoom is now idempotent: rejoins are free (no double entry fee) and it
     // blocks rooms that already launched. It also keeps activeRoom in sync.
+    // Returns the freshly-updated room so the caller can react immediately.
     const joined = joinRoom(room.id);
     if (!joined) return;
     setCurrentView('game');

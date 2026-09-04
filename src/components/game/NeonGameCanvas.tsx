@@ -145,8 +145,9 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
   const playersRef = useRef<GamePlayerEntity[]>([]);
   const remotePlayersRef = useRef<Map<string, RealtimeMatchPlayer>>(new Map());
   const remoteWorldRef = useRef<RealtimeMatchWorld | null>(null);
-  // Host authority with live failover: the designated host while it publishes,
-  // otherwise the oldest registered player still online (stale-host takeover).
+  // Host authority: the designated host from the room config.
+  // The host is the authoritative simulator for the match world.
+  // If the designated host disconnects, the oldest registered player takes over.
   const designatedHostId = room.hostId === 'admin_master'
     ? room.registeredPlayers?.[0]?.id
     : room.hostId;
@@ -156,6 +157,8 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
   // subscription) whose effect deps do not change when authority flips.
   const isWorldHostRef = useRef<boolean>(isWorldHost);
   isWorldHostRef.current = isWorldHost;
+  // Track whether host heartbeat has been initialized
+  const hostHeartbeatInitialized = useRef(false);
   const orbsRef = useRef<OrbEntity[]>([]);
   const particlesRef = useRef<ParticleEntity[]>([]);
   const cameraRef = useRef<{ x: number; y: number; zoom: number }>({ x: 0, y: 0, zoom: 1 });
@@ -361,17 +364,22 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
             .map((player) => [player.id, player])
         );
 
-        // Live host election: designated host while online. Stale-host takeover
-        // is intentionally DISABLED: a non-designated client must never become
-        // the world authority, because every registered player trusts that the
-        // designated host's `hostId` is the one truth. Falling back to the
-        // oldest registered player or any fresh id lets two tabs of the same
-        // user or a late joiner fight over the world, desyncing scores.
+        // Live host election: designated host while online. If the designated
+        // host disconnects, fall back to the oldest registered player still
+        // online to prevent the match from freezing.
         const designated = room.hostId === 'admin_master'
           ? room.registeredPlayers?.[0]?.id
           : room.hostId;
         const freshIds = fresh.map((player) => player.id);
-        const live = designated && freshIds.includes(designated) ? designated : null;
+        let live: string | null = null;
+        if (designated && freshIds.includes(designated)) {
+          live = designated;
+        } else if (freshIds.length > 0) {
+          // Fallback: use the first registered player that is still online
+          const registeredIds = (room.registeredPlayers || []).map((p) => p.id);
+          const fallback = registeredIds.find((id) => freshIds.includes(id));
+          live = fallback || freshIds[0];
+        }
         setHostLiveId((prev) => (prev === live ? prev : live));
       },
       (error) => console.warn('Realtime match sync:', error.message)
@@ -445,17 +453,25 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
     const publishTimer = window.setInterval(publishWorld, 250);
     publishWorld();
     return () => window.clearInterval(publishTimer);
-  }, [isWorldHost, room?.id]);
+  }, [isWorldHost, room?.id, room?.registeredPlayers]);
 
   // Host heartbeat: proves authority liveness. If it goes stale (>8s) another
   // client takes over the world role (see database.rules.json takeover rule).
+  // Also handles host takeover when authority flips to this client.
   useEffect(() => {
     if (!isWorldHost || !room?.id || !currentUser?.id) return;
-    void publishMatchHostHeartbeat(room.id, currentUser.id);
+    // Initialize heartbeat immediately on host takeover
+    if (!hostHeartbeatInitialized.current) {
+      hostHeartbeatInitialized.current = true;
+      void publishMatchHostHeartbeat(room.id, currentUser.id);
+    }
     const heartbeatTimer = window.setInterval(() => {
       void publishMatchHostHeartbeat(room.id, currentUser.id);
     }, 2000);
-    return () => window.clearInterval(heartbeatTimer);
+    return () => {
+      window.clearInterval(heartbeatTimer);
+      hostHeartbeatInitialized.current = false;
+    };
   }, [isWorldHost, room?.id, currentUser?.id]);
 
   useEffect(() => {
@@ -471,13 +487,25 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
       if (isWorldHostRef.current) return;
       if (world.updatedAt > (remoteWorldRef.current?.updatedAt || 0)) {
         remoteWorldRef.current = world;
+        // Update remote players from world snapshot (non-local players only)
         world.players.forEach((player) => {
-          if (player.id !== currentUser.id) remotePlayersRef.current.set(player.id, player);
+          if (player.id !== currentUser.id) {
+            remotePlayersRef.current.set(player.id, player);
+          }
+        });
+        // Update orb positions from world snapshot for non-host clients
+        const worldOrbs = new Map(world.orbs.map((orb) => [orb.id, orb]));
+        orbsRef.current.forEach((orb) => {
+          const sharedOrb = worldOrbs.get(orb.id);
+          if (sharedOrb) {
+            orb.x += (sharedOrb.x - orb.x) * 0.7;
+            orb.y += (sharedOrb.y - orb.y) * 0.7;
+          }
         });
       }
     }, (error) => console.warn('Realtime world sync:', error.message));
     return unsubscribe;
-  }, [currentUser, room?.id]);
+  }, [currentUser, room?.id, isWorldHost]);
 
   // Finish match callback
   const handleMatchFinished = useCallback(() => {
@@ -808,25 +836,31 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
           };
           playersRef.current.push(player);
         }
+        // Smooth interpolation for remote player movement
         player.x += (remote.x - player.x) * 0.45;
         player.y += (remote.y - player.y) * 0.45;
         if (!isWorldHostRef.current) {
-          // Plain client: the host owns the simulation, so mirror everything.
-          player.score = remote.score;
-          player.mass = remote.mass;
-          player.radius = remote.radius;
+          // Non-host client: mirror remote player stats from host snapshot
+          // but preserve local death/respawn state to avoid ghost revives
+          const localRespawnPending = !player.isAlive && (player.respawnTimer ?? 0) > 0;
+          if (!localRespawnPending) {
+            player.score = remote.score;
+            player.mass = remote.mass;
+            player.radius = remote.radius;
+            player.kills = remote.kills;
+            player.isAlive = remote.isAlive;
+          }
           player.angle = remote.angle;
-          player.kills = remote.kills;
-          player.isAlive = remote.isAlive;
           player.boostActive = remote.boostActive;
         } else {
-          // World host: the local simulation already computed this player's
-          // accumulating stats (score/mass/radius/kills). Copying the remote's
-          // lagged echo back over them wiped every gain between publishes.
-          // Only track movement inputs and the remote-owned death state.
+          // World host: only sync angle and boost, preserve local simulation
           player.angle = remote.angle;
           player.boostActive = remote.boostActive;
-          player.isAlive = remote.isAlive;
+          // Sync death state from remote (host trusts remote's death report)
+          if (!remote.isAlive && player.isAlive) {
+            player.isAlive = false;
+            player.respawnTimer = 150;
+          }
         }
         if (player.trailHistory.length > 20) player.trailHistory.shift();
         player.trailHistory.push({ x: player.x, y: player.y, alpha: 0.7 });
@@ -839,15 +873,12 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
         );
       }
 
+      // Handle local player death/respawn sync from world host (non-host clients only)
       const world = remoteWorldRef.current;
       if (world && !isWorldHostRef.current) {
         const ownWorldPlayer = world.players.find((player) => player.id === currentUser?.id);
         const localPlayer = playersRef.current.find((player) => player.isUser);
         if (ownWorldPlayer && localPlayer) {
-          localPlayer.score = ownWorldPlayer.score;
-          localPlayer.mass = ownWorldPlayer.mass;
-          localPlayer.radius = ownWorldPlayer.radius;
-          localPlayer.kills = ownWorldPlayer.kills;
           // Death handshake: a local wall-crash owns its respawn countdown, so
           // never resurrect while it is pending (the host's snapshot lags and
           // would revive the player ON the barrier, looping the death forever).
@@ -868,14 +899,6 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
             localPlayer.isAlive = ownWorldPlayer.isAlive;
           }
         }
-        const worldOrbs = new Map(world.orbs.map((orb) => [orb.id, orb]));
-        orbsRef.current.forEach((orb) => {
-          const sharedOrb = worldOrbs.get(orb.id);
-          if (sharedOrb) {
-            orb.x += (sharedOrb.x - orb.x) * 0.7;
-            orb.y += (sharedOrb.y - orb.y) * 0.7;
-          }
-        });
       }
 
       // 4. Orb Collisions & Replenishment

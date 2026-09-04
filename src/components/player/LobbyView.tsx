@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { TournamentRoom } from '../../types';
-import { subscribeToPresence } from '../../services/firebase';
+import { subscribeToPresence, subscribeToMatchPlayers } from '../../services/firebase';
 import {
   Play,
   Plus,
@@ -149,10 +149,12 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
       return;
     }
 
-    const success = joinRoom(room.id);
-    if (success) {
-      const updated = rooms.find((r) => r.id === room.id) || room;
-      setWaitingRoomModal(updated);
+    const joined = joinRoom(room.id);
+    if (joined) {
+      // joinRoom returns the freshly-updated room (with the new player slot),
+      // so the waiting-room modal opens with the correct registeredPlayers /
+      // currentPlayers / potUSD instead of the pre-update snapshot.
+      setWaitingRoomModal(joined);
     }
   };
 
@@ -160,10 +162,9 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     e.preventDefault();
     if (!selectedPrivateRoomId) return;
 
-    const success = joinRoom(selectedPrivateRoomId, privateCodeInput.trim().toUpperCase());
-    if (success) {
-      const room = rooms.find((r) => r.id === selectedPrivateRoomId);
-      if (room) setWaitingRoomModal(room);
+    const joined = joinRoom(selectedPrivateRoomId, privateCodeInput.trim().toUpperCase());
+    if (joined) {
+      setWaitingRoomModal(joined);
       setSelectedPrivateRoomId(null);
       setPrivateCodeInput('');
     } else {
@@ -178,10 +179,46 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     return true;
   });
 
-  // Current active waiting room live countdown
+  // Current active waiting room - always read the latest room state from the
+  // rooms array so the player list / pot / status update in real-time as
+  // other clients join or leave.
   const currentModalRoom = waitingRoomModal
     ? rooms.find((r) => r.id === waitingRoomModal.id) || waitingRoomModal
     : null;
+
+  // Real-time sync: refresh waiting room modal when rooms array changes
+  // (keeps the player list and pot USD live without manual refresh)
+  useEffect(() => {
+    if (!waitingRoomModal) return;
+    const live = rooms.find((r) => r.id === waitingRoomModal.id);
+    if (live && live !== waitingRoomModal) {
+      setWaitingRoomModal(live);
+    }
+  }, [rooms, waitingRoomModal]);
+
+  // Live match-players subscription for the waiting room: shows real-time
+  // player count and names as others join (even before the room updates)
+  useEffect(() => {
+    if (!waitingRoomModal || !currentUser) return;
+    const FRESH_WINDOW = 30000; // 30s window for waiting room
+    const unsubscribe = subscribeToMatchPlayers(
+      waitingRoomModal.id,
+      (players) => {
+        const now = Date.now();
+        const fresh = players.filter((p) => now - (p.updatedAt || 0) < FRESH_WINDOW);
+        // If real-time players differ from room.registeredPlayers, the room
+        // subscription will catch up shortly. This is a preview layer.
+        if (fresh.length > (currentModalRoom?.currentPlayers || 0)) {
+          // Update the modal's player count for immediate feedback
+          setWaitingRoomModal((prev) =>
+            prev ? { ...prev, currentPlayers: fresh.length } : prev
+          );
+        }
+      },
+      () => undefined // Silent fail for preview layer
+    );
+    return unsubscribe;
+  }, [waitingRoomModal, currentUser, currentModalRoom?.currentPlayers]);
 
   useEffect(() => {
     if (!currentUser || !waitingRoomModal) return;

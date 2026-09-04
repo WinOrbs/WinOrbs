@@ -36,6 +36,7 @@ import {
   setUserPresenceState,
   clearUserPresence,
   removeMatchPlayer,
+  cleanupMatchRoom,
   savePlatformConfig,
   loadPlatformConfig,
 } from '../services/firebase';
@@ -81,7 +82,7 @@ interface AppContextType {
   adminCreateRoom: (config: { name: string; type: 'public' | 'private'; entryFeeUSD: number; maxPlayers: number; isSpecialEvent?: boolean; durationSeconds?: number; customPotUSD?: number; eventDescription?: string; sponsorName?: string; botCount?: number; botDifficulty?: 'normal' | 'hard'; minPlayersToStart?: number; arenaRadius?: number; broadcastNotification?: boolean }) => TournamentRoom;
   adminUpdateRoom: (roomId: string, updates: Partial<TournamentRoom>) => void;
   adminDeleteRoom: (roomId: string) => void;
-  joinRoom: (roomId: string, code?: string) => boolean;
+  joinRoom: (roomId: string, code?: string) => TournamentRoom | null;
   startMatchNow: (roomId: string) => void;
   leaveRoom: (roomId?: string) => void;
   buyCosmetic: (item: CosmeticItem) => boolean;
@@ -1549,15 +1550,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     soundFx.playNotificationPing();
   };
 
-  const joinRoom = (roomId: string, code?: string): boolean => {
-    if (!currentUser) return false;
+  const joinRoom = (roomId: string, code?: string): TournamentRoom | null => {
+    if (!currentUser) return null;
 
-    // Look up via functional state to defeat stale closures (rapid double-click
-    // and concurrent-joiner races both go through the same closure otherwise).
+    // All validation + state derivation lives inside the functional setRooms
+    // updater so a second call stacked in the same tick (rapid double-click,
+    // concurrent joiner, or React StrictMode double-invoke) cannot deduct the
+    // entry fee twice or register the same player twice.
     let resultRoom: TournamentRoom | null = null;
     let rejectedReason: string | null = null;
     let rejectedFeeUSD = 0;
-    let chargedFeeUSD = 0;
+    let newBalanceUSD: number | null = null;
 
     setRooms((prevRooms) => {
       const targetRoom = prevRooms.find((r) => r.id === roomId);
@@ -1614,30 +1617,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return prevRooms;
       }
 
-      // Charge the entry fee via functional setCurrentUser so a second call
-      // stacked in the same tick cannot deduct twice.
-      chargedFeeUSD = fee;
-      setCurrentUser((prevUser) => {
-        if (!prevUser) return prevUser;
-        return {
-          ...prevUser,
-          balanceUSD: prevUser.balanceUSD - fee,
-          balanceVES: (prevUser.balanceUSD - fee) * exchangeRates.vesUsdRate,
-        };
-      });
-
-      // Register player slot
-      const updatedPlayers = [
-        {
-          id: currentUser.id,
-          name: currentUser.name,
-          avatar: currentUser.avatar,
-          ready: true,
-          isUser: true,
-          joinedAt: new Date().toISOString(),
-        },
-        ...existingPlayers,
-      ].slice(0, targetRoom.maxPlayers);
+      // Register player slot (prepend current user, preserve existing players)
+      const newPlayerSlot = {
+        id: currentUser.id,
+        name: currentUser.name,
+        avatar: currentUser.avatar,
+        ready: true,
+        isUser: true,
+        joinedAt: new Date().toISOString(),
+      };
+      // Deduplicate: filter out any existing entry for this user before prepending
+      const dedupedExisting = existingPlayers.filter((p) => p.id !== currentUser.id);
+      const updatedPlayers = [newPlayerSlot, ...dedupedExisting].slice(0, targetRoom.maxPlayers);
 
       const activePlayerCount = updatedPlayers.length;
       const newPot = activePlayerCount * targetRoom.entryFeeUSD;
@@ -1654,6 +1645,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
 
       resultRoom = updatedRoom;
+      newBalanceUSD = currentUser.balanceUSD - fee;
       return prevRooms.map((r) => (r.id === roomId ? updatedRoom : r));
     });
 
@@ -1667,27 +1659,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         alert('Esta sala ya alcanzó la capacidad máxima.');
       else if (rejectedReason === 'insufficient_funds')
         alert(`Saldo insuficiente. La entrada requiere $${rejectedFeeUSD.toFixed(2)} USD.`);
-      return false;
+      return null;
     }
 
-    if (!resultRoom) return false;
+    if (!resultRoom || newBalanceUSD === null) {
+      // Rejoin: no charge, but we still need to set the active room.
+      if (resultRoom) {
+        setActiveRoom(resultRoom);
+        void setUserPresenceState(currentUser.id, 'in_game');
+        return resultRoom;
+      }
+      return null;
+    }
+
+    // Apply the balance deduction exactly once for a new registration.
+    setCurrentUser((prevUser) =>
+      prevUser
+        ? {
+            ...prevUser,
+            balanceUSD: newBalanceUSD as number,
+            balanceVES: (newBalanceUSD as number) * exchangeRates.vesUsdRate,
+          }
+        : prevUser
+    );
 
     const targetRoom = resultRoom;
-
-    // Persist the room + user. The user balance is only updated server-side on
-    // a NEW registration, since rejoin must be free.
-    if (chargedFeeUSD > 0) {
-      saveUserProfileToFirestore({
-        ...currentUser,
-        balanceUSD: currentUser.balanceUSD - chargedFeeUSD,
-        balanceVES: (currentUser.balanceUSD - chargedFeeUSD) * exchangeRates.vesUsdRate,
-      }).catch(console.warn);
-    }
+    saveUserProfileToFirestore({
+      ...currentUser,
+      balanceUSD: newBalanceUSD,
+      balanceVES: newBalanceUSD * exchangeRates.vesUsdRate,
+    }).catch(console.warn);
     saveTournamentRoom(targetRoom).catch((error) => console.warn('Room sync:', error));
     setActiveRoom(targetRoom);
     void setUserPresenceState(currentUser.id, 'in_game');
     soundFx.playBoost();
-    return true;
+    return targetRoom;
   };
 
   const startMatchNow = (roomId: string) => {
@@ -1781,6 +1787,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       // Always drop the realtime match entity + presence flag.
       removeMatchPlayer(target.id, uid).catch(() => undefined);
+      // If the leaving player was the host, clean up the world and host nodes
+      if (target.hostId === uid) {
+        cleanupMatchRoom(target.id).catch(() => undefined);
+      }
       void setUserPresenceState(uid, 'online');
     }
 
