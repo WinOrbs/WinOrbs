@@ -1600,6 +1600,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (!outcome.ok || !outcome.room) {
       const reason = outcome.reason;
+      const detail = outcome.detail;
       if (reason === 'bad_code') alert('Código de sala privada incorrecto');
       else if (reason === 'clock_expired')
         alert('La partida de esta sala ya finalizó. Espera a que se habilite una nueva ronda.');
@@ -1607,8 +1608,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         alert('Esta sala ya está en combate o finalizada. No es posible inscribirse ahora.');
       else if (reason === 'full')
         alert('Esta sala ya alcanzó la capacidad máxima.');
+      else if (detail === 'unauthenticated')
+        alert('Tu sesión expiró. Vuelve a iniciar sesión para entrar a la sala.');
+      else if (detail === 'permission-denied')
+        alert('Sin permiso para entrar. Verifica que tu cuenta esté activa o contacta soporte.');
+      else if (detail === 'network-error')
+        alert('Sin conexión al servidor. Verifica tu internet e inténtalo de nuevo.');
+      else if (detail === 'concurrent-modification')
+        alert('La sala se está actualizando. Espera un segundo e inténtalo de nuevo.');
+      else if (reason === 'not_found')
+        alert('La sala no existe o fue eliminada.');
       else
-        alert('No se pudo entrar a la sala. Revisa tu conexión e inténtalo de nuevo.');
+        alert(`No se pudo entrar a la sala (${detail || reason || 'error desconocido'}). Inténtalo de nuevo.`);
       return null;
     }
 

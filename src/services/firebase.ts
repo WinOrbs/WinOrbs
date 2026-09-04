@@ -614,7 +614,9 @@ export async function deleteTournamentRoom(roomId: string): Promise<void> {
 
 export interface RoomJoinOutcome {
   ok: boolean;
-  reason?: 'not_found' | 'bad_code' | 'clock_expired' | 'not_waiting' | 'full';
+  reason?: 'not_found' | 'bad_code' | 'clock_expired' | 'not_waiting' | 'full' | 'error';
+  /** raw Firestore error code/message when reason === 'error' */
+  detail?: string;
   /** true when the player was ALREADY registered (rejoin: never charge again) */
   alreadyRegistered?: boolean;
   room?: TournamentRoom;
@@ -690,9 +692,29 @@ export async function joinRoomAtomic(
       tx.set(roomRef, { ...removeUndefinedFields(updatedRoom), syncedAt: serverTimestamp() });
       return { ok: true as const, alreadyRegistered: false as const, room: updatedRoom };
     });
-  } catch (err) {
-    console.warn('Atomic join failed:', err);
-    return { ok: false, reason: 'not_found' };
+  } catch (err: any) {
+    const code = err?.code || '';
+    const message = err?.message || String(err);
+    console.warn('Atomic join failed:', code, message);
+
+    // Map common Firestore error codes to specific reasons
+    if (code === 'permission-denied' || message.includes('PERMISSION_DENIED')) {
+      return { ok: false, reason: 'error', detail: 'permission-denied' };
+    }
+    if (code === 'unauthenticated' || message.includes('UNAUTHENTICATED')) {
+      return { ok: false, reason: 'error', detail: 'unauthenticated' };
+    }
+    if (code === 'unavailable' || code === 'deadline-exceeded' || message.includes('UNAVAILABLE')) {
+      return { ok: false, reason: 'error', detail: 'network-error' };
+    }
+    if (code === 'not-found' || message.includes('NOT_FOUND')) {
+      return { ok: false, reason: 'not_found' };
+    }
+    if (code === 'failed-precondition' || message.includes('FAILED_PRECONDITION')) {
+      return { ok: false, reason: 'error', detail: 'concurrent-modification' };
+    }
+    // Unknown error — return detail so the UI can show it
+    return { ok: false, reason: 'error', detail: code || message || 'unknown' };
   }
 }
 
@@ -702,6 +724,8 @@ export interface RoomLeaveOutcome {
   deleted?: boolean;
   /** true when the player was registered and got removed (refund eligible) */
   removed?: boolean;
+  /** raw Firestore error code/message when the transaction failed */
+  detail?: string;
   room?: TournamentRoom;
 }
 
