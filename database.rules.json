@@ -8,6 +8,10 @@
     },
     "matches": {
       "$roomId": {
+        "result": {
+          ".read": "auth != null",
+          ".write": "auth != null && root.child('matches').child($roomId).child('host').child('heartbeatAt').exists() && root.child('matches').child($roomId).child('host').child('uid').val() === auth.uid && now - root.child('matches').child($roomId).child('host').child('heartbeatAt').val() <= 8000"
+        },
         "host": {
           ".read": "auth != null",
           ".write": "auth != null && (!data.exists() || !data.child('heartbeatAt').exists() || data.child('uid').val() === auth.uid || now - data.child('heartbeatAt').val() > 8000)"

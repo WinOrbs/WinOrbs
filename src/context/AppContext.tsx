@@ -37,6 +37,7 @@ import {
   clearUserPresence,
   removeMatchPlayer,
   cleanupMatchRoom,
+  settleMatchTrusted,
   savePlatformConfig,
   loadPlatformConfig,
 } from '../services/firebase';
@@ -491,12 +492,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const unsubscribeRooms = subscribeToTournamentRooms(
       (remoteRooms) => {
-        setRooms(remoteRooms.map((room) => ({
-          ...room,
-          nextLaunchSeconds: room.launchAt
-            ? Math.max(0, Math.ceil((new Date(room.launchAt).getTime() - Date.now()) / 1000))
-            : room.nextLaunchSeconds,
-        })));
+        setRooms((prevRooms) => {
+          // Merge remote rooms with local state to prevent race conditions:
+          // - If a room exists locally with more registeredPlayers, keep the local version
+          //   (this handles the case where a local join hasn't been synced to Firestore yet)
+          // - Otherwise, use the remote version
+          const merged = remoteRooms.map((remoteRoom) => {
+            const localRoom = prevRooms.find((r) => r.id === remoteRoom.id);
+            // Prefer local if it has more registered players (pending sync)
+            if (localRoom && (localRoom.registeredPlayers || []).length > (remoteRoom.registeredPlayers || []).length) {
+              return localRoom;
+            }
+            return {
+              ...remoteRoom,
+              nextLaunchSeconds: remoteRoom.launchAt
+                ? Math.max(0, Math.ceil((new Date(remoteRoom.launchAt).getTime() - Date.now()) / 1000))
+                : remoteRoom.nextLaunchSeconds,
+            };
+          });
+          // Keep local-only rooms that haven't been synced to Firestore yet
+          const remoteIds = new Set(remoteRooms.map((r) => r.id));
+          const localOnly = prevRooms.filter((r) => !remoteIds.has(r.id));
+          return [...merged, ...localOnly];
+        });
       },
       (error) => console.warn('Firestore rooms sync:', error.message)
     );
@@ -1966,7 +1984,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
       }
 
-      // Idempotency: only ONE client per room may collect the pot (transaction in Firestore).
+      // TRUSTED SETTLEMENT PATH: when the backend is deployed, the payout is done
+// exclusively by the settleMatch Cloud Function (Admin SDK). The client never
+// credits its own balance and just syncs the server-verified profile.
+const USE_TRUSTED_SETTLEMENT =
+  (import.meta as unknown as { env?: Record<string, string> })?.env
+    ?.VITE_USE_TRUSTED_SETTLEMENT === 'true';
+
+if (USE_TRUSTED_SETTLEMENT) {
+  const settled = await settleMatchTrusted({
+    roomId: room.id,
+    winnerId,
+    telemetry: {
+      score: matchStats?.score || 0,
+      kills: matchStats?.kills || 0,
+    },
+  });
+  if (!settled.ok) {
+    console.warn('Trusted settlement rejected:', settled.reason);
+    soundFx.playNotificationPing();
+    return { success: false, reason: settled.reason || 'Liquidación rechazada por el backend.' };
+  }
+
+  // Server already credited the balance: refresh the profile from Firestore.
+  const freshResult = await loadUserProfileFromFirestore(currentUser.id).catch(() => null);
+  if (freshResult?.success && freshResult.data) {
+    setCurrentUser((prevUser) => (prevUser ? { ...prevUser, ...freshResult.data } : prevUser));
+  }
+
+  const winNotif: AppNotification = {
+    id: `notif-win-${Date.now()}`,
+    userId: currentUser.id,
+    title: '🏆 ¡CAMPEÓN DEL TORNEO! +$' + (settled.payoutUSD || 0).toFixed(2),
+    message: `¡Has ganado la partida en ${room.name}! El backend acreditó $${(settled.payoutUSD || 0).toFixed(2)} USD tras validar el resultado autoritativo del host.`,
+    type: 'pot_win',
+    read: false,
+    timestamp: 'Justo ahora',
+    amountUSD: settled.payoutUSD || 0,
+  };
+  setNotifications((prev) => [winNotif, ...prev]);
+  soundFx.playVictoryFanfare();
+  return { success: true };
+}
+
+// LEGACY CLIENT-SIDE PATH (fallback until the backend is deployed).
+// Idempotency: only ONE client per room may collect the pot (transaction in Firestore).
       const claim = await claimMatchVictory(room.id, currentUser.id, token?.sessionId || '');
       if (!claim.ok) {
         console.warn('Victory claim rejected:', claim.reason);

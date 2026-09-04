@@ -58,6 +58,13 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // Idempotent settlement ledger — written ONLY by the backend (Admin SDK
+    // bypasses rules). Clients may read it to confirm their payout.
+    match /matchResults/{roomId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
     // Platform Configuration / Exchange Rates
     match /config/{configId} {
       allow read: if true;

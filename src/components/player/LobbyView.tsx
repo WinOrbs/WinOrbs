@@ -660,7 +660,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                   ${currentModalRoom.entryFeeUSD.toFixed(2)} USD
                 </span>
                 <span className="text-[9px] text-slate-400 font-mono-tech block mt-0.5">
-                  ({currentModalRoom.currentPlayers} jugadores × ${currentModalRoom.entryFeeUSD.toFixed(2)})
+                  ({(currentModalRoom.registeredPlayers || []).length} jugadores × ${currentModalRoom.entryFeeUSD.toFixed(2)})
                 </span>
               </div>
               <div>
@@ -687,45 +687,63 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                 <h4 className="font-orbitron font-bold text-xs text-slate-200 flex items-center gap-2">
                   <Users className="w-4 h-4 text-cyan-400" />
                   <span>
-                    Gladiadores en la Sala ({currentModalRoom.registeredPlayers?.length || currentModalRoom.currentPlayers}/{currentModalRoom.maxPlayers} Capacidad)
+                    Gladiadores en la Sala ({(currentModalRoom.registeredPlayers || []).length || currentModalRoom.currentPlayers}/{currentModalRoom.maxPlayers} Capacidad)
                   </span>
                 </h4>
-                <span className="text-[11px] font-mono-tech font-bold text-emerald-400">
-                  ✓ {currentModalRoom.currentPlayers >= 4 ? `¡Quórum de ${currentModalRoom.currentPlayers} Gladiadores Listo!` : 'Esperando mínimo 4 jugadores'}
+                <span className={`text-[11px] font-mono-tech font-bold ${(currentModalRoom.registeredPlayers || []).length >= (currentModalRoom.minPlayersToStart || 4) ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  ✓ {(currentModalRoom.registeredPlayers || []).length >= (currentModalRoom.minPlayersToStart || 4)
+                    ? `¡Quórum de ${(currentModalRoom.registeredPlayers || []).length} Gladiadores Listo!`
+                    : `Esperando mínimo ${currentModalRoom.minPlayersToStart || 4} jugadores`}
                 </span>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 max-h-48 overflow-y-auto pr-1">
-                {(currentModalRoom.registeredPlayers || [
-                  { id: '1', name: currentUser?.name || 'Tú', avatar: currentUser?.avatar || '', ready: true, isUser: true },
-                  { id: '2', name: 'CyberShadow', avatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=100&auto=format&fit=crop&q=80', ready: true },
-                  { id: '3', name: 'ViperX_VZLA', avatar: 'https://images.unsplash.com/photo-1527980965255-d3b416303d12?w=100&auto=format&fit=crop&q=80', ready: true },
-                  { id: '4', name: 'SolarPulse', avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=100&auto=format&fit=crop&q=80', ready: true },
-                ]).map((player, idx) => (
-                  <div
-                    key={player.id || idx}
-                    className={`p-2.5 rounded-2xl border flex flex-col items-center text-center transition-all ${
-                      player.isUser || player.id === currentUser?.id
-                        ? 'bg-cyan-950/60 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.3)]'
-                        : 'bg-[#0a0e28] border-slate-800'
-                    }`}
-                  >
-                    <div className="relative mb-1.5">
-                      <img
-                        src={player.avatar}
-                        alt={player.name}
-                        className="w-9 h-9 rounded-xl object-cover border border-cyan-400/60"
-                      />
-                      <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 border border-slate-900 flex items-center justify-center text-[8px] text-slate-950 font-black">
-                        ✓
+                {(() => {
+                  // Build the definitive list of players to display:
+                  // 1. Use registeredPlayers from Firestore if available
+                  // 2. Always include the current user if they are in this room
+                  // 3. Never show fake placeholder players
+                  const registered = currentModalRoom.registeredPlayers || [];
+                  const displayPlayers = registered.length > 0
+                    ? registered
+                    : currentUser
+                      ? [{ id: currentUser.id, name: currentUser.name, avatar: currentUser.avatar, ready: true, isUser: true }]
+                      : [];
+
+                  if (displayPlayers.length === 0) {
+                    return (
+                      <div className="col-span-full text-center py-4 text-slate-400 text-xs font-mono-tech">
+                        Esperando gladiadores...
+                      </div>
+                    );
+                  }
+
+                  return displayPlayers.map((player) => (
+                    <div
+                      key={player.id}
+                      className={`p-2.5 rounded-2xl border flex flex-col items-center text-center transition-all ${
+                        player.isUser || player.id === currentUser?.id
+                          ? 'bg-cyan-950/60 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.3)]'
+                          : 'bg-[#0a0e28] border-slate-800'
+                      }`}
+                    >
+                      <div className="relative mb-1.5">
+                        <img
+                          src={player.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(player.name)}`}
+                          alt={player.name}
+                          className="w-9 h-9 rounded-xl object-cover border border-cyan-400/60"
+                        />
+                        <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 border border-slate-900 flex items-center justify-center text-[8px] text-slate-950 font-black">
+                          ✓
+                        </span>
+                      </div>
+                      <span className="font-orbitron font-bold text-[11px] text-white truncate max-w-full">
+                        {player.name}
                       </span>
+                      <span className="text-[9px] text-emerald-400 font-mono-tech">LISTO</span>
                     </div>
-                    <span className="font-orbitron font-bold text-[11px] text-white truncate max-w-full">
-                      {player.name}
-                    </span>
-                    <span className="text-[9px] text-emerald-400 font-mono-tech">LISTO</span>
-                  </div>
-                ))}
+                  ));
+                })()}
               </div>
             </div>
 

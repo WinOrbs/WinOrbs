@@ -28,6 +28,7 @@ import {
   Firestore,
 } from 'firebase/firestore';
 import { getAnalytics, Analytics } from 'firebase/analytics';
+import { getFunctions, httpsCallable, Functions } from 'firebase/functions';
 import {
   getDatabase,
   ref as databaseRef,
@@ -70,6 +71,7 @@ let auth: Auth | null = null;
 let db: Firestore | null = null;
 let analytics: Analytics | null = null;
 let realtimeDatabase: Database | null = null;
+let functionsInstance: Functions | null = null;
 
 const hasValidApiKey = !!(firebaseConfig.apiKey && firebaseConfig.apiKey.startsWith('AIzaSy') && firebaseConfig.apiKey.length > 25);
 
@@ -86,6 +88,11 @@ if (hasValidApiKey) {
       realtimeDatabase = getDatabase(app);
     } catch {
       realtimeDatabase = null;
+    }
+    try {
+      functionsInstance = getFunctions(app, 'us-central1');
+    } catch {
+      functionsInstance = null;
     }
     if (typeof window !== 'undefined') {
       try {
@@ -975,6 +982,59 @@ export async function publishMatchHostHeartbeat(roomId: string, uid: string): Pr
   }
 }
 
+/** Authoritative match result, published ONLY by the world host. */
+export interface MatchResultPayload {
+  winnerId: string;
+  winnerName: string;
+  winnerScore: number;
+  winnerKills: number;
+  topScores: Array<{ id: string; name: string; score: number; kills: number }>;
+  settledAt: number;
+}
+
+/**
+ * Writes the authoritative winner for a match. The RTDB rules only allow the
+ * client whose uid matches matches/{roomId}/host/uid (with a live heartbeat)
+ * to write this node, so a rogue participant cannot forge the winner.
+ */
+export async function publishMatchResult(
+  roomId: string,
+  uid: string,
+  result: MatchResultPayload
+): Promise<void> {
+  if (!realtimeDatabase) throw new Error('Firebase Realtime Database no está configurado.');
+  await setDatabaseValue(
+    databaseRef(realtimeDatabase, `matches/${roomId}/result`),
+    { ...result, hostUid: uid }
+  );
+}
+
+/**
+ * Live subscription to the authoritative match result. Non-host clients wait
+ * on this instead of trusting their own local winner calculation, so every
+ * client settles the same winner.
+ */
+export function subscribeToMatchResult(
+  roomId: string,
+  onResult: (result: MatchResultPayload) => void,
+  onError?: (error: Error) => void
+): () => void {
+  if (!realtimeDatabase) {
+    onError?.(new Error('Firebase Realtime Database no está configurado.'));
+    return () => undefined;
+  }
+
+  return onValue(
+    databaseRef(realtimeDatabase, `matches/${roomId}/result`),
+    (snapshot) => {
+      const value = snapshot.val() as MatchResultPayload | null;
+      if (value && value.winnerId) onResult(value);
+    },
+    (error) => onError?.(error)
+  );
+}
+
+
 /**
  * Idempotent victory claim (Firestore transaction). Guarantees that only ONE
  * client can collect the pot for a given room, even if two clients each
@@ -1010,3 +1070,31 @@ export async function claimMatchVictory(
     return { ok: true }; // Never block payout because of infra hiccups.
   }
 }
+
+/**
+ * Trusted settlement: calls the `settleMatch` Cloud Function so the backend
+ * (Admin SDK) — not the client — verifies the authoritative host result and
+ * credits the pot. Enabled via VITE_USE_TRUSTED_SETTLEMENT=true.
+ */
+export async function settleMatchTrusted(payload: {
+  roomId: string;
+  winnerId: string;
+  telemetry?: { score?: number; kills?: number };
+}): Promise<{ ok: boolean; reason?: string; winnerId?: string; payoutUSD?: number }> {
+  if (!functionsInstance) {
+    return { ok: false, reason: 'Cloud Functions no disponible.' };
+  }
+  try {
+    const call = httpsCallable<
+      typeof payload,
+      { ok: boolean; reason?: string; winnerId?: string; payoutUSD?: number }
+    >(functionsInstance, 'settleMatch');
+    const response = await call(payload);
+    return response.data;
+  } catch (err: unknown) {
+    const message =
+      (err as { message?: string; code?: string })?.message || 'Error de liquidación.';
+    return { ok: false, reason: message };
+  }
+}
+

@@ -21,6 +21,9 @@ import {
   publishMatchWorld,
   subscribeToMatchPlayers,
   subscribeToMatchWorld,
+  publishMatchResult,
+  subscribeToMatchResult,
+  MatchResultPayload,
 } from '../../services/firebase';
 import { GameControlsMobile } from './GameControlsMobile';
 import { normalizeImageUrl } from '../../services/imageUtils';
@@ -511,50 +514,105 @@ export const NeonGameCanvas: React.FC<NeonGameCanvasProps> = ({ room, onExit }) 
   const handleMatchFinished = useCallback(() => {
     setMatchEnded(true);
 
-    // Find highest score player
+    // Find highest score player (local simulation view)
     const sorted = [...playersRef.current].sort((a, b) => b.score - a.score);
     const topWinner = sorted[0];
 
-    if (topWinner) {
+    const settleWith = (winner: { id: string; name: string; score: number; kills: number }) => {
+      if (!room?.id) return;
+      void finishMatchPot(
+        room.id,
+        winner.id,
+        winner.name,
+        {
+          score: userScoreRef.current,
+          kills: userKillsRef.current,
+        },
+        matchSessionTokenRef.current
+      );
+    };
+
+    if (isWorldHost && topWinner && room?.id) {
+      // HOST: publish the authoritative result FIRST. The RTDB rules only let
+      // the live host write matches/{roomId}/result, so this becomes the one
+      // truth every client (and the backend) settles against.
+      const payload: MatchResultPayload = {
+        winnerId: topWinner.id,
+        winnerName: topWinner.name,
+        winnerScore: Math.floor(topWinner.score),
+        winnerKills: topWinner.kills,
+        topScores: sorted.slice(0, 10).map((p) => ({
+          id: p.id,
+          name: p.name,
+          score: Math.floor(p.score),
+          kills: p.kills,
+        })),
+        settledAt: Date.now(),
+      };
+      void publishMatchResult(room.id, currentUser?.id || '', payload)
+        .catch((error: unknown) => console.warn('Result publish:', error));
+
       setWinnerInfo({
         id: topWinner.id,
         name: topWinner.name,
-        score: topWinner.score,
+        score: Math.floor(topWinner.score),
         kills: topWinner.kills,
       });
+      settleWith(topWinner);
 
-      // Distribute 80% pot in Context with Anti-Cheat session token verification
-      if (room?.id) {
-        void finishMatchPot(
-          room.id,
-          topWinner.id,
-          topWinner.name,
-          {
-            score: userScoreRef.current,
-            kills: userKillsRef.current,
-          },
-          matchSessionTokenRef.current
-        );
-
-        // World host wipes the realtime match node shortly after settlement so
-        // no ghost players/world survive in the database.
-        if (isWorldHost) {
-          window.setTimeout(() => {
-            void cleanupMatchRoom(room.id);
-          }, 3000);
-        }
-      }
-
-      if (topWinner.isUser) {
-        confetti({
-          particleCount: 150,
-          spread: 80,
-          origin: { y: 0.6 },
-          colors: ['#06b6d4', '#f43f5e', '#eab308', '#a855f7'],
+      // World host wipes the realtime match node shortly after settlement so
+      // no ghost players/world survive in the database.
+      window.setTimeout(() => {
+        void cleanupMatchRoom(room.id);
+      }, 3000);
+    } else if (topWinner && room?.id) {
+      // NON-HOST: do NOT trust the local top player. Wait up to 5s for the
+      // authoritative result published by the host and settle against it.
+      let settled = false;
+      const fallbackTimer = window.setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        unsubscribeResult();
+        // Fallback: use the local view so the UI never freezes (the backend
+        // will still reject an inconsistent claim).
+        setWinnerInfo({
+          id: topWinner.id,
+          name: topWinner.name,
+          score: Math.floor(topWinner.score),
+          kills: topWinner.kills,
         });
-      }
+        settleWith(topWinner);
+      }, 5000);
+
+      const unsubscribeResult = subscribeToMatchResult(room.id, (result) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(fallbackTimer);
+        unsubscribeResult();
+        setWinnerInfo({
+          id: result.winnerId,
+          name: result.winnerName,
+          score: result.winnerScore,
+          kills: result.winnerKills,
+        });
+        settleWith({
+          id: result.winnerId,
+          name: result.winnerName,
+          score: result.winnerScore,
+          kills: result.winnerKills,
+        });
+      });
     }
-  }, [finishMatchPot, room, isWorldHost]);
+
+    if (topWinner?.isUser) {
+      confetti({
+        particleCount: 150,
+        spread: 80,
+        origin: { y: 0.6 },
+        colors: ['#06b6d4', '#f43f5e', '#eab308', '#a855f7'],
+      });
+    }
+  }, [finishMatchPot, room, isWorldHost, currentUser]);
 
   // Match Countdown Timer (derived from the shared matchStartedAt clock so
   // every client finishes at the same real-world moment)
