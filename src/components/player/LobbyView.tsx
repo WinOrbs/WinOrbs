@@ -128,6 +128,9 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
 
   const handleJoinClick = async (room?: TournamentRoom) => {
     if (!room) return;
+    // Only a room still in 'waiting' phase accepts new registrations. Short-circuit
+    // here so the not_waiting alert never fires from the lobby UI.
+    if (room.status !== 'waiting') return;
     if (!currentUser) {
       if (onOpenAuth) {
         onOpenAuth();
@@ -172,7 +175,11 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     }
   };
 
+  // A room is only joinable while it is still in 'waiting'. Drop finished /
+  // cancelled rooms from the player lobby so the UI never offers an
+  // "INSCRIBIRSE" button for a room that Firebase will reject with not_waiting.
   const filteredRooms = rooms.filter((r) => {
+    if (r.status === 'finished') return false;
     if (activeFilter === 'public') return r.type === 'public';
     if (activeFilter === 'private') return r.type === 'private';
     if (activeFilter === 'events') return !!r.isSpecialEvent;
@@ -473,6 +480,8 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                                 ? 'bg-rose-950/80 text-rose-300 border border-rose-500/50 animate-pulse shadow-[0_0_8px_#f43f5e]'
                                 : room.cancelled && room.status === 'finished'
                                 ? 'bg-slate-800 text-slate-400 border border-slate-600/60'
+                                : room.status === 'finished'
+                                ? 'bg-slate-800 text-slate-400 border border-slate-600/60'
                                 : 'bg-amber-950/80 text-amber-300 border border-amber-500/50'
                             }`}
                           >
@@ -480,6 +489,8 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                               ? 'En Combate'
                               : room.cancelled && room.status === 'finished'
                               ? '✖️ Cancelada • Reembolso'
+                              : room.status === 'finished'
+                              ? '🏁 Finalizada'
                               : '⏳ Esperando'}
                           </span>
                           {room.status === 'waiting' && (
@@ -524,14 +535,25 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
 
                       <button
                         onClick={() => handleJoinClick(room)}
-                        className={`px-5 py-3 rounded-2xl text-slate-950 font-orbitron font-extrabold text-xs tracking-wider transition-all flex items-center gap-1.5 cursor-pointer hover:brightness-110 ${
-                          isEvent
+                        disabled={room.status !== 'waiting'}
+                        className={`px-5 py-3 rounded-2xl font-orbitron font-extrabold text-xs tracking-wider transition-all flex items-center gap-1.5 cursor-pointer hover:brightness-110 ${
+                          room.status !== 'waiting'
+                            ? 'bg-slate-800/70 text-slate-500 border border-slate-700/60 cursor-not-allowed hover:brightness-100'
+                            : isEvent
                             ? 'bg-gradient-to-r from-yellow-400 via-amber-400 to-yellow-500 shadow-[0_0_20px_rgba(234,179,8,0.5)]'
                             : 'bg-gradient-to-r from-cyan-400 via-blue-500 to-fuchsia-500 shadow-[0_0_20px_rgba(6,182,212,0.4)]'
                         }`}
                       >
                         <Play className="w-3.5 h-3.5 fill-slate-950" />
-                        <span>{room.entryFeeUSD === 0 ? 'ENTRAR GRATIS' : `INSCRIBIRSE ($${room.entryFeeUSD.toFixed(2)})`}</span>
+                        <span>
+                          {room.status === 'in_game'
+                            ? '⚔️ En Combate'
+                            : room.status === 'finished'
+                            ? '🏁 Finalizada'
+                            : room.entryFeeUSD === 0
+                            ? 'ENTRAR GRATIS'
+                            : `INSCRIBIRSE ($${room.entryFeeUSD.toFixed(2)})`}
+                        </span>
                       </button>
                     </div>
                   </div>
