@@ -6,4 +6,5 @@
 //
 // Déjalo VACÍO ("") para desarrollo local (mismo origen, localhost:3000).
 // ─────────────────────────────────────────────────────────────
-window.SERVIDOR_URL = "";
+window.SERVIDOR_URL = "https://winorbs.onrender.com";
+
