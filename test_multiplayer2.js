@@ -54,6 +54,10 @@ async function runTests() {
     });
     log('Player1 recibió gameState actualizado después de input', !!state1_2);
 
+    // Autenticar como admin (requerido para adminCreateRoom/adminDestroyRoom)
+    socket1.emit('adminAuth', { password: 'admin123' });
+    await new Promise(r => socket1.once('adminAuthed', r));
+
     socket1.emit('adminCreateRoom', {
         id: 'dup_test_' + Date.now(),
         nombre: 'DupTest',
@@ -78,9 +82,12 @@ async function runTests() {
     const exists1 = createdRooms1.find(r => r.id === 'dup_test_2');
     log('Sala creada sin password funciona', !!exists1);
 
-    const createdRooms2 = await new Promise(r => socket1.on('roomsList', r));
-    const exists2 = createdRooms2.find(r => r.id === 'dup_test_2');
-    log('Sala duplicada rechazada', !exists2 || createdRooms2.filter(r => r.id === 'dup_test_2').length <= 1);
+    // La sala creada debe aparecer exactamente una vez en la lista de salas.
+    // Disparamos un cambio real (leaveRoom) para forzar una emisión de roomsList.
+    socket1.emit('leaveRoom');
+    const listaFinal = await new Promise(r => socket1.once('roomsList', r));
+    const veces = listaFinal.filter(r => r.id === 'dup_test_2').length;
+    log('Sala duplicada rechazada', veces === 1);
 
     socket1.emit('adminDestroyRoom', { roomId: 'dup_test_2' });
     const destroyedRooms = await new Promise(r => socket1.on('roomsList', r));

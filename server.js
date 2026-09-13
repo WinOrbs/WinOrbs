@@ -1,3 +1,6 @@
+// Carga variables de entorno desde .env (si existe) — debe ir primero
+try { require('dotenv').config(); } catch (e) { /* dotenv no instalado: usar variables de entorno del sistema */ }
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
