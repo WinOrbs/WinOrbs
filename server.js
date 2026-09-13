@@ -12,6 +12,9 @@ const io = new Server(server, { cors: { origin: CORS_ORIGIN } });
 
 app.use(express.static(__dirname + '/public'));
 
+// Endpoint ligero para keep-alive externo (UptimeRobot / cron-job.org)
+app.get('/ping', (req, res) => res.json({ ok: true, ts: Date.now() }));
+
 const MAP_SIZE = 5000;
 const rooms = {};
 
