@@ -13,7 +13,8 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap"
         rel="stylesheet">
-    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>
+    <script src="/js/servidor-config.js"></script>
     <style>
         :root {
             --bg: #060911;
@@ -1938,7 +1939,7 @@
     </script>
 
     <script>
-        const socket = io();
+        const socket = io(window.SERVIDOR_URL || undefined);
         window.socket = socket; // accesible para el módulo de Firebase (setUid)
         const canvas = document.getElementById("gameCanvas");
         const ctx = canvas.getContext("2d");

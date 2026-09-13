@@ -7,7 +7,8 @@ const { Server } = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
+const io = new Server(server, { cors: { origin: CORS_ORIGIN } });
 
 app.use(express.static(__dirname + '/public'));
 

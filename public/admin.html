@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WinOrbs - Panel de Control Admin</title>
     <!-- Cliente Socket.io para comunicación en vivo con server.js -->
-    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>
+    <script src="/js/servidor-config.js"></script>
     <!-- Design System Neón Arena (base: vars + atmósfera; esta página conserva su layout propio) -->
     <link rel="stylesheet" href="/css/arena.css">
     <style>
@@ -423,7 +424,7 @@
         const auth = getAuth(app);
 
         // Conexión Socket.io
-        const socket = io();
+        const socket = io(window.SERVIDOR_URL || undefined);
 
         socket.on('connect', () => {
             document.getElementById('socket-status').innerText = "Servidor Node.js Online";

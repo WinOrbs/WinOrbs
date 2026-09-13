@@ -8,7 +8,8 @@
   <!-- Design System Neón Arena compartido -->
   <link rel="stylesheet" href="/css/arena.css">
   <!-- Cliente Socket.io para notificar solicitudes por Telegram vía server.js -->
-  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>
+    <script src="/js/servidor-config.js"></script>
   <style>
     /* ── Neón Arena: la base (vars, atmósfera, formularios, botones, msgs) vive en /css/arena.css ── */
     body { padding: 20px; }
@@ -247,7 +248,7 @@
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
-    const socket = io(); // para notificar solicitudes por Telegram vía server.js
+    const socket = io(window.SERVIDOR_URL || undefined); // para notificar solicitudes por Telegram vía server.js
 
     const $ = (id) => document.getElementById(id);
 

@@ -7,7 +7,8 @@
     <meta name="theme-color" content="#060a12">
     <title>WinOrbs - Entrar a Jugar</title>
     <!-- Incluimos la librería cliente de Socket.io -->
-    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>
+    <script src="/js/servidor-config.js"></script>
     <!-- Tipografía: Chakra Petch (display) + Rajdhani (UI) · sin conexión cae al system stack -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -504,7 +505,7 @@
 
     <script>
         // Inicializar conexión Socket.io
-        const socket = io();
+        const socket = io(window.SERVIDOR_URL || undefined);
         const contenedorSalas = document.getElementById("lista-salas");
 
         socket.on('serverConfig', (cfg) => {
