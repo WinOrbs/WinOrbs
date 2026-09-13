@@ -94,8 +94,90 @@ function sanitizeSkin(skin) {
             let v = String(skin[k] || '').replace(/[<>&"'`]/g, '').replace(/[\x00-\x1F]/g, '').trim().slice(0, 32);
             if (v) out[k] = v;
         });
+        // URL de imagen (PNG/JPG/GIF) opcional para skins compradas
+        const url = String(skin.imagenUrl || '').trim();
+        if (/^https:\/\/[^\s'"<>]{10,500}$/i.test(url)) out.imagenUrl = url;
     }
     return Object.keys(out).length ? out : { c1: '#38bdf8', c2: '#0284c7', border: '#bae6fd' };
+}
+
+
+// ── Tienda de skins (compra server-side con Admin SDK) ──────────────────────
+// Las 4 skins básicas son gratis y viajan hardcoded; las compradas se validan
+// contra Firestore (skins + usuarios.skins_compradas) para que nadie pueda
+// usar una skin de pago sin haberla comprado realmente.
+const SKINS_BASICAS = {
+    cielo: { c1: '#38bdf8', c2: '#0284c7', border: '#bae6fd' },
+    fuego: { c1: '#f97316', c2: '#c2410c', border: '#ffedd5' },
+    neon: { c1: '#a855f7', c2: '#6b21a8', border: '#f3e8ff' },
+    esmeralda: { c1: '#22c55e', c2: '#15803d', border: '#dcfce7' }
+};
+
+function sanitizeHex(v, fallback) {
+    const s = String(v || '').replace(/[<>&"'`]/g, '').replace(/[\x00-\x1F]/g, '').trim().slice(0, 32);
+    return /^#[0-9a-fA-F]{3,8}$/.test(s) ? s : fallback;
+}
+
+const SKIN_FALLBACK = { nombre: 'cielo', ...SKINS_BASICAS.cielo };
+
+// Devuelve la skin saneada si el cliente la posee (o es básica); si no, el básico
+async function validarSkinCliente(skin, uid) {
+    try {
+        if (!skin || typeof skin !== 'object') return SKIN_FALLBACK;
+        const nombre = String(skin.nombre || '').replace(/[<>&"'`]/g, '').trim().slice(0, 32);
+        if (SKINS_BASICAS[nombre]) return { nombre, ...SKINS_BASICAS[nombre] }; // gratis
+        const id = String(skin.id || '').replace(/[^\w-]/g, '').slice(0, 64);
+        if (!id || !FIREBASE_ECONOMY || !FIREBASE_DB) return SKIN_FALLBACK;
+        const refSkin = FIREBASE_DB.collection('skins').doc(id);
+        const refUser = FIREBASE_DB.collection('usuarios').doc(uid || '__nulo__');
+        const [snapSkin, snapUser] = await Promise.all([refSkin.get(), refUser.get()]);
+        if (!snapSkin.exists || !snapSkin.data().activo) return SKIN_FALLBACK;
+        const d = snapSkin.data();
+        const propietario = snapUser.exists && ((snapUser.data() || {}).skins_compradas || []).includes(id);
+        if (!(Number(d.precio || 0) > 0) || propietario) {
+            return {
+                id,
+                nombre: sanitizeNick(String(d.nombre || 'Skin')),
+                c1: sanitizeHex(d.c1, '#38bdf8'),
+                c2: sanitizeHex(d.c2, '#0284c7'),
+                border: sanitizeHex(d.border, '#bae6fd'),
+                imagenUrl: sanitizeSkin({ imagenUrl: d.imagenUrl }).imagenUrl || ''
+            };
+        }
+        return SKIN_FALLBACK;
+    } catch (e) {
+        return SKIN_FALLBACK;
+    }
+}
+
+// Compra de skin: transacción atómica (saldo, inventario y equipada)
+async function servidorComprarSkin(uid, skinId) {
+    if (!FIREBASE_ECONOMY || !FIREBASE_DB) return { ok: false, error: 'ECONOMY_OFF' };
+    if (!uid) return { ok: false, error: 'NO_AUTH' };
+    if (typeof skinId !== 'string' || !skinId || skinId.length > 128) return { ok: false, error: 'SKIN_INVALIDA' };
+    try {
+        return await FIREBASE_DB.runTransaction(async (t) => {
+            const refU = FIREBASE_DB.collection('usuarios').doc(uid);
+            const refS = FIREBASE_DB.collection('skins').doc(skinId);
+            const [su, ss] = await Promise.all([t.get(refU), t.get(refS)]);
+            if (!su.exists) return { ok: false, error: 'NO_PROFILE' };
+            if (!ss.exists || !ss.data().activo) return { ok: false, error: 'SKIN_NO_DISPONIBLE' };
+            const precio = Number(ss.data().precio || 0);
+            const compradas = ((su.data() || {}).skins_compradas) || [];
+            if (compradas.includes(skinId)) return { ok: false, error: 'YA_COMPRADA' };
+            const saldo = Number((su.data() || {}).saldo || 0);
+            if (saldo < precio) return { ok: false, error: 'SALDO_INSUFICIENTE' };
+            const nuevoSaldo = +(saldo - precio).toFixed(2);
+            t.update(refU, {
+                saldo: nuevoSaldo,
+                skins_compradas: firebaseAdmin.firestore.FieldValue.arrayUnion(skinId),
+                skin_equipada: skinId
+            });
+            return { ok: true, saldo: nuevoSaldo, skin: { id: skinId, ...ss.data() } };
+        });
+    } catch (e) {
+        return { ok: false, error: e.message };
+    }
 }
 
 // ── Utilidades Firestore del servidor (solo con Admin SDK) ────────────────────
@@ -1110,6 +1192,42 @@ io.on('connection', (socket) => {
         }
     });
 
+        // ── Tienda de skins ──────────────────────────────────────────
+    // Lista de skins activas (respaldo para la tienda si Firestore directo falla)
+    socket.on('tiendaSkins', async () => {
+        try {
+            if (!FIREBASE_ECONOMY || !FIREBASE_DB) return socket.emit('tiendaList', []);
+            const snap = await FIREBASE_DB.collection('skins').where('activo', '==', true).limit(100).get();
+            socket.emit('tiendaList', snap.docs.map(d => {
+                const dta = d.data();
+                return {
+                    id: d.id,
+                    nombre: sanitizeNick(String(dta.nombre || 'Skin')),
+                    precio: Number(dta.precio || 0),
+                    c1: sanitizeHex(dta.c1, '#38bdf8'),
+                    c2: sanitizeHex(dta.c2, '#0284c7'),
+                    border: sanitizeHex(dta.border, '#bae6fd'),
+                    imagenUrl: typeof dta.imagenUrl === 'string' ? dta.imagenUrl.slice(0, 500) : ''
+                };
+            }));
+        } catch (e) {
+            socket.emit('tiendaList', []);
+        }
+    });
+
+    // Compra de skin: valida identidad (token) y cobra server-side
+    socket.on('comprarSkin', async (data) => {
+        const p = (data && typeof data === 'object') ? data : {};
+        try {
+            await verificarUidEnSala(socket, null, p);
+        } catch (e) { /* token inválido: queda sin verificación */ }
+        const res = await servidorComprarSkin(socket.verifiedUid, p.skinId);
+        socket.emit('skinResult', res);
+        if (res.ok) {
+            telegramNotify('🛒 <b>Compra de skin</b>\nUID: ' + socket.verifiedUid + '\nSkin: ' + (p.skinId || '?'));
+        }
+    });
+
     socket.on('joinRoom', async ({ roomId, password, nick, skin, uid, token }) => {
         const room = rooms[roomId];
 
@@ -1188,7 +1306,9 @@ io.on('connection', (socket) => {
 
         socket.join(room.id);
         socket.roomId = room.id;
-        room.addPlayer(socket.id, nick, skin, socket.verifiedUid || (typeof uid === 'string' ? uid.slice(0, 128) : null));
+        // Anticheat de skins: si la skin no es básica ni está en el inventario del jugador → básica
+        const skinValidada = await validarSkinCliente(skin, socket.verifiedUid || (typeof uid === 'string' ? uid.slice(0, 128) : null));
+        room.addPlayer(socket.id, nick, skinValidada, socket.verifiedUid || (typeof uid === 'string' ? uid.slice(0, 128) : null));
         const nuevoP = room.players[socket.id];
         nuevoP.__ip = ip;
         if (socket.__entradaCobrada) nuevoP.pagoEntrada = socket.__entradaCobrada;

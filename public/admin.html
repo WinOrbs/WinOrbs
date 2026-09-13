@@ -328,8 +328,33 @@
                     <input type="number" id="skin-precio" value="2.50" step="0.10">
                 </div>
                 <div class="form-group">
-                    <label>URL de Imagen PNG (Firebase Storage)</label>
+                    <label>Imagen de la Skin (PNG · JPG · GIF · máx. 5 MB)</label>
+                    <input type="file" id="skin-archivo" accept="image/png,image/jpeg,image/gif,image/webp"
+                        style="padding:8px; background:#0f172a; border:1px solid #334155; border-radius:8px; color:#e2e8f0; width:100%;">
+                    <button class="btn btn-primary" onclick="subirSkinImg()" style="margin-top:8px;">⬆️ Subir Imagen</button>
+                    <!-- Barra de estado de la subida -->
+                    <div id="skin-up-wrap" style="display:none; margin-top:10px;">
+                        <div id="skin-up-texto" style="font-size:12px; color:#94a3b8; margin-bottom:4px;">Subiendo… 0%</div>
+                        <div style="width:100%; height:8px; background:#1e293b; border-radius:999px; overflow:hidden;">
+                            <div id="skin-up-fill" style="width:0%; height:100%; background:linear-gradient(90deg,#0ea5e9,#22c55e); border-radius:999px; transition:width .2s ease;"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>URL de Imagen (se rellena al subir, o pega un enlace directo)</label>
                     <input type="text" id="skin-url" placeholder="https://firebasestorage.googleapis.com/...">
+                </div>
+                <div class="form-group">
+                    <label>Color Principal (c1)</label>
+                    <input type="color" id="skin-c1" value="#a855f7">
+                </div>
+                <div class="form-group">
+                    <label>Color Secundario (c2)</label>
+                    <input type="color" id="skin-c2" value="#6b21a8">
+                </div>
+                <div class="form-group">
+                    <label>Color del Borde</label>
+                    <input type="color" id="skin-border" value="#f3e8ff">
                 </div>
                 <button class="btn btn-primary" onclick="crearSkin()">Añadir a la Tienda</button>
             </div>
@@ -406,6 +431,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { getFirestore, collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, increment, setDoc, getDoc, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getStorage, ref as sRef, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
 
         // Configuración de Firebase (config pública, seguridad vía Firestore Rules)
         const firebaseConfig = {
@@ -422,6 +448,7 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const auth = getAuth(app);
+        const storage = getStorage(app);
 
         // Conexión Socket.io
         const socket = io(window.SERVIDOR_URL || undefined);
@@ -699,16 +726,62 @@ const colorTipo = esRetiro ? '#ef4444' : esPremio ? '#f59e0b' : '#22c55e';
             window.location.href = "index.html";
         };
 
+        // Subida de imagen de skin a Firebase Storage con barra de progreso
+        window.subirSkinImg = function() {
+            const input = document.getElementById("skin-archivo");
+            const wrap = document.getElementById("skin-up-wrap");
+            const texto = document.getElementById("skin-up-texto");
+            const fill = document.getElementById("skin-up-fill");
+            if (!input.files || !input.files[0]) return alert("Elige una imagen primero (PNG, JPG, GIF o WebP).");
+            const archivo = input.files[0];
+            if (!archivo.type.startsWith('image/')) return alert("El archivo no es una imagen.");
+            if (archivo.size > 5 * 1024 * 1024) return alert("La imagen supera el límite de 5 MB.");
+
+            const nombre = archivo.name.replace(/[^\w.-]/g, '_').slice(-64);
+            const ref = sRef(storage, `skins/${Date.now()}-${nombre}`);
+
+            wrap.style.display = "block";
+            texto.innerText = "⬆️ Subiendo… 0%";
+            fill.style.width = "0%";
+
+            const tarea = uploadBytesResumable(ref, archivo, { contentType: archivo.type });
+            tarea.on('state_changed',
+                (snap) => {
+                    const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+                    texto.innerText = `⬆️ Subiendo… ${pct}%`;
+                    fill.style.width = pct + "%";
+                },
+                (e) => {
+                    wrap.style.display = "none";
+                    alert("Error al subir la imagen: " + (e.code || e.message));
+                },
+                async () => {
+                    try {
+                        const url = await getDownloadURL(tarea.snapshot.ref);
+                        document.getElementById("skin-url").value = url;
+                        texto.innerText = "✅ Imagen subida — URL vinculada al campo de abajo";
+                        fill.style.width = "100%";
+                        setTimeout(() => { wrap.style.display = "none"; }, 4000);
+                    } catch (e) {
+                        texto.innerText = "⚠️ Subida completa, pero no se pudo obtener la URL: " + (e.code || e.message);
+                    }
+                }
+            );
+        };
+
         // 3. MÓDULO SKINS (Firestore)
         window.crearSkin = async function() {
-            const nombre = document.getElementById("skin-nombre").value;
-            const precio = parseFloat(document.getElementById("skin-precio").value);
-            const url = document.getElementById("skin-url").value;
+            const nombre = document.getElementById("skin-nombre").value.trim().slice(0, 32);
+            const precio = Math.max(0, parseFloat(document.getElementById("skin-precio").value) || 0);
+            const url = document.getElementById("skin-url").value.trim();
+            const c1 = document.getElementById("skin-c1").value;
+            const c2 = document.getElementById("skin-c2").value;
+            const border = document.getElementById("skin-border").value;
 
-            if(!nombre || !url) return alert("Completa los datos requeridos");
+            if(!nombre) return alert("Ponle nombre a la skin");
 
             try {
-                await addDoc(collection(db, "skins"), { nombre, precio, imagenUrl: url, activo: true });
+                await addDoc(collection(db, "skins"), { nombre, precio, imagenUrl: url, c1, c2, border, activo: true });
                 alert("Skin agregada a la tienda.");
                 document.getElementById("skin-nombre").value = ""; 
                 document.getElementById("skin-url").value = "";
@@ -725,9 +798,10 @@ const colorTipo = esRetiro ? '#ef4444' : esPremio ? '#f59e0b' : '#22c55e';
 
             snapshot.forEach((docSnap) => {
                 const sk = docSnap.data();
+                const c1 = sk.c1 || '#38bdf8', c2 = sk.c2 || '#0284c7';
                 tabla.innerHTML += `
                     <tr>
-                        <td><img src="${sk.imagenUrl}" width="32" height="32" style="border-radius:50%"></td>
+                        <td><div style="width:32px;height:32px;border-radius:50%;background:radial-gradient(circle at 30% 30%, ${c1}, ${c2});border:2px solid ${sk.border || '#fff'}"></div></td>
                         <td><b>${sk.nombre}</b></td>
                         <td>$${sk.precio} USD</td>
                         <td><span class="toggle-switch ${sk.activo ? 'toggle-on' : 'toggle-off'}" onclick="toggleSkin('${docSnap.id}', ${!sk.activo})">${sk.activo ? 'ACTIVA' : 'INACTIVA'}</span></td>

@@ -18,5 +18,17 @@ service firebase.storage {
                             && request.resource.contentType.matches('image/.*');
       allow delete: if request.auth != null && request.auth.uid == uid;
     }
+
+    // ── Imágenes de skins de la tienda (solo admin sube; autenticados leen) ──
+    // PNG/JPG/GIF de menos de 5 MB, en la carpeta skins/. El UID y email de
+    // admin son los mismos que en firestore.rules → isAdmin().
+    match /skins/{fileName} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if request.auth != null
+                            && (request.auth.uid == "2TRnwllarqhaggRR8so48rSVzji1"
+                                || request.auth.token.email == "winorbs@admins.com")
+                            && request.resource.size < 5 * 1024 * 1024
+                            && request.resource.contentType.matches('image/.*');
+    }
   }
 }

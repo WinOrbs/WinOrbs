@@ -417,6 +417,7 @@
                 <span class="chip-ico">💰</span><span id="user-balance">$0.00 USD</span>
             </span>
             <nav class="topbar-actions">
+                <button class="mini-btn" id="btn-tienda">Tienda</button>
                 <button class="mini-btn" id="btn-perfil">Perfil</button>
                 <button class="mini-btn" id="btn-wallet">Wallet</button>
                 <button class="mini-btn mini-btn-danger" id="btn-logout">Salir</button>
@@ -532,6 +533,12 @@
 
         // Skin seleccionada por defecto
         window.skinSeleccionada = { c1: '#38bdf8', c2: '#0284c7', border: '#bae6fd' };
+
+        // Skin equipada desde la Tienda (persistida en localStorage)
+        try {
+            const eq = JSON.parse(localStorage.getItem("mi_skin_equipada") || "null");
+            if (eq && eq.c1) window.skinSeleccionada = eq;
+        } catch (e) { }
 
         window.seleccionarSkin = function (nombre, c1, c2, border, el) {
             document.querySelectorAll('.skin-card').forEach(c => c.classList.remove('selected'));
@@ -685,6 +692,9 @@
         // Navegación: Perfil / Wallet / Salir
         document.getElementById("btn-perfil").addEventListener("click", () => {
             window.location.href = "perfil.html";
+        });
+        document.getElementById("btn-tienda").addEventListener("click", () => {
+            window.location.href = "tienda.html";
         });
         document.getElementById("btn-wallet").addEventListener("click", () => {
             window.location.href = "wallet.html";

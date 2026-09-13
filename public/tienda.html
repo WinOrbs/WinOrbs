@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#060a12">
+    <title>WinOrbs — Tienda de Skins</title>
+    <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>
+    <script src="/js/servidor-config.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            color-scheme: dark;
+            --bg: #060a12;
+            --surface: rgba(15, 23, 42, .55);
+            --line: rgba(56, 189, 248, .16);
+            --cyan: #38bdf8;
+            --green: #22c55e;
+            --amber: #f59e0b;
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --font-display: 'Chakra Petch', 'Rajdhani', 'Segoe UI', system-ui, sans-serif;
+            --font-body: 'Rajdhani', 'Segoe UI', system-ui, sans-serif;
+        }
+
+        body {
+            min-height: 100vh;
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--font-body);
+            display: flex; flex-direction: column;
+            padding: 20px clamp(16px, 4vw, 48px) 48px;
+            gap: 22px;
+        }
+
+        .atmo { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+        .orb { position: absolute; border-radius: 50%; filter: blur(70px); }
+        .orb-a { width: 46vmax; height: 46vmax; left: -12vmax; top: -14vmax; background: radial-gradient(circle, rgba(56, 189, 248, .32), transparent 65%); animation: driftA 26s ease-in-out infinite alternate; }
+        .orb-b { width: 38vmax; height: 38vmax; right: -10vmax; top: 10vmax; background: radial-gradient(circle, rgba(168, 85, 247, .2), transparent 65%); animation: driftB 32s ease-in-out infinite alternate; }
+        .orb-c { width: 30vmax; height: 30vmax; left: 22vmax; bottom: -16vmax; background: radial-gradient(circle, rgba(56, 189, 248, .18), transparent 65%); animation: driftC 24s ease-in-out infinite alternate; }
+        @keyframes driftA { to { transform: translate(9vmax, 6vmax) scale(1.12); } }
+        @keyframes driftB { to { transform: translate(-8vmax, 7vmax) scale(.9); } }
+        @keyframes driftC { to { transform: translate(6vmax, -8vmax) scale(1.15); } }
+        .atmo-vignette { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 0%, transparent 35%, rgba(2, 4, 10, .8) 100%); }
+
+        .topbar {
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 14px; flex-wrap: wrap;
+            padding: 13px 22px;
+            background: linear-gradient(180deg, rgba(8, 13, 26, .85), rgba(8, 13, 26, .6));
+            border: 1px solid var(--line); border-radius: 14px;
+        }
+        .logo { font-family: var(--font-display); font-weight: 700; font-size: 22px; letter-spacing: 3px; color: #f8fafc; text-shadow: 0 0 24px rgba(56, 189, 248, .5); }
+        .logo span { color: var(--cyan); }
+        .chip { display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-display); font-weight: 600; font-size: 13.5px; padding: 7px 14px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); }
+        .chip-saldo { color: var(--green); border-color: rgba(34, 197, 94, .32); text-shadow: 0 0 14px rgba(34, 197, 94, .4); }
+
+        header h2 { font-family: var(--font-display); font-size: clamp(24px, 4vw, 34px); letter-spacing: 2px; }
+        header p { color: var(--muted); margin-top: 4px; }
+
+        .skins-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+            gap: 16px;
+        }
+
+        .skin-card {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            padding: 18px 16px;
+            display: flex; flex-direction: column; align-items: center; gap: 12px;
+            transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+        }
+        .skin-card:hover { transform: translateY(-4px); border-color: rgba(56, 189, 248, .5); box-shadow: 0 16px 40px -18px rgba(56, 189, 248, .45); }
+        .skin-card.equipped { border-color: rgba(34, 197, 94, .6); box-shadow: 0 0 24px -6px rgba(34, 197, 94, .45); }
+
+        .skin-preview {
+            width: 74px; height: 74px; border-radius: 50%;
+            border: 3px solid rgba(255, 255, 255, .75);
+            box-shadow: 0 0 22px -4px currentColor, inset 0 0 14px rgba(0, 0, 0, .35);
+            position: relative; overflow: hidden;
+        }
+        .skin-preview img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+
+        .skin-name { font-family: var(--font-display); font-weight: 600; font-size: 15px; letter-spacing: 1px; }
+        .skin-precio { font-size: 13px; color: var(--amber); font-weight: 600; }
+        .skin-precio.free { color: var(--green); }
+
+        .btn {
+            font-family: var(--font-display); font-weight: 600; font-size: 13px;
+            letter-spacing: 1.5px; text-transform: uppercase;
+            padding: 9px 18px; border-radius: 9px; border: 1px solid transparent;
+            cursor: pointer; transition: filter .15s ease, opacity .15s ease;
+        }
+        .btn-comprar { background: linear-gradient(180deg, #0ea5e9, #0284c7); color: #fff; }
+        .btn-equipar { background: transparent; border-color: rgba(56, 189, 248, .5); color: var(--cyan); }
+        .btn-equipada { background: rgba(34, 197, 94, .16); border-color: rgba(34, 197, 94, .55); color: var(--green); cursor: default; }
+        .btn:hover { filter: brightness(1.15); }
+        .btn:disabled { opacity: .55; cursor: not-allowed; }
+
+        .aviso { color: var(--muted); font-size: 13.5px; text-align: center; }
+        .msg { min-height: 22px; text-align: center; font-weight: 600; }
+        .msg.ok { color: var(--green); }
+        .msg.err { color: #f87171; }
+
+        .mini-btn {
+            font-family: var(--font-display); font-weight: 600; font-size: 12.5px;
+            letter-spacing: 1px; padding: 7px 14px; border-radius: 8px;
+            background: var(--surface); border: 1px solid var(--line);
+            color: var(--text); cursor: pointer;
+        }
+        .mini-btn:hover { border-color: rgba(56, 189, 248, .55); }
+    </style>
+</head>
+
+<body>
+    <div class="atmo" aria-hidden="true">
+        <div class="orb orb-a"></div>
+        <div class="orb orb-b"></div>
+        <div class="orb orb-c"></div>
+        <div class="atmo-vignette"></div>
+    </div>
+
+    <div class="topbar">
+        <h1 class="logo">WIN<span>ORBS</span> · Tienda</h1>
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <span class="chip chip-saldo" id="chip-saldo">$0.00 USD</span>
+            <button class="mini-btn" onclick="window.location.href='index.html'">← Volver al Lobby</button>
+        </div>
+    </div>
+
+    <header>
+        <h2>🛒 Tienda de Skins</h2>
+        <p>Compra skins de orbes con tu saldo. Tu skin viaja contigo a la arena.</p>
+    </header>
+
+    <div class="msg" id="msg"></div>
+    <div class="skins-grid" id="grid-skins">
+        <p class="aviso">Cargando tienda…</p>
+    </div>
+    <p class="aviso">Las skins básicas (Cielo, Fuego, Neón, Esmeralda) son gratis para todos. La compra se procesa en el servidor y tu saldo se descuenta de forma atómica.</p>
+
+    <script>
+        // ── Skins básicas gratis (idénticas al servidor) ──
+        const SKINS_BASICAS = [
+            { id: 'bas-cielo', nombre: 'Cielo', c1: '#38bdf8', c2: '#0284c7', border: '#bae6fd', precio: 0 },
+            { id: 'bas-fuego', nombre: 'Fuego', c1: '#f97316', c2: '#c2410c', border: '#ffedd5', precio: 0 },
+            { id: 'bas-neon', nombre: 'Neón', c1: '#a855f7', c2: '#6b21a8', border: '#f3e8ff', precio: 0 },
+            { id: 'bas-esmeralda', nombre: 'Esmeralda', c1: '#22c55e', c2: '#15803d', border: '#dcfce7', precio: 0 }
+        ];
+
+        const socket = io(window.SERVIDOR_URL || undefined);
+        window.__saldo = 0;
+        window.__inventario = [];
+        window.__skinsTienda = [];
+        window.__equipada = null;
+
+        function escapeHTML(t) {
+            return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+        function msg(texto, tipo) {
+            const el = document.getElementById('msg');
+            el.textContent = texto || '';
+            el.className = 'msg' + (tipo ? ' ' + tipo : '');
+        }
+
+        function renderTienda() {
+            const grid = document.getElementById('grid-skins');
+            const todas = SKINS_BASICAS.concat(window.__skinsTienda);
+            grid.innerHTML = '';
+            if (todas.length === SKINS_BASICAS.length) {
+                grid.innerHTML = '<p class="aviso">Aún no hay skins de pago en la tienda. ¡Vuelve pronto!</p>';
+            }
+            todas.forEach((sk) => {
+                const esBasica = sk.precio <= 0;
+                const poseida = esBasica || window.__inventario.includes(sk.id);
+                const equipada = window.__equipada && window.__equipada.id === sk.id;
+
+                const card = document.createElement('div');
+                card.className = 'skin-card' + (equipada ? ' equipped' : '');
+                card.innerHTML = `
+                    <div class="skin-preview" style="background: radial-gradient(circle at 30% 30%, ${escapeHTML(sk.c1)}, ${escapeHTML(sk.c2)}); color:${escapeHTML(sk.c1)}">
+                        ${sk.imagenUrl ? `<img src="${escapeHTML(sk.imagenUrl)}" alt="" onerror="this.remove()">` : ''}
+                    </div>
+                    <div class="skin-name">${escapeHTML(sk.nombre)}</div>
+                    <div class="skin-precio ${esBasica ? 'free' : ''}">${esBasica ? 'Gratis' : '$' + Number(sk.precio).toFixed(2) + ' USD'}</div>
+                    <button class="btn ${equipada ? 'btn-equipada' : (poseida ? 'btn-equipar' : 'btn-comprar')}" ${equipada ? 'disabled' : ''}>
+                        ${equipada ? 'Equipada' : (poseida ? 'Equipar' : 'Comprar')}
+                    </button>`;
+
+                card.querySelector('button').addEventListener('click', async () => {
+                    if (equipada) return;
+                    if (poseida) return equiparSkin(sk);
+                    return comprarSkin(sk);
+                });
+                grid.appendChild(card);
+            });
+        }
+
+        function equiparSkin(sk) {
+            if (!sk || !sk.c1) return;
+            window.__equipada = sk;
+            try {
+                localStorage.setItem('mi_skin_equipada', JSON.stringify(sk));
+            } catch (e) { }
+            // El dueño puede actualizar su perfil (reglas: nunca sube saldo ni toca baneado)
+            if (window.__perfilRef && window.__fsUpdate) {
+                window.__fsUpdate(window.__perfilRef, { skin_equipada: sk.id }).catch(() => { });
+            }
+            msg('Skin equipada: ' + sk.nombre, 'ok');
+            renderTienda();
+        }
+
+        async function comprarSkin(sk) {
+            const user = window.__authUser;
+            if (!user) { msg('Inicia sesión para comprar skins.', 'err'); return; }
+            if (window.__saldo < Number(sk.precio)) {
+                if (confirm('Tu saldo ($' + window.__saldo.toFixed(2) + ' USD) no cubre la skin ($' + Number(sk.precio).toFixed(2) + ' USD).\n¿Ir a la Wallet para depositar?')) window.location.href = 'wallet.html';
+                return;
+            }
+            if (!window.__economyMode) {
+                msg('Las compras requieren el modo economía del servidor (serviceAccountKey activo).', 'err');
+                return;
+            }
+            try {
+                const token = await user.getIdToken(true);
+                msg('Procesando compra…');
+                socket.emit('comprarSkin', { skinId: sk.id, token });
+            } catch (e) {
+                msg('No se pudo verificar tu identidad: ' + (e.code || e.message), 'err');
+            }
+        }
+
+        socket.on('skinResult', (res) => {
+            if (res && res.ok) {
+                window.__saldo = Number(res.saldo || window.__saldo);
+                const skinId = res.skin ? (res.skin.id || res.skinId) : res.skinId;
+                if (skinId && !window.__inventario.includes(skinId)) window.__inventario.push(skinId);
+                equiparSkin(res.skin || window.__skinsTienda.find(s => s.id === skinId));
+                msg('¡Skin comprada y equipada!', 'ok');
+                document.getElementById('chip-saldo').textContent = '$' + window.__saldo.toFixed(2) + ' USD';
+            } else {
+                const errores = {
+                    SALDO_INSUFICIENTE: 'No tienes saldo suficiente. Deposita en la Wallet.',
+                    YA_COMPRADA: 'Ya tenías esta skin.',
+                    SKIN_NO_DISPONIBLE: 'Esa skin ya no está disponible.',
+                    NO_AUTH: 'Inicia sesión de nuevo para comprar.',
+                    NO_PROFILE: 'Primero regístrate en la Wallet.',
+                    ECONOMY_OFF: 'Las compras requieren el modo economía del servidor.'
+                };
+                if (res && res.error === 'YA_COMPRADA') {
+                    const sk = window.__skinsTienda.find(s => s.id === (res.skinId || ''));
+                    if (sk) equiparSkin(sk);
+                }
+                msg('Compra rechazada: ' + (errores[res && res.error] || (res && res.error) || 'ERROR'), 'err');
+            }
+        });
+
+        // Respaldo: lista de skins vía servidor si Firestore directo falla
+        socket.on('tiendaList', (lista) => {
+            if (!Array.isArray(lista) || !lista.length) return;
+            if (!window.__skinsTienda.length) {
+                window.__skinsTienda = lista;
+                renderTienda();
+            }
+        });
+        socket.emit('tiendaSkins');
+    </script>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, collection, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { firebaseConfig } from "./js/firebase-config.js";
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        window.__fsUpdate = updateDoc;
+
+        onAuthStateChanged(auth, (user) => {
+            if (!user) { window.location.href = "login.html"; return; }
+            window.__authUser = user;
+
+            // Perfil en vivo: saldo e inventario
+            const ref = doc(db, "usuarios", user.uid);
+            window.__perfilRef = ref;
+            onSnapshot(ref, (snap) => {
+                if (!snap.exists()) return;
+                const p = snap.data();
+                window.__saldo = Number(p.saldo || 0);
+                window.__inventario = Array.isArray(p.skins_compradas) ? p.skins_compradas : [];
+                document.getElementById('chip-saldo').textContent = '$' + window.__saldo.toFixed(2) + ' USD';
+                renderTienda();
+            }, (e) => {
+                msg('No se pudo leer tu perfil (' + (e.code || '') + '). Publica las reglas de firestore.rules.', 'err');
+            });
+
+            // Catálogo de skins activas (Firestore directo, tiempo real)
+            onSnapshot(collection(db, "skins"), (snapshot) => {
+                const lista = [];
+                snapshot.forEach((d) => {
+                    const s = d.data();
+                    if (!s.activo) return;
+                    lista.push({
+                        id: d.id,
+                        nombre: String(s.nombre || 'Skin').replace(/[<>&"']/g, '').slice(0, 32),
+                        precio: Number(s.precio || 0),
+                        c1: String(s.c1 || '#38bdf8'),
+                        c2: String(s.c2 || '#0284c7'),
+                        border: String(s.border || '#bae6fd'),
+                        imagenUrl: String(s.imagenUrl || '')
+                    });
+                });
+                window.__skinsTienda = lista;
+                renderTienda();
+            }, (e) => { /* el respaldo vía socket cubre esto */ });
+
+            // Skin equipada previa (localStorage → reflejar al entrar)
+            try {
+                const eq = JSON.parse(localStorage.getItem('mi_skin_equipada') || 'null');
+                if (eq && eq.c1) { window.__equipada = eq; renderTienda(); }
+            } catch (e) { }
+        });
+    </script>
+</body>
+
+</html>

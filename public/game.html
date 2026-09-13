@@ -1016,6 +1016,40 @@
             display: inline-flex;
         }
 
+        /* ============ Barra de carga de fotos de skins ============ */
+        #skins-carga {
+            position: absolute;
+            top: 104px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--surface);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border);
+            color: var(--muted);
+            padding: 8px 16px;
+            border-radius: 10px;
+            z-index: 15;
+            display: none;
+            align-items: center;
+            gap: 10px;
+            box-shadow: var(--shadow);
+        }
+        #skins-carga.visible { display: inline-flex; }
+        #skins-carga-texto { font-size: 11.5px; font-weight: 500; white-space: nowrap; }
+        #skins-carga-bar {
+            width: 120px; height: 5px;
+            background: var(--border);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+        #skins-carga-fill {
+            width: 0%; height: 100%;
+            background: linear-gradient(90deg, var(--cyan, #38bdf8), #22c55e);
+            border-radius: 999px;
+            transition: width .3s ease;
+        }
+
         #conn-status::before {
             content: "";
             width: 8px;
@@ -1839,6 +1873,11 @@
         </svg>
     </button>
     <div id="conn-status">Conectando con el servidor...</div>
+    <!-- Barra de estado: fotos de skins aún cargando -->
+    <div id="skins-carga">
+        <span id="skins-carga-texto">⏳ Cargando skins…</span>
+        <div id="skins-carga-bar"><div id="skins-carga-fill"></div></div>
+    </div>
     <canvas id="gameCanvas"></canvas>
 
     <!-- Joystick Virtual y Controles Tactiles -->
@@ -2273,6 +2312,8 @@
         // ESTADO MULTIJUGADOR GLOBAL
         let myPlayerId = null;
         let gameState = null;
+        // Caché de imágenes de skins (PNG/JPG/GIF)
+        const skinImages = {};
         let shakeIntensity = 0;
         let isDead = false;
         let isGameOver = false;
@@ -2849,6 +2890,39 @@
                 ctx.fillStyle = b.isOrbBullet ? '#a855f7' : '#fbbf24'; ctx.fill();
             });
 
+            // Caché de imágenes de skins (PNG/JPG/GIF) — precarga perezosa
+            Object.values(gameState.players).forEach(p => {
+                if (p.skin && p.skin.imagenUrl && !skinImages[p.skin.imagenUrl]) {
+                    const img = new Image();
+                    try { img.referrerPolicy = 'no-referrer'; } catch (e) { }
+                    img.src = p.skin.imagenUrl;
+                    skinImages[p.skin.imagenUrl] = img;
+                }
+            });
+
+            // Barra de estado: cuántas fotos de skins faltan por cargar
+            (function () {
+                const urls = new Set();
+                Object.values(gameState.players).forEach(p => {
+                    if (!p.isDead && p.skin && p.skin.imagenUrl) urls.add(p.skin.imagenUrl);
+                });
+                const total = urls.size;
+                let listas = 0;
+                urls.forEach(u => {
+                    const im = skinImages[u];
+                    if (im && im.complete && im.naturalWidth > 0) listas++;
+                });
+                const bar = document.getElementById("skins-carga");
+                if (!bar) return;
+                if (total > 0 && listas < total) {
+                    document.getElementById("skins-carga-texto").innerText = `⏳ Cargando skins ${listas}/${total}`;
+                    document.getElementById("skins-carga-fill").style.width = Math.round((listas / total) * 100) + "%";
+                    bar.classList.add("visible");
+                } else {
+                    bar.classList.remove("visible");
+                }
+            })();
+
             // Renderizar Jugadores Reales
             Object.values(gameState.players).forEach(p => {
                 if (p.isDead) return;
@@ -2867,9 +2941,30 @@
                 ctx.fillText(p.nick, p.x, topY - 8);
 
                 ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-                ctx.fillStyle = (p.skin && p.skin.c1) ? p.skin.c1 : '#38bdf8';
+                // Skin: gradiente radial c1 → c2 con borde del color de la skin
+                const skC1 = (p.skin && p.skin.c1) ? p.skin.c1 : '#38bdf8';
+                const skC2 = (p.skin && p.skin.c2) ? p.skin.c2 : skC1;
+                const skBorder = (p.skin && p.skin.border) ? p.skin.border : '#fff';
+                const gradOrbe = ctx.createRadialGradient(p.x - p.radius * 0.35, p.y - p.radius * 0.35, p.radius * 0.15, p.x, p.y, p.radius);
+                gradOrbe.addColorStop(0, skC1);
+                gradOrbe.addColorStop(1, skC2);
+                ctx.fillStyle = gradOrbe;
                 ctx.fill();
-                ctx.strokeStyle = p.isDashing ? '#38bdf8' : '#fff'; ctx.lineWidth = p.isDashing ? 4 : 2.5; ctx.stroke();
+                // Si la skin tiene imagen (PNG/JPG/GIF), se dibuja recortada al orbe
+                const skUrl = p.skin && p.skin.imagenUrl;
+                if (skUrl) {
+                    const img = skinImages[skUrl];
+                    if (img && img.complete && img.naturalWidth > 0) {
+                        ctx.save();
+                        ctx.beginPath();
+                        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                        ctx.clip();
+                        const lado = p.radius * 2;
+                        ctx.drawImage(img, p.x - p.radius, p.y - p.radius, lado, lado);
+                        ctx.restore();
+                    }
+                }
+                ctx.strokeStyle = p.isDashing ? '#38bdf8' : skBorder; ctx.lineWidth = p.isDashing ? 4 : 2.5; ctx.stroke();
                 if (p.isDashing) {
                     ctx.shadowBlur = 20;
                     ctx.shadowColor = '#38bdf8';
