@@ -1,0 +1,2989 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#060911">
+    <meta name="format-detection" content="telephone=no, email=no, address=no">
+    <title>WinOrbs: Tactical Extraction Shooter - Multiplayer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap"
+        rel="stylesheet">
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        :root {
+            --bg: #060911;
+            --bg-2: #0a0f1e;
+            --surface: rgba(13, 20, 38, 0.82);
+            --surface-2: rgba(20, 29, 51, 0.92);
+            --surface-solid: #0e1628;
+            --border: rgba(148, 163, 184, 0.14);
+            --border-strong: rgba(56, 189, 248, 0.4);
+            --text: #eaf1fb;
+            --muted: #90a4c2;
+            --faint: #5f708c;
+            --primary: #38bdf8;
+            --primary-dim: rgba(56, 189, 248, 0.14);
+            --gold: #f5b301;
+            --green: #34d399;
+            --red: #f43f5e;
+            --purple: #b06bff;
+            --radius: 16px;
+            --shadow: 0 18px 45px -12px rgba(0, 0, 0, 0.7);
+            --font-display: 'Rajdhani', 'Space Grotesk', system-ui, sans-serif;
+            --font-body: 'Inter', system-ui, sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+            font-family: var(--font-body);
+            user-select: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background:
+                radial-gradient(1200px 700px at 15% -10%, rgba(56, 189, 248, 0.08), transparent 60%),
+                radial-gradient(1000px 600px at 100% 110%, rgba(176, 107, 255, 0.06), transparent 55%),
+                var(--bg);
+            color: var(--text);
+            overscroll-behavior: none;
+            touch-action: manipulation;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        canvas {
+            display: block;
+            background: var(--bg-2);
+        }
+
+        @media (hover: hover) and (pointer: fine) {
+            #gameCanvas {
+                cursor: crosshair;
+            }
+        }
+
+        .label {
+            display: block;
+            color: var(--muted);
+            font-size: 9.5px;
+            text-transform: uppercase;
+            letter-spacing: 1.1px;
+            font-weight: 600;
+            font-family: var(--font-body);
+        }
+
+        .value {
+            font-family: var(--font-display);
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+
+        /* ============ HUD SUPERIOR ============ */
+        .hud {
+            position: absolute;
+            top: 14px;
+            left: 14px;
+            display: flex;
+            align-items: stretch;
+            gap: 0;
+            background: var(--surface);
+            backdrop-filter: blur(16px) saturate(120%);
+            -webkit-backdrop-filter: blur(16px) saturate(120%);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 4px;
+            z-index: 5;
+            pointer-events: none;
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+
+        .hud::before {
+            content: "";
+            position: absolute;
+            inset: 0 0 auto 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.5), transparent);
+        }
+
+        .hud-item {
+            padding: 9px 15px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 3px;
+            position: relative;
+        }
+
+        .hud-item+.hud-item::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 18%;
+            bottom: 18%;
+            width: 1px;
+            background: var(--border);
+        }
+
+        .hud-item b {
+            color: var(--primary);
+            font-size: 16px;
+            font-weight: 700;
+            font-family: var(--font-display);
+            letter-spacing: 0.4px;
+        }
+
+        .hud-item.timer b {
+            color: var(--red);
+            font-size: 22px;
+            font-variant-numeric: tabular-nums;
+            text-shadow: 0 0 18px rgba(244, 63, 94, 0.35);
+        }
+
+        .hud-item.pot b {
+            color: var(--gold);
+            font-size: 18px;
+            text-shadow: 0 0 18px rgba(245, 179, 1, 0.28);
+        }
+
+        /* Plazas del lobby de espera (ocupadas / libres) */
+        .seat-dot {
+            width: 14px; height: 14px; border-radius: 50%;
+            border: 1px solid rgba(148, 163, 184, .45);
+            background: transparent; transition: .2s;
+        }
+        .seat-dot.ocupada {
+            background: var(--primary);
+            border-color: transparent;
+            box-shadow: 0 0 10px rgba(56, 189, 248, .6);
+        }
+
+        .hud-item.charge b {
+            color: var(--gold);
+        }
+
+        .hud-item.bank b {
+            color: var(--green);
+        }
+
+        /* BARRAS DE VIDA Y ESCUDO */
+        .status-bars {
+            width: 132px;
+            margin-top: 2px;
+        }
+
+        .bar-container {
+            width: 100%;
+            height: 8px;
+            background: rgba(2, 6, 16, 0.7);
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            margin-bottom: 4px;
+            position: relative;
+        }
+
+        .bar-fill-hp {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, #f43f5e, #fb7185);
+            transition: width 0.15s ease;
+            box-shadow: 0 0 12px rgba(244, 63, 94, 0.5);
+        }
+
+        .bar-fill-shield {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, #38bdf8, #60a5fa);
+            transition: width 0.15s ease;
+            box-shadow: 0 0 12px rgba(56, 189, 248, 0.5);
+        }
+
+        #hud-shield-text {
+            color: #7cc4ff !important;
+            font-size: 9.5px;
+            font-weight: 600;
+            letter-spacing: 0.4px;
+        }
+
+        /* ============ EQUIPAMIENTO (bottom-left) ============ */
+        .weapon-hud {
+            position: absolute;
+            bottom: 18px;
+            left: 14px;
+            background: var(--surface);
+            backdrop-filter: blur(16px) saturate(120%);
+            -webkit-backdrop-filter: blur(16px) saturate(120%);
+            border: 1px solid var(--border);
+            padding: 13px 16px;
+            border-radius: var(--radius);
+            font-size: 12.5px;
+            z-index: 5;
+            pointer-events: none;
+            box-shadow: var(--shadow);
+            min-width: 210px;
+        }
+
+        .weapon-hud .row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 3px 0;
+            color: var(--text);
+        }
+
+        .weapon-hud .row+.row {
+            border-top: 1px solid var(--border);
+            margin-top: 2px;
+            padding-top: 6px;
+        }
+
+        .weapon-hud .ic {
+            width: 22px;
+            height: 22px;
+            flex: none;
+            display: grid;
+            place-items: center;
+            border-radius: 7px;
+            background: var(--primary-dim);
+            color: var(--primary);
+        }
+
+        .weapon-hud .ic svg {
+            width: 14px;
+            height: 14px;
+        }
+
+        .weapon-hud .k {
+            color: var(--muted);
+            font-weight: 600;
+            font-size: 11px;
+            min-width: 52px;
+        }
+
+        .weapon-hud b {
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .weapon-hud small {
+            color: var(--faint) !important;
+            font-size: 10.5px;
+        }
+
+        .kbd {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 16px;
+            height: 16px;
+            padding: 0 4px;
+            border-radius: 4px;
+            background: rgba(148, 163, 184, 0.12);
+            border: 1px solid var(--border);
+            color: var(--muted);
+            font-family: var(--font-display);
+            font-size: 10px;
+            font-weight: 700;
+        }
+
+        /* ============ Indicador de Dash (bottom center) ============ */
+        .ability-hud {
+            position: absolute;
+            bottom: 18px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--surface);
+            backdrop-filter: blur(16px) saturate(120%);
+            -webkit-backdrop-filter: blur(16px) saturate(120%);
+            border: 1px solid var(--border);
+            padding: 9px 16px;
+            border-radius: 999px;
+            z-index: 5;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: var(--shadow);
+        }
+
+        .ability-icon {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+            color: #04121f;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 0 18px rgba(56, 189, 248, 0.45);
+        }
+
+        .ability-icon svg {
+            width: 17px;
+            height: 17px;
+        }
+
+        .ability-cooldown {
+            height: 5px;
+            width: 90px;
+            background: rgba(2, 6, 16, 0.7);
+            border-radius: 3px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+
+        .ability-fill {
+            height: 100%;
+            width: 100%;
+            background: linear-gradient(90deg, #38bdf8, #7dd3fc);
+            transition: width 0.1s linear;
+        }
+
+        /* ============ Banners y Anuncios ============ */
+        .extract-banner,
+        .zone-warning,
+        .announcement-banner {
+            position: absolute;
+            top: 88px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(52, 211, 153, 0.12);
+            border: 1px solid rgba(52, 211, 153, 0.55);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            color: var(--green);
+            padding: 9px 20px;
+            border-radius: 999px;
+            font-weight: 700;
+            font-size: 12.5px;
+            display: none;
+            z-index: 6;
+            pointer-events: none;
+            letter-spacing: 0.6px;
+            animation: pulse 1.6s infinite;
+            box-shadow: 0 8px 30px -8px rgba(52, 211, 153, 0.4);
+        }
+
+        .zone-warning {
+            top: 128px;
+            background: rgba(244, 63, 94, 0.12);
+            border-color: rgba(244, 63, 94, 0.55);
+            color: #fb7185;
+            box-shadow: 0 8px 30px -8px rgba(244, 63, 94, 0.4);
+        }
+
+        .announcement-banner {
+            top: 172px;
+            background: rgba(245, 179, 1, 0.14);
+            border-color: rgba(245, 179, 1, 0.6);
+            color: #fcd34d;
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            font-family: var(--font-display);
+            box-shadow: 0 8px 30px -8px rgba(245, 179, 1, 0.4);
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 0.75;
+            }
+
+            50% {
+                opacity: 1;
+            }
+        }
+
+        /* ============ Leaderboard & Minimap ============ */
+        .leaderboard {
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            background: var(--surface);
+            backdrop-filter: blur(16px) saturate(120%);
+            -webkit-backdrop-filter: blur(16px) saturate(120%);
+            border: 1px solid var(--border);
+            padding: 13px 14px;
+            border-radius: var(--radius);
+            width: 224px;
+            pointer-events: none;
+            z-index: 5;
+            box-shadow: var(--shadow);
+        }
+
+        .leaderboard h3 {
+            margin: 0 0 10px 0;
+            font-size: 11px;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            font-family: var(--font-display);
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .leaderboard h3 svg {
+            width: 14px;
+            height: 14px;
+        }
+
+        .leaderboard ol {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+            font-size: 12.5px;
+            color: #c3d3ea;
+            counter-reset: rank;
+        }
+
+        .leaderboard li {
+            counter-increment: rank;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 0;
+            line-height: 1.35;
+        }
+
+        .leaderboard li::before {
+            content: counter(rank);
+            flex: none;
+            width: 18px;
+            height: 18px;
+            display: grid;
+            place-items: center;
+            border-radius: 5px;
+            background: rgba(148, 163, 184, 0.1);
+            color: var(--muted);
+            font-family: var(--font-display);
+            font-weight: 700;
+            font-size: 10.5px;
+        }
+
+        .leaderboard li:nth-child(1)::before {
+            background: rgba(245, 179, 1, 0.18);
+            color: var(--gold);
+        }
+
+        .leaderboard li:nth-child(2)::before {
+            background: rgba(203, 213, 225, 0.16);
+            color: #cbd5e1;
+        }
+
+        .leaderboard li:nth-child(3)::before {
+            background: rgba(217, 119, 87, 0.16);
+            color: #e0a074;
+        }
+
+        .leaderboard li.you {
+            color: var(--primary);
+            font-weight: 700;
+        }
+
+        .leaderboard li.you::before {
+            background: var(--primary-dim);
+            color: var(--primary);
+            box-shadow: 0 0 0 1px var(--border-strong);
+        }
+
+        #minimap {
+            position: absolute;
+            bottom: 18px;
+            right: 14px;
+            width: 164px;
+            height: 164px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            z-index: 5;
+            box-shadow: var(--shadow);
+        }
+
+        /* ============ Tienda Modal ============ */
+        .shop-modal {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--surface-2);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--border-strong);
+            border-radius: 20px;
+            padding: 22px;
+            z-index: 30;
+            display: none;
+            width: 360px;
+            max-width: calc(100vw - 32px);
+            box-shadow: 0 30px 70px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(56, 189, 248, 0.1);
+        }
+
+        .shop-modal h2 {
+            margin: 0 0 16px 0;
+            color: var(--text);
+            font-size: 17px;
+            font-family: var(--font-display);
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .shop-modal h2 svg {
+            width: 18px;
+            height: 18px;
+            color: var(--primary);
+        }
+
+        .shop-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 10px;
+            background: rgba(2, 6, 16, 0.45);
+            border: 1px solid var(--border);
+            padding: 12px 14px;
+            border-radius: 12px;
+            transition: border-color 0.15s ease;
+        }
+
+        .shop-item:hover {
+            border-color: var(--border-strong);
+        }
+
+        .shop-item b {
+            font-size: 13.5px;
+            font-weight: 600;
+        }
+
+        .shop-item small {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            color: var(--gold) !important;
+            font-size: 11px;
+            font-weight: 600;
+            margin-top: 3px;
+        }
+
+        .shop-item button {
+            background: linear-gradient(135deg, #34d399, #10b981);
+            color: #032216;
+            border: none;
+            padding: 9px 16px;
+            font-weight: 700;
+            font-size: 12.5px;
+            border-radius: 9px;
+            cursor: pointer;
+            flex: none;
+            font-family: var(--font-display);
+            letter-spacing: 0.4px;
+            transition: transform 0.12s ease, filter 0.12s ease;
+        }
+
+        .shop-item button:hover:not(:disabled) {
+            transform: translateY(-1px);
+            filter: brightness(1.08);
+        }
+
+        .shop-item button:disabled {
+            background: rgba(148, 163, 184, 0.14);
+            color: var(--faint);
+            cursor: not-allowed;
+        }
+
+        .btn-close-shop {
+            width: 100%;
+            background: rgba(244, 63, 94, 0.12);
+            color: #fb7185;
+            border: 1px solid rgba(244, 63, 94, 0.4);
+            padding: 11px;
+            border-radius: 11px;
+            font-weight: 700;
+            font-size: 13px;
+            font-family: var(--font-display);
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            margin-top: 8px;
+            transition: background 0.15s ease;
+        }
+
+        .btn-close-shop:hover {
+            background: rgba(244, 63, 94, 0.2);
+        }
+
+        /* ============ Overlays ============ */
+        .death-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(6, 9, 17, 0.86);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 40;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .death-card {
+            background: var(--surface-2);
+            border: 1px solid rgba(244, 63, 94, 0.5);
+            border-radius: 22px;
+            padding: 36px 34px;
+            max-width: 440px;
+            width: 100%;
+            box-shadow: 0 30px 70px rgba(0, 0, 0, 0.7), 0 0 60px -20px rgba(244, 63, 94, 0.4);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .death-card::before {
+            content: "";
+            position: absolute;
+            inset: 0 0 auto 0;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, var(--red), transparent);
+        }
+
+        .death-card.win-card {
+            border-color: rgba(52, 211, 153, 0.55);
+            box-shadow: 0 30px 70px rgba(0, 0, 0, 0.7), 0 0 60px -20px rgba(52, 211, 153, 0.45);
+        }
+
+        .death-card.win-card::before {
+            background: linear-gradient(90deg, transparent, var(--green), transparent);
+        }
+
+        .btn-respawn {
+            background: linear-gradient(135deg, #34d399, #10b981);
+            color: #032216;
+            border: none;
+            padding: 15px 28px;
+            font-size: 14px;
+            font-weight: 700;
+            font-family: var(--font-display);
+            letter-spacing: 0.6px;
+            border-radius: 12px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 22px;
+            transition: transform 0.12s ease, filter 0.12s ease;
+        }
+
+        .btn-respawn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            filter: brightness(1.08);
+        }
+
+        .btn-respawn:disabled {
+            background: rgba(148, 163, 184, 0.14);
+            color: var(--faint);
+            cursor: not-allowed;
+        }
+
+        /* Botones flotantes de barra superior */
+        .top-btn {
+            position: absolute;
+            top: 14px;
+            z-index: 12;
+            height: 38px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            color: var(--muted);
+            font-size: 12.5px;
+            font-weight: 600;
+            font-family: var(--font-display);
+            letter-spacing: 0.6px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            transition: color 0.15s ease, border-color 0.15s ease;
+            box-shadow: var(--shadow);
+        }
+
+        .top-btn svg {
+            width: 15px;
+            height: 15px;
+        }
+
+        .btn-exit {
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 0 18px;
+        }
+
+        .btn-exit:hover {
+            color: #fb7185;
+            border-color: rgba(244, 63, 94, 0.5);
+        }
+
+        .top-btn.confirming {
+            color: #fb7185;
+            border-color: rgba(244, 63, 94, 0.6);
+            background: rgba(244, 63, 94, 0.16);
+        }
+
+        #btn-fullscreen {
+            left: calc(50% + 82px);
+            width: 42px;
+            justify-content: center;
+            display: none;
+        }
+
+        #btn-fullscreen.visible {
+            display: inline-flex;
+        }
+
+        #btn-fullscreen:hover {
+            color: var(--primary);
+            border-color: var(--border-strong);
+        }
+
+        /* Overlay dentro de death-card cuando es lobby: boton salir en flujo */
+        .death-card .btn-exit {
+            position: static;
+            transform: none;
+            margin: 18px auto 0;
+        }
+
+        /* ============ Marca WinOrbs ============ */
+        .wordmark {
+            font-family: var(--font-display);
+            font-weight: 700;
+            letter-spacing: 1px;
+            background: linear-gradient(135deg, #7dd3fc, #38bdf8 45%, #b06bff);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: inline-block;
+        }
+
+        .brand-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 18px;
+        }
+
+        .brand-mark {
+            width: 44px;
+            height: 44px;
+            border-radius: 13px;
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.22), rgba(176, 107, 255, 0.18));
+            border: 1px solid var(--border-strong);
+            display: grid;
+            place-items: center;
+            box-shadow: 0 0 30px -8px rgba(56, 189, 248, 0.5);
+        }
+
+        .brand-mark svg {
+            width: 24px;
+            height: 24px;
+            color: var(--primary);
+        }
+
+        .dot-loader {
+            display: inline-flex;
+            gap: 6px;
+            margin-top: 4px;
+        }
+
+        .dot-loader i {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--primary);
+            opacity: 0.35;
+            animation: dot 1.2s infinite ease-in-out;
+        }
+
+        .dot-loader i:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .dot-loader i:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes dot {
+
+            0%,
+            100% {
+                opacity: 0.3;
+                transform: translateY(0);
+            }
+
+            40% {
+                opacity: 1;
+                transform: translateY(-4px);
+            }
+        }
+
+        /* ============ Orientacion portrait ============ */
+        #orientation-overlay {
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(900px 500px at 50% 0%, rgba(56, 189, 248, 0.1), transparent 60%),
+                var(--bg);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            text-align: center;
+            padding: 24px;
+        }
+
+        #orientation-overlay.hidden {
+            display: none;
+        }
+
+        .orientation-icon {
+            width: 84px;
+            height: 84px;
+            border-radius: 22px;
+            border: 1px solid var(--border-strong);
+            background: var(--surface);
+            display: grid;
+            place-items: center;
+            margin-bottom: 22px;
+            animation: rotateHint 2.4s ease-in-out infinite;
+        }
+
+        .orientation-icon svg {
+            width: 40px;
+            height: 40px;
+            color: var(--primary);
+        }
+
+        @keyframes rotateHint {
+
+            0%,
+            60%,
+            100% {
+                transform: rotate(0deg);
+            }
+
+            30% {
+                transform: rotate(-90deg);
+            }
+        }
+
+        /* ============ Overlay pantalla completa ============ */
+        #fs-overlay {
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(900px 500px at 50% 10%, rgba(56, 189, 248, 0.12), transparent 60%),
+                radial-gradient(700px 400px at 50% 100%, rgba(176, 107, 255, 0.1), transparent 60%),
+                rgba(6, 9, 17, 0.96);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            text-align: center;
+            cursor: pointer;
+            padding: 24px;
+        }
+
+        #fs-overlay.hidden {
+            display: none;
+        }
+
+        .fs-big-btn {
+            margin-top: 22px;
+            background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+            color: #04121f;
+            border: none;
+            padding: 15px 36px;
+            font-size: 15px;
+            font-weight: 700;
+            font-family: var(--font-display);
+            letter-spacing: 0.8px;
+            border-radius: 13px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 14px 34px -10px rgba(56, 189, 248, 0.6);
+            transition: transform 0.12s ease, filter 0.12s ease;
+        }
+
+        .fs-big-btn:hover {
+            transform: translateY(-1px);
+            filter: brightness(1.06);
+        }
+
+        .fs-big-btn svg {
+            width: 17px;
+            height: 17px;
+        }
+
+        /* ============ Overlay de desconexion ============ */
+        #conn-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(6, 9, 17, 0.96);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9998;
+            text-align: center;
+            padding: 24px;
+        }
+
+        #conn-overlay.visible {
+            display: flex;
+        }
+
+        .status-icon {
+            width: 76px;
+            height: 76px;
+            border-radius: 20px;
+            border: 1px solid rgba(244, 63, 94, 0.45);
+            background: rgba(244, 63, 94, 0.08);
+            display: grid;
+            place-items: center;
+            margin-bottom: 20px;
+        }
+
+        .status-icon svg {
+            width: 36px;
+            height: 36px;
+            color: var(--red);
+        }
+
+        /* ============ Estado de conexion ============ */
+        #conn-status {
+            position: absolute;
+            top: 62px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--surface);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border);
+            color: var(--muted);
+            padding: 7px 16px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 500;
+            z-index: 15;
+            display: none;
+            align-items: center;
+            gap: 8px;
+            box-shadow: var(--shadow);
+        }
+
+        #conn-status.visible {
+            display: inline-flex;
+        }
+
+        #conn-status::before {
+            content: "";
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--gold);
+            box-shadow: 0 0 10px var(--gold);
+            animation: pulse 1.2s infinite;
+        }
+
+        /* Titulos y textos de overlays */
+        .ov-title {
+            font-family: var(--font-display);
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            margin: 0 0 8px 0;
+        }
+
+        .ov-text {
+            color: var(--muted);
+            font-size: 14px;
+            line-height: 1.55;
+            max-width: 320px;
+            margin: 0 auto;
+        }
+
+        .ov-hint {
+            color: var(--faint);
+            font-size: 11.5px;
+            line-height: 1.5;
+            margin-top: 14px;
+            max-width: 320px;
+        }
+
+        /* ============ Joystick virtual ============ */
+        .joystick-container {
+            position: absolute;
+            width: 118px;
+            height: 118px;
+            background: rgba(13, 20, 38, 0.4);
+            border: 1.5px solid rgba(56, 189, 248, 0.35);
+            border-radius: 50%;
+            touch-action: none;
+            user-select: none;
+            z-index: 10;
+            display: none;
+            pointer-events: none;
+            box-shadow: inset 0 0 30px rgba(56, 189, 248, 0.1);
+        }
+
+        .joystick-container.active {
+            display: block;
+        }
+
+        .joystick-handle {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 48px;
+            height: 48px;
+            background: radial-gradient(circle at 35% 30%, rgba(125, 211, 252, 0.95), rgba(56, 189, 248, 0.85));
+            border-radius: 50%;
+            border: 2px solid #7dd3fc;
+            box-shadow: 0 0 22px rgba(56, 189, 248, 0.65);
+        }
+
+        /* ==== Controles tactiles pro: stick de apuntado, badges, safe-area ==== */
+        #gameCanvas {
+            width: 100vw;
+            height: 100vh;
+        }
+
+        html,
+        body {
+            -webkit-touch-callout: none;
+        }
+
+        /* Stick de apuntado (derecha): misma mecanica, paleta morada */
+        .joystick-container.aim {
+            border-color: rgba(176, 107, 255, 0.45);
+            box-shadow: inset 0 0 30px rgba(176, 107, 255, 0.12);
+        }
+
+        .joystick-container.aim .joystick-handle {
+            background: radial-gradient(circle at 35% 30%, rgba(216, 180, 254, 0.95), rgba(176, 107, 255, 0.85));
+            border-color: #d8b4fe;
+            box-shadow: 0 0 22px rgba(176, 107, 255, 0.6);
+        }
+
+        .touch-controls {
+            width: 192px;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+        .touch-btn {
+            position: relative;
+            width: 58px;
+            height: 58px;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .touch-btn svg {
+            width: 24px;
+            height: 24px;
+        }
+
+        .touch-btn.cooldown {
+            filter: saturate(0.35) brightness(0.75);
+        }
+
+        .touch-btn.small {
+            width: 44px;
+            height: 44px;
+        }
+
+        .touch-btn.small svg {
+            width: 17px;
+            height: 17px;
+        }
+
+        .touch-btn.shoot {
+            width: 64px;
+            height: 64px;
+        }
+
+        .touch-btn.shoot svg {
+            width: 27px;
+            height: 27px;
+        }
+
+        .touch-btn.reload {
+            background: rgba(56, 189, 248, 0.18);
+            border-color: rgba(56, 189, 248, 0.5);
+            color: #7dd3fc;
+        }
+
+        .touch-btn.bomb {
+            background: rgba(244, 63, 94, 0.2);
+            border-color: rgba(244, 63, 94, 0.55);
+            color: #fda4af;
+        }
+
+        .touch-btn.auto {
+            align-self: center;
+            width: auto;
+            height: 30px;
+            border-radius: 999px;
+            padding: 0 12px;
+            font: 700 10.5px var(--font-display);
+            letter-spacing: 1.2px;
+            color: var(--muted);
+            background: rgba(13, 20, 38, 0.6);
+        }
+
+        .touch-btn.auto.on {
+            color: #04121f;
+            background: var(--green);
+            border-color: var(--green);
+            box-shadow: 0 0 18px rgba(52, 211, 153, 0.5);
+        }
+
+        .btn-badge {
+            position: absolute;
+            bottom: 2px;
+            right: 5px;
+            font: 700 10px var(--font-display);
+            color: #eaf1fb;
+            pointer-events: none;
+            text-shadow: 0 1px 3px #000;
+        }
+
+        .btn-badge.low {
+            color: var(--red);
+        }
+
+        /* Muerto: oculta controles y evita toques fantasma */
+        body.dead .touch-controls,
+        body.dead .joystick-container {
+            display: none !important;
+        }
+
+        #btn-fullscreen.fs-active {
+            color: var(--primary);
+            border-color: var(--border-strong);
+        }
+
+        /* ============ Botones tactiles ============ */
+        .touch-controls {
+            position: absolute;
+            bottom: calc(20px + env(safe-area-inset-bottom));
+            right: calc(20px + env(safe-area-inset-right));
+            display: none;
+            z-index: 10;
+            gap: 14px;
+            flex-wrap: wrap;
+            width: 210px;
+            justify-content: flex-end;
+        }
+
+        .touch-controls.active {
+            display: flex;
+        }
+
+        .touch-btn {
+            width: 74px;
+            height: 74px;
+            border-radius: 50%;
+            border: 1.5px solid rgba(56, 189, 248, 0.45);
+            background: rgba(56, 189, 248, 0.16);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            color: var(--text);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            touch-action: manipulation;
+            transition: transform 0.08s ease, background 0.12s ease;
+        }
+
+        .touch-btn:active {
+            transform: scale(0.92);
+        }
+
+        .touch-btn svg {
+            width: 30px;
+            height: 30px;
+            pointer-events: none;
+        }
+
+        .touch-btn.shoot {
+            background: rgba(56, 189, 248, 0.3);
+            color: #bae6fd;
+        }
+
+        .touch-btn.dash {
+            background: rgba(245, 158, 11, 0.24);
+            border-color: rgba(249, 115, 22, 0.55);
+            color: #fdba74;
+        }
+
+        .touch-btn.weapon {
+            background: rgba(176, 107, 255, 0.24);
+            border-color: rgba(176, 107, 255, 0.55);
+            color: #d8b4fe;
+        }
+
+        .touch-btn.shop {
+            background: rgba(52, 211, 153, 0.24);
+            border-color: rgba(52, 211, 153, 0.55);
+            color: #6ee7b7;
+        }
+
+        /* ============ Responsividad ============ */
+        @media (max-width: 1024px) {
+            .hud {
+                padding: 3px;
+            }
+
+            .hud-item {
+                padding: 7px 11px;
+            }
+
+            .hud-item b {
+                font-size: 14px;
+            }
+
+            .hud-item.timer b {
+                font-size: 18px;
+            }
+
+            .hud-item.pot b {
+                font-size: 15px;
+            }
+
+            .status-bars {
+                width: 108px;
+            }
+
+            .weapon-hud {
+                padding: 11px 13px;
+                font-size: 12px;
+                bottom: 78px;
+                min-width: 190px;
+            }
+
+            .leaderboard {
+                width: 190px;
+                padding: 11px;
+            }
+
+            .leaderboard ol {
+                font-size: 12px;
+            }
+
+            #minimap {
+                bottom: 16px;
+                width: 140px;
+                height: 140px;
+            }
+
+            .death-card {
+                padding: 28px 22px;
+            }
+        }
+
+        /* ====== Distribución táctil: evita solapes entre minimapa, botones,
+           marcador y HUD reubicando cada bloque en una esquina propia ====== */
+        @media (pointer: coarse) {
+
+            /* Menos ruido visual: oculta bote, puntos en mano/banco y módulo
+               táctico (esos valores se leen en el marcador) */
+            .hud-item.pot,
+            .hud-item.charge,
+            .hud-item.bank {
+                display: none;
+            }
+
+            .ability-hud {
+                display: none;
+            }
+
+            /* Solo tiempo restante + salud, centrados en la parte superior */
+            .hud {
+                top: 10px;
+                left: 50%;
+                right: auto;
+                transform: translateX(-50%) scale(0.92);
+                transform-origin: top center;
+            }
+
+            /* Salir + pantalla completa apilados en la esquina izquierda,
+               fuera del HUD centrado y de la barra de salud */
+            .btn-exit {
+                left: 12px;
+                top: 10px;
+                transform: none;
+                height: 32px;
+                padding: 0 12px;
+                font-size: 11px;
+            }
+
+            #btn-fullscreen {
+                left: 12px;
+                top: 48px;
+                transform: none;
+                height: 32px;
+                width: 38px;
+                justify-content: center;
+            }
+
+            /* Minimapa arriba a la derecha (compacto) */
+            #minimap {
+                top: 10px;
+                right: 10px;
+                bottom: auto;
+                width: 92px;
+                height: 92px;
+            }
+
+            /* Marcador a la izquierda, bajo salir/fullscreen: asi nunca roza
+               los botones de accion de la derecha */
+            .leaderboard {
+                top: 92px;
+                left: 12px;
+                right: auto;
+                width: 106px;
+                padding: 7px 8px;
+            }
+
+            .leaderboard h3 {
+                font-size: 8.5px;
+                margin-bottom: 4px;
+                padding-bottom: 4px;
+            }
+
+            .leaderboard ol {
+                font-size: 9.5px;
+            }
+
+            .leaderboard li {
+                padding: 2px 0;
+            }
+
+            .leaderboard li:nth-child(n+4) {
+                display: none;
+            }
+
+            /* Botones agrupados abajo a la derecha, en semicirculo compacto */
+            .touch-controls {
+                bottom: calc(14px + env(safe-area-inset-bottom));
+                right: calc(14px + env(safe-area-inset-right));
+                width: 192px;
+            }
+
+            /* Equipamiento abajo a la izquierda */
+            .weapon-hud {
+                bottom: 12px;
+                left: 12px;
+                transform: scale(0.94);
+                transform-origin: bottom left;
+            }
+        }
+
+        /* Movil horizontal (poca altura): compacta todo sin solapes */
+        @media (max-height: 480px) {
+            .hud-item {
+                padding: 6px 9px;
+                gap: 2px;
+            }
+
+            .hud-item.charge {
+                display: none;
+            }
+
+            .leaderboard {
+                width: 100px;
+                padding: 6px 8px;
+                top: 86px;
+                left: 12px;
+                right: auto;
+            }
+
+            .leaderboard ol {
+                font-size: 9px;
+            }
+
+            .leaderboard li {
+                padding: 1px 0;
+            }
+
+            .weapon-hud {
+                font-size: 10.5px;
+                padding: 7px 10px;
+                bottom: 10px;
+                left: 10px;
+                min-width: 150px;
+            }
+
+            .ability-hud {
+                bottom: 10px;
+                padding: 7px 13px;
+            }
+
+            #minimap {
+                width: 84px;
+                height: 84px;
+                top: 8px;
+                right: 8px;
+            }
+
+            .touch-controls {
+                bottom: calc(10px + env(safe-area-inset-bottom));
+                right: calc(10px + env(safe-area-inset-right));
+                width: 176px;
+                gap: 6px;
+            }
+
+            .touch-btn {
+                width: 50px;
+                height: 50px;
+            }
+
+            .touch-btn.small {
+                width: 40px;
+                height: 40px;
+            }
+
+            .touch-btn.small svg {
+                width: 16px;
+                height: 16px;
+            }
+
+            .touch-btn.shoot {
+                width: 56px;
+                height: 56px;
+            }
+
+            .touch-btn.shoot svg {
+                width: 24px;
+                height: 24px;
+            }
+
+            .touch-btn.auto {
+                height: 26px;
+                font-size: 9.5px;
+                padding: 0 10px;
+            }
+
+            .touch-btn svg {
+                width: 21px;
+                height: 21px;
+            }
+
+            .btn-badge {
+                font-size: 9px;
+                bottom: 2px;
+                right: 4px;
+            }
+        }
+
+        /* Pantallas muy estrechas: reduce el marcador para no chocar con el minimapa */
+        @media (pointer: coarse) and (max-width: 720px) {
+            .leaderboard {
+                width: 100px;
+            }
+
+            .leaderboard li:nth-child(n+4) {
+                display: none;
+            }
+        }
+
+        @media (max-width: 560px) {
+            .status-bars {
+                width: 92px;
+            }
+
+            .hud-item .label {
+                font-size: 8.5px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="orientation-overlay">
+        <div class="orientation-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                stroke-linejoin="round">
+                <rect x="2" y="6" width="20" height="12" rx="2"></rect>
+                <path d="M6 3h12"></path>
+                <path d="M6 21h12"></path>
+            </svg>
+        </div>
+        <h3 class="ov-title wordmark" style="font-size: 24px;">Gira tu dispositivo</h3>
+        <p class="ov-text">WinOrbs se juega en horizontal. Rota tu teléfono a modo apaisado para entrar en combate.</p>
+        <p class="ov-hint">Orientación horizontal (landscape) requerida.</p>
+    </div>
+
+    <!-- Overlay pantalla completa (movil) -->
+    <div id="fs-overlay" class="hidden">
+        <div class="brand-badge">
+            <div class="brand-mark">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <circle cx="12" cy="12" r="9"></circle>
+                    <circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none"></circle>
+                </svg>
+            </div>
+            <span class="wordmark" style="font-size: 30px;">WinOrbs</span>
+        </div>
+        <p class="ov-text">Extracción táctica en tiempo real. Toca para entrar en pantalla completa y desplegar tu orbe.
+        </p>
+        <button class="fs-big-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z"></path>
+            </svg>
+            Entrar a pantalla completa
+        </button>
+    </div>
+
+    <!-- Overlay de desconexion -->
+    <div id="conn-overlay">
+        <div class="status-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+                stroke-linejoin="round">
+                <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
+                <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
+                <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+                <line x1="12" y1="20" x2="12" y2="20"></line>
+                <line x1="2" y1="2" x2="22" y2="22"></line>
+            </svg>
+        </div>
+        <h3 id="conn-title" class="ov-title" style="color: var(--red); font-size: 22px;">Desconectado</h3>
+        <p id="conn-text" class="ov-text">Se perdió la conexión.</p>
+        <button class="fs-big-btn" onclick="window.location.reload()" type="button" style="margin-top: 20px;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round">
+                <path d="M23 4v6h-6"></path>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+            </svg>
+            Reintentar
+        </button>
+    </div>
+
+    <!-- HUD -->
+    <div class="hud">
+        <div class="hud-item timer">
+            <span class="label">Tiempo restante</span>
+            <b id="hud-timer">05:00</b>
+        </div>
+        <div class="hud-item pot">
+            <span class="label">Bote de la sala</span>
+            <b id="hud-pot">$8.00 USD</b>
+        </div>
+        <div class="hud-item hp">
+            <span class="label">Salud &amp; escudo</span>
+            <div class="status-bars">
+                <div class="bar-container">
+                    <div class="bar-fill-hp" id="hp-fill"></div>
+                </div>
+                <div class="bar-container">
+                    <div class="bar-fill-shield" id="shield-fill"></div>
+                </div>
+            </div>
+            <small id="hud-shield-text">ESCUDO: 0%</small>
+        </div>
+        <div class="hud-item charge">
+            <span class="label">Gemas en mano · en riesgo</span>
+            <b id="hud-charge">0 pts</b>
+        </div>
+        <div class="hud-item bank">
+            <span class="label">Asegurado · banco</span>
+            <b id="hud-bank">0 pts</b>
+        </div>
+    </div>
+
+    <!-- Equipamiento -->
+    <div class="weapon-hud" id="weapon-hud">
+        <div class="row">
+            <span class="ic">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="9"></circle>
+                    <line x1="12" y1="2" x2="12" y2="5"></line>
+                    <line x1="12" y1="19" x2="12" y2="22"></line>
+                    <line x1="2" y1="12" x2="5" y2="12"></line>
+                    <line x1="19" y1="12" x2="22" y2="12"></line>
+                    <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"></circle>
+                </svg>
+            </span>
+            <span class="k">Arma</span>
+            <b><span id="weapon-name" style="color: var(--primary);">Pistola Base</span></b>
+            <small style="margin-left:auto;">[<span class="kbd">1</span>/<span class="kbd">2</span>]</small>
+        </div>
+        <div class="row">
+            <span class="ic">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round">
+                    <path d="M3 8h13l2 3h3v4h-4l-2 2H6a3 3 0 0 1-3-3z"></path>
+                    <path d="M7 15v3"></path>
+                </svg>
+            </span>
+            <span class="k">Balas</span>
+            <b><span id="ammo-count">7 / 7</span></b>
+            <small id="ammo-status" style="margin-left:auto;"><span class="kbd">R</span> Recargar</small>
+        </div>
+        <div class="row">
+            <span class="ic" style="background: rgba(244,63,94,0.14); color: var(--red);">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round">
+                    <circle cx="12" cy="14" r="7"></circle>
+                    <path d="M12 7V4"></path>
+                    <path d="M14 3h-4"></path>
+                    <path d="M16 6l2-2"></path>
+                </svg>
+            </span>
+            <span class="k">Bombas</span>
+            <b><span id="bomb-count" style="color: var(--red);">0</span></b>
+            <small style="margin-left:auto;"><span class="kbd">Q</span> Lanzar</small>
+        </div>
+        <div class="row">
+            <span class="ic" style="background: rgba(52,211,153,0.14); color: var(--green);">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round">
+                    <path d="M6 2h12v4l-4 4 4 4v4H6v-4l4-4-4-4z"></path>
+                </svg>
+            </span>
+            <span class="k">Tienda</span>
+            <small><span class="kbd">E</span> en zona azul</small>
+        </div>
+    </div>
+
+    <div class="extract-banner" id="extract-banner">⚡ DEPOSITANDO ENERGÍA · MANTENTE EN EL BANCO ⚡</div>
+    <div class="zone-warning" id="zone-warning">COLAPSO EXTREMO DE LA ZONA · MUÉVETE AL CENTRO</div>
+    <div class="announcement-banner" id="announcement-banner">AIRDROP INMINENTE</div>
+
+    <div class="ability-hud">
+        <div class="ability-icon">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M13 2 4.5 13H11l-1 9 8.5-11H12z"></path>
+            </svg>
+        </div>
+        <div>
+            <div class="label" style="color: var(--muted);">Módulo táctico</div>
+            <div style="color: var(--primary); font-family: var(--font-display); font-weight: 600; font-size: 13px;">
+                DASH · Espacio / Clic der.</div>
+        </div>
+        <div class="ability-cooldown">
+            <div class="ability-fill" id="dash-fill"></div>
+        </div>
+    </div>
+
+    <div class="leaderboard">
+        <h3>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round">
+                <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path>
+                <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path>
+                <path d="M4 22h16"></path>
+                <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"></path>
+                <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"></path>
+                <path d="M18 2H6v7a6 6 0 0 0 12 0z"></path>
+            </svg>
+            Tabla de posiciones
+        </h3>
+        <ol id="leader-list"></ol>
+    </div>
+
+    <canvas id="minimap"></canvas>
+
+    <!-- Tienda -->
+    <div class="shop-modal" id="shop-modal">
+        <h2>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round">
+                <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+                <path d="M3 6h18"></path>
+                <path d="M16 10a4 4 0 0 1-8 0"></path>
+            </svg>
+            Tienda de suministros
+        </h2>
+        <div class="shop-item">
+            <div><b>Kit Médico</b> <small style="color:var(--green) !important;">+40 HP</small><br><small>Cuesta 30
+                    gemas</small></div>
+            <button onclick="comprarItem('medkit')">Comprar</button>
+        </div>
+        <div class="shop-item">
+            <div><b>Escudo</b> <small style="color:var(--primary) !important;">+50 SHD</small><br><small>Cuesta 50
+                    gemas</small></div>
+            <button onclick="comprarItem('shield')">Comprar</button>
+        </div>
+        <div class="shop-item">
+            <div><b>Bomba Plasma</b> <small style="color:var(--red) !important;">x1</small><br><small>Cuesta 40
+                    gemas</small></div>
+            <button onclick="comprarItem('bomb')">Comprar</button>
+        </div>
+        <div class="shop-item">
+            <div><b>Lanza-Orbes Especial</b><br><small>Cuesta 100 gemas</small></div>
+            <button onclick="comprarItem('orbGun')" id="btn-buy-orbgun">Comprar</button>
+        </div>
+        <button class="btn-close-shop" onclick="toggleShop(false)">Cerrar tienda</button>
+    </div>
+
+    <div class="death-overlay" id="lobby-overlay"
+        style="display: flex; flex-direction: column; justify-content: center; align-items: center;">
+        <div class="death-card win-card" style="text-align: center;">
+            <div class="brand-badge" style="justify-content:center; margin-bottom: 14px;">
+                <div class="brand-mark">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <circle cx="12" cy="12" r="9"></circle>
+                        <circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none"></circle>
+                    </svg>
+                </div>
+                <span class="wordmark" style="font-size: 24px;">WinOrbs</span>
+            </div>
+            <div class="ov-title" style="color: var(--primary); font-size: 24px;" id="lobby-title">ESPERANDO JUGADORES
+            </div>
+            <p class="ov-text" style="margin-bottom: 8px;" id="lobby-text">Conectando con la partida...</p>
+            <div id="lobby-seats-wrap"
+                style="display:none; margin: 2px 0 12px; font-size: 12.5px; color: var(--muted); letter-spacing: 0.4px;">
+                <span id="lobby-seats-count">0/0 plazas</span>
+                <div id="lobby-seats"
+                    style="display:flex; gap:6px; justify-content:center; margin-top:8px; flex-wrap:wrap;"></div>
+            </div>
+            <div id="lobby-pot-wrap"
+                style="display:none; margin: 2px 0 12px; font-size: 12.5px; color: var(--muted); letter-spacing: 0.4px;">
+                Bote de la sala
+                <b id="lobby-pot"
+                    style="color: var(--gold); font-family: var(--font-display); font-size: 17px; margin-left: 4px; text-shadow: 0 0 18px rgba(245,179,1,0.28);">$8.00
+                    USD</b>
+            </div>
+            <div class="dot-loader" id="lobby-loader">
+                <i></i><i></i><i></i>
+            </div>
+            <div class="wordmark"
+                style="font-size: 54px; font-family: var(--font-display); display: none; margin: 4px 0;"
+                id="lobby-countdown">5</div>
+            <p class="ov-hint" id="lobby-controls-hint" style="margin-left:auto;margin-right:auto;">Usa WASD para
+                moverte, ratón para disparar y apuntar. Clic derecho para dash.</p>
+            <button class="top-btn btn-exit" onclick="salirAlLobby(event)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                    <polyline points="16 17 21 12 16 7"></polyline>
+                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                </svg>
+                Salir al lobby
+            </button>
+        </div>
+    </div>
+
+    <div class="death-overlay" id="death-screen">
+        <div class="death-card" id="death-card-container">
+            <div class="ov-title" style="color: var(--red); font-size: 26px;" id="death-title">NÚCLEO DESTRUIDO</div>
+            <p class="ov-text" id="death-subtext">Perdiste todas las gemas no aseguradas.</p>
+            <button class="btn-respawn" id="btn-respawn-action" onclick="respawnPlayer()">DESPLEGAR NUEVO ORBE
+                🔄</button>
+        </div>
+    </div>
+
+    <button class="top-btn btn-exit" onclick="salirAlLobby(event)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+        </svg>
+        Salir
+    </button>
+    <button id="btn-fullscreen" class="top-btn" onclick="toggleFullscreen()" title="Pantalla completa">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3"></path>
+            <path d="M21 8V5a2 2 0 0 0-2-2h-3"></path>
+            <path d="M3 16v3a2 2 0 0 0 2 2h3"></path>
+            <path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>
+        </svg>
+    </button>
+    <div id="conn-status">Conectando con el servidor...</div>
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Joystick Virtual y Controles Tactiles -->
+    <div class="joystick-container" id="joystick-container">
+        <div class="joystick-handle" id="joystick-handle"></div>
+    </div>
+    <!-- Stick de apuntado (zona derecha) -->
+    <div class="joystick-container aim" id="aim-container">
+        <div class="joystick-handle" id="aim-handle"></div>
+    </div>
+    <div class="touch-controls" id="touch-controls">
+        <button class="touch-btn dash" id="btn-dash-mobile" onmousedown="mobileDash()" ontouchstart="mobileDash(event)" style="order: 0;"
+            aria-label="Dash">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M13 2 4.5 13H11l-1 9 8.5-11H12z"></path>
+            </svg>
+        </button>
+        <button class="touch-btn weapon" onmousedown="toggleWeaponMobile()" ontouchstart="toggleWeaponMobile(event)"
+            style="order: 1;" aria-label="Cambiar arma">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round">
+                <path d="M17 1l4 4-4 4"></path>
+                <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+                <path d="M7 23l-4-4 4-4"></path>
+                <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+            </svg>
+        </button>
+        <button class="touch-btn shop" onmousedown="intentarAbrirTienda()" ontouchstart="intentarAbrirTienda(event)"
+            style="order: 2;" aria-label="Tienda">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round">
+                <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+                <path d="M3 6h18"></path>
+                <path d="M16 10a4 4 0 0 1-8 0"></path>
+            </svg>
+        </button>
+        <button class="touch-btn shoot" onmousedown="mobileShoot(event)" onmouseup="mobileShootStop(event)"
+            onmouseleave="mobileShootStop(event)" ontouchstart="mobileShoot(event)" ontouchend="mobileShootStop(event)"
+            ontouchcancel="mobileShootStop(event)" style="order: 6;" aria-label="Disparar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round">
+                <circle cx="12" cy="12" r="9"></circle>
+                <line x1="12" y1="2" x2="12" y2="6"></line>
+                <line x1="12" y1="18" x2="12" y2="22"></line>
+                <line x1="2" y1="12" x2="6" y2="12"></line>
+                <line x1="18" y1="12" x2="22" y2="12"></line>
+                <circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none"></circle>
+            </svg>
+            <span class="btn-badge" id="shoot-ammo">7</span>
+        </button>
+        <button class="touch-btn small reload" onmousedown="mobileReload()" ontouchstart="mobileReload(event)" style="order: 3;"
+            aria-label="Recargar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round">
+                <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
+                <path d="M21 3v6h-6"></path>
+            </svg>
+        </button>
+        <button class="touch-btn small bomb" onmousedown="mobileBomb()" ontouchstart="mobileBomb(event)" style="order: 4;"
+            aria-label="Lanzar bomba">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round">
+                <circle cx="12" cy="14" r="7"></circle>
+                <path d="M12 7V4"></path>
+                <path d="M14 3h-4"></path>
+            </svg>
+        </button>
+        <button class="touch-btn auto" id="btn-autofire" onmousedown="toggleAutoFire()" ontouchstart="toggleAutoFire(event)"
+            style="order: 5;" aria-label="Disparo automatico">AUTO</button>
+    </div>
+
+    <!-- UID de Firebase: necesario para cobros de entrada y premios -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { firebaseConfig } from "./js/firebase-config.js";
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        window.__firebaseAuth = auth; // accesible para los flujos de premio
+        onAuthStateChanged(auth, async (user) => {
+            window.__miUid = user ? user.uid : null;
+            window.__miToken = null;
+            if (user) {
+                try { window.__miToken = await user.getIdToken(); } catch (e) { }
+            }
+            // Vincula identidad (uid + token) con el servidor una vez resuelta la sesión
+            if (user && window.socket && window.socket.connected) {
+                if (!window.__authEnviado) {
+                    window.__authEnviado = true;
+                    window.socket.emit('setUid', { uid: user.uid, token: window.__miToken });
+                } else if (window.__miToken && !window.__tokenEnviado) {
+                    window.__tokenEnviado = true;
+                    window.socket.emit('setUid', { uid: user.uid, token: window.__miToken });
+                }
+            }
+        });
+    </script>
+
+    <script>
+        const socket = io();
+        window.socket = socket; // accesible para el módulo de Firebase (setUid)
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const miniCanvas = document.getElementById("minimap");
+        const miniCtx = miniCanvas.getContext("2d");
+
+        // DATOS DE SESIÓN Y SALA
+        const roomId = sessionStorage.getItem("mi_sala_id") || sessionStorage.getItem("player_room");
+        const password = sessionStorage.getItem("mi_sala_password") || "";
+        const playerNick = sessionStorage.getItem("mi_nick") || sessionStorage.getItem("player_nick") || "Mercenario1";
+        let playerSkin = { c1: '#38bdf8' };
+
+        try {
+            const savedSkin = sessionStorage.getItem("mi_skin") || sessionStorage.getItem("player_skin");
+            if (savedSkin) playerSkin = typeof savedSkin === 'string' ? JSON.parse(savedSkin) : savedSkin;
+        } catch (e) { }
+
+        const roomPot = sessionStorage.getItem("room_pot") || "8.00";
+        document.getElementById("hud-pot").innerText = `$${roomPot} USD`;
+        document.getElementById("lobby-pot").innerText = `$${roomPot} USD`;
+
+        if (!roomId) {
+            alert("No estás conectado a una sala válida.");
+            window.location.href = "index.html";
+        }
+
+        function resize() {
+            // Renderiza a la densidad real del dispositivo (nitidez en moviles).
+            // setTransform(dpr) mantiene la escala visual identica a 1x.
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            canvas.width = Math.round(window.innerWidth * dpr);
+            canvas.height = Math.round(window.innerHeight * dpr);
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            miniCanvas.width = 160;
+            miniCanvas.height = 160;
+        }
+        window.addEventListener("resize", resize);
+        if (window.visualViewport) window.visualViewport.addEventListener("resize", resize);
+        resize();
+
+        // Detección de dispositivo táctil y controles
+        const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        const joystickContainer = document.getElementById("joystick-container");
+        const joystickHandle = document.getElementById("joystick-handle");
+        const touchControls = document.getElementById("touch-controls");
+        const orientationOverlay = document.getElementById("orientation-overlay");
+
+        let joystickActive = false;
+        let joystickTouchId = null;
+        let joystickCenter = { x: 0, y: 0 };
+        let joystickRadius = 48;
+        const keys = { w: false, a: false, s: false, d: false, space: false, angle: 0 };
+        let mouseX = window.innerWidth / 2;
+        let mouseY = window.innerHeight / 2;
+        let touchAngle = 0;
+        let mobileCurrentWeapon = 1;
+
+        // --- Stick de apuntado (dual-analog) y extras moviles ---
+        let aimActive = false;
+        let aimTouchId = null;
+        let aimCenter = { x: 0, y: 0 };
+        let aimAngle = 0;
+        let autoFire = false;
+        let lastAutoReload = 0;
+        const aimContainer = document.getElementById("aim-container");
+        const aimHandle = document.getElementById("aim-handle");
+
+        function checkOrientation() {
+            if (!isTouchDevice) {
+                orientationOverlay.classList.add("hidden");
+                return;
+            }
+            const isPortrait = window.innerWidth < window.innerHeight;
+            orientationOverlay.classList.toggle("hidden", !isPortrait);
+        }
+
+        if (isTouchDevice) {
+            touchControls.classList.add("active");
+        }
+        checkOrientation();
+        window.addEventListener("orientationchange", checkOrientation);
+        window.addEventListener("resize", checkOrientation);
+
+        // Joystick virtual dinamico: aparece donde toques (mitad izquierda)
+        const fsOverlay = document.getElementById("fs-overlay");
+        const btnFullscreen = document.getElementById("btn-fullscreen");
+
+        if (isTouchDevice) {
+            // Multitáctil: el joystick rastrea SU propio dedo por identifier,
+            // dejando el resto de toques (disparar, dash, etc.) libres a la vez.
+            function joystickStart(e) {
+                if (!fsOverlay.classList.contains("hidden")) return;
+                for (const touch of e.changedTouches) {
+                    if (joystickActive) break;
+                    // Solo la mitad izquierda inicia el joystick; la derecha son botones.
+                    if (touch.clientX > window.innerWidth * 0.55) continue;
+                    // No capturar toques sobre botones, marcador o minimapa
+                    if (touch.target && touch.target.closest && touch.target.closest('.top-btn, .leaderboard, #minimap, .touch-btn')) continue;
+
+                    joystickActive = true;
+                    joystickTouchId = touch.identifier;
+                    joystickCenter.x = touch.clientX;
+                    joystickCenter.y = touch.clientY;
+                    const half = 59;
+                    joystickContainer.style.left = (joystickCenter.x - half) + "px";
+                    joystickContainer.style.top = (joystickCenter.y - half) + "px";
+                    joystickContainer.style.bottom = "auto";
+                    joystickContainer.classList.add("active");
+                    e.preventDefault();
+                }
+            }
+
+            function joystickMove(e) {
+                if (!joystickActive) return;
+                for (const touch of e.changedTouches) {
+                    if (touch.identifier !== joystickTouchId) continue;
+                    const dx = touch.clientX - joystickCenter.x;
+                    const dy = touch.clientY - joystickCenter.y;
+                    const dist = Math.min(Math.hypot(dx, dy), joystickRadius);
+                    const angle = Math.atan2(dy, dx);
+
+                    const handleX = Math.cos(angle) * dist;
+                    const handleY = Math.sin(angle) * dist;
+                    joystickHandle.style.transform = `translate(calc(-50% + ${handleX}px), calc(-50% + ${handleY}px))`;
+
+                    // Movimiento analogico con histéresis (evita parpadeo en el borde)
+                    const mag = Math.hypot(dx, dy);
+                    const setKey = (k, wanted) => { if (wanted) keys[k] = mag > 14; else if (mag < 9) keys[k] = false; };
+                    setKey('w', dy < 0);
+                    setKey('s', dy > 0);
+                    setKey('a', dx < 0);
+                    setKey('d', dx > 0);
+                    touchAngle = angle;
+                    e.preventDefault();
+                }
+            }
+
+            function joystickEnd(e) {
+                if (!joystickActive) return;
+                for (const touch of e.changedTouches) {
+                    if (touch.identifier !== joystickTouchId) continue;
+                    joystickActive = false;
+                    joystickTouchId = null;
+                    keys.w = false; keys.a = false; keys.s = false; keys.d = false;
+                    joystickContainer.classList.remove("active");
+                    joystickHandle.style.transform = "translate(-50%, -50%)";
+                    if (e && e.cancelable) e.preventDefault();
+                }
+            }
+
+            window.addEventListener('touchstart', joystickStart, { passive: false });
+            window.addEventListener('touchmove', joystickMove, { passive: false });
+            window.addEventListener('touchend', joystickEnd, { passive: false });
+            window.addEventListener('touchcancel', joystickEnd, { passive: false });
+
+            // === Stick de apuntado (zona derecha, fuera de los botones) ===
+            function aimStart(e) {
+                if (!fsOverlay.classList.contains("hidden")) return;
+                if (document.body.classList.contains("dead")) return;
+                for (const touch of e.changedTouches) {
+                    if (aimActive) break;
+                    if (touch.clientX < window.innerWidth * 0.55) continue;
+                    if (touch.target && touch.target.closest && touch.target.closest('.touch-btn, .top-btn, #shop-modal, .shop-modal, button, a, input')) continue;
+                    aimActive = true;
+                    aimTouchId = touch.identifier;
+                    aimCenter.x = touch.clientX;
+                    aimCenter.y = touch.clientY;
+                    const half = 59;
+                    aimContainer.style.left = (aimCenter.x - half) + "px";
+                    aimContainer.style.top = (aimCenter.y - half) + "px";
+                    aimContainer.style.bottom = "auto";
+                    aimContainer.classList.add("active");
+                    if (autoFire) fireLoopStart(350); // cadencia AUTO controlada, no metralleta
+                    e.preventDefault();
+                }
+            }
+
+            function aimMove(e) {
+                if (!aimActive) return;
+                for (const touch of e.changedTouches) {
+                    if (touch.identifier !== aimTouchId) continue;
+                    const dx = touch.clientX - aimCenter.x;
+                    const dy = touch.clientY - aimCenter.y;
+                    const dist = Math.min(Math.hypot(dx, dy), 48);
+                    const ang = Math.atan2(dy, dx);
+                    aimAngle = ang;
+                    touchAngle = ang;
+                    aimHandle.style.transform = `translate(calc(-50% + ${Math.cos(ang) * dist}px), calc(-50% + ${Math.sin(ang) * dist}px))`;
+                    e.preventDefault();
+                }
+            }
+
+            function aimEnd(e) {
+                if (!aimActive) return;
+                for (const touch of e.changedTouches) {
+                    if (touch.identifier !== aimTouchId) continue;
+                    aimActive = false;
+                    aimTouchId = null;
+                    aimContainer.classList.remove("active");
+                    aimHandle.style.transform = "translate(-50%, -50%)";
+                    if (autoFire) fireLoopStop();
+                    if (e && e.cancelable) e.preventDefault();
+                }
+            }
+
+            window.addEventListener('touchstart', aimStart, { passive: false });
+            window.addEventListener('touchmove', aimMove, { passive: false });
+            window.addEventListener('touchend', aimEnd, { passive: false });
+            window.addEventListener('touchcancel', aimEnd, { passive: false });
+
+            // Bloquea scroll/rebote y doble-tap zoom sobre el lienzo
+            document.addEventListener('touchmove', (e) => {
+                if (e.target === canvas && e.cancelable) e.preventDefault();
+            }, { passive: false });
+            document.addEventListener('dblclick', (e) => e.preventDefault());
+
+            const hint = document.getElementById("lobby-controls-hint");
+            if (hint) hint.innerText = "Joystick izquierdo: moverte. Stick derecho: apuntar. AUTO: disparo automatico al apuntar. Botones: disparo, dash, arma, tienda, recarga y bomba.";
+        }
+
+        // PANTALLA COMPLETA
+        function isFullscreenActive() {
+            return !!(document.fullscreenElement || document.webkitFullscreenElement);
+        }
+
+        async function enterFullscreen() {
+            const el = document.documentElement;
+            try {
+                if (el.requestFullscreen) await el.requestFullscreen({ navigationUI: 'hide' });
+                else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+            } catch (e) { }
+            try {
+                if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape');
+            } catch (e) { }
+        }
+
+        async function exitFullscreen() {
+            try {
+                if (document.exitFullscreen) await document.exitFullscreen();
+                else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+            } catch (e) { }
+        }
+
+        async function toggleFullscreen() {
+            if (isFullscreenActive()) await exitFullscreen();
+            else await enterFullscreen();
+        }
+
+        window.toggleFullscreen = toggleFullscreen;
+
+        if (isTouchDevice) {
+            fsOverlay.classList.remove("hidden");
+            btnFullscreen.classList.add("visible");
+        }
+
+        fsOverlay.addEventListener('click', async () => {
+            initAudio();
+            await enterFullscreen();
+            fsOverlay.classList.add("hidden");
+        });
+
+        document.addEventListener('fullscreenchange', () => {
+            btnFullscreen.classList.toggle("fs-active", isFullscreenActive());
+        });
+
+        let mobileShootTimer = null;
+
+        function mobileShoot(e) {
+            if (e && e.cancelable) e.preventDefault();
+            fireLoopStart();
+        }
+
+        function fireLoopStart(fireDelayMs) {
+            if (!myPlayerId || isDead || isGameOver) return;
+            socket.emit('playerShoot', { angle: touchAngle });
+            // Mantener pulsado dispara en ráfaga mientras te mueves con el joystick.
+            // El modo AUTO (stick derecho) usa una cadencia mas lenta y controlada.
+            if (mobileShootTimer) clearInterval(mobileShootTimer);
+            const step = fireDelayMs || 170;
+            mobileShootTimer = setInterval(() => {
+                if (!myPlayerId || isDead || isGameOver) { mobileShootStop(); return; }
+                socket.emit('playerShoot', { angle: touchAngle });
+            }, step);
+        }
+
+        function mobileShootStop(e) {
+            if (e && e.cancelable) e.preventDefault();
+            if (mobileShootTimer) { clearInterval(mobileShootTimer); mobileShootTimer = null; }
+        }
+
+        function fireLoopStop() {
+            if (mobileShootTimer) { clearInterval(mobileShootTimer); mobileShootTimer = null; }
+        }
+
+        function mobileReload(e) {
+            if (e && e.cancelable) e.preventDefault();
+            if (!myPlayerId || isDead || isGameOver) return;
+            socket.emit('playerReload');
+            if (navigator.vibrate) navigator.vibrate(10);
+        }
+
+        function mobileBomb(e) {
+            if (e && e.cancelable) e.preventDefault();
+            if (!myPlayerId || isDead || isGameOver) return;
+            socket.emit('playerBomb');
+            if (navigator.vibrate) navigator.vibrate(20);
+        }
+
+        function toggleAutoFire(e) {
+            if (e && e.cancelable) e.preventDefault();
+            autoFire = !autoFire;
+            const b = document.getElementById('btn-autofire');
+            if (b) b.classList.toggle('on', autoFire);
+            if (!autoFire) fireLoopStop();
+        }
+
+        function mobileDash(e) {
+            if (e && e.cancelable) e.preventDefault();
+            if (!myPlayerId || isDead || isGameOver) return;
+            socket.emit('playerDash');
+            if (navigator.vibrate) navigator.vibrate(15);
+        }
+
+        function toggleWeaponMobile(e) {
+            if (e && e.cancelable) e.preventDefault();
+            if (!myPlayerId || isDead || isGameOver) return;
+            mobileCurrentWeapon = mobileCurrentWeapon === 1 ? 2 : 1;
+            socket.emit('switchWeapon', mobileCurrentWeapon);
+        }
+
+        // ESTADO MULTIJUGADOR GLOBAL
+        let myPlayerId = null;
+        let gameState = null;
+        let shakeIntensity = 0;
+        let isDead = false;
+        let isGameOver = false;
+
+        function triggerShake(amount) { shakeIntensity = Math.min(shakeIntensity + amount, 25); }
+
+        // AUDIO SINTETIZADO
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        let audioCtx = null;
+        function initAudio() {
+            if (!audioCtx) audioCtx = new AudioContext();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        function playSound(type) {
+            if (!audioCtx) return;
+            const now = audioCtx.currentTime;
+            if (type === 'shoot') {
+                let osc = audioCtx.createOscillator(); let gain = audioCtx.createGain();
+                osc.type = 'sawtooth'; osc.frequency.setValueAtTime(300, now);
+                osc.frequency.exponentialRampToValueAtTime(40, now + 0.1);
+                gain.gain.setValueAtTime(0.2, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.start(now); osc.stop(now + 0.1);
+            } else if (type === 'pickup') {
+                let osc = audioCtx.createOscillator(); let gain = audioCtx.createGain();
+                osc.type = 'sine'; osc.frequency.setValueAtTime(520, now);
+                osc.frequency.exponentialRampToValueAtTime(880, now + 0.08);
+                gain.gain.setValueAtTime(0.15, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.start(now); osc.stop(now + 0.08);
+            } else if (type === 'explosion') {
+                let osc = audioCtx.createOscillator(); let gain = audioCtx.createGain();
+                osc.type = 'square'; osc.frequency.setValueAtTime(100, now);
+                osc.frequency.exponentialRampToValueAtTime(20, now + 0.4);
+                gain.gain.setValueAtTime(0.4, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.start(now); osc.stop(now + 0.4);
+            }
+        }
+
+        // CAPTURA DE TECLADO Y MOUSE
+        window.addEventListener("keydown", (e) => {
+            initAudio();
+            const k = e.key.toLowerCase();
+            if (['w', 'arrowup'].includes(k)) keys.w = true;
+            if (['a', 'arrowleft'].includes(k)) keys.a = true;
+            if (['s', 'arrowdown'].includes(k)) keys.s = true;
+            if (['d', 'arrowright'].includes(k)) keys.d = true;
+            if (e.key === ' ' || e.key === 'Spacebar') { keys.space = true; e.preventDefault(); socket.emit('playerDash'); }
+
+            if (k === 'e' && !isDead && !isGameOver) intentarAbrirTienda();
+            if (k === 'r') socket.emit('playerReload');
+            if (k === 'q') socket.emit('playerBomb');
+            if (k === '1') socket.emit('switchWeapon', 1);
+            if (k === '2') socket.emit('switchWeapon', 2);
+        });
+
+        window.addEventListener("keyup", (e) => {
+            const k = e.key.toLowerCase();
+            if (['w', 'arrowup'].includes(k)) keys.w = false;
+            if (['a', 'arrowleft'].includes(k)) keys.a = false;
+            if (['s', 'arrowdown'].includes(k)) keys.s = false;
+            if (['d', 'arrowright'].includes(k)) keys.d = false;
+            if (e.key === ' ' || e.key === 'Spacebar') keys.space = false;
+        });
+
+        window.addEventListener("mousemove", (e) => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+        });
+
+        window.addEventListener("mousedown", (e) => {
+            if (!gameState || gameState.lobbyActive || !gameState.gameStarted) return;
+            initAudio();
+            if (e.target !== canvas) return;
+            if (!myPlayerId || !gameState.players[myPlayerId] || gameState.players[myPlayerId].isDead) return;
+            if (e.button === 0) socket.emit('playerShoot', { angle: keys.angle });
+            if (e.button === 2) { e.preventDefault(); socket.emit('playerDash'); }
+        });
+
+        window.addEventListener("contextmenu", e => e.preventDefault());
+
+        // CONEXIÓN CON SOCKET.IO
+        const connStatus = document.getElementById("conn-status");
+        const connOverlay = document.getElementById("conn-overlay");
+        connStatus.classList.add("visible");
+
+        // Espera breve a que Firebase resuelva la sesión y manda joinRoom con uid + token
+        async function esperarIdentidad(timeoutMs = 2500) {
+            const inicio = Date.now();
+            while (window.__miUid === undefined && Date.now() - inicio < timeoutMs) {
+                await new Promise(r => setTimeout(r, 50));
+            }
+        }
+        function emitirJoin() {
+            socket.emit('joinRoom', {
+                roomId, password, nick: playerNick, skin: playerSkin,
+                uid: window.__miUid || null,
+                token: window.__miToken || null
+            });
+        }
+        esperarIdentidad().then(() => emitirJoin());
+
+        socket.on('serverConfig', (cfg) => {
+            // true = el servidor cobra entradas y paga premios vía Admin SDK
+            window.__economyMode = !!(cfg && cfg.economy);
+        });
+
+        function salirAlInicio() {
+            try {
+                sessionStorage.removeItem("mi_sala_id");
+                sessionStorage.removeItem("mi_sala_password");
+            } catch (e) { }
+            window.location.href = "index.html";
+        }
+
+        socket.on('joinedSuccess', (data) => {
+            myPlayerId = data.playerId;
+            connStatus.classList.remove("visible");
+        });
+
+        socket.on('errorMsg', (msg) => {
+            alert(msg);
+            window.location.href = "index.html";
+        });
+
+        // Expulsion: partida finalizada o sala cerrada por el admin
+        socket.on('roomClosed', (data) => {
+            isGameOver = true;
+            try { sessionStorage.setItem("room_closed_msg", (data && data.reason) || "La sala se cerro."); } catch (e) { }
+            window.location.href = "index.html";
+        });
+
+        socket.on('disconnect', () => {
+            if (isGameOver) return;
+            document.getElementById("conn-title").innerText = "Desconectado del servidor";
+            document.getElementById("conn-text").innerText = "Se perdio la conexion. Verifica tu red e intentalo de nuevo.";
+            connOverlay.classList.add("visible");
+        });
+
+        socket.on('connect', () => {
+            connOverlay.classList.remove("visible");
+            if (!myPlayerId) {
+                emitirJoin();
+            }
+        });
+
+        socket.on('announcement', (text) => {
+            const el = document.getElementById("announcement-banner");
+            el.innerText = text; el.style.display = "block";
+            setTimeout(() => el.style.display = "none", 4000);
+        });
+
+        socket.on('playSound', (type) => playSound(type));
+        socket.on('shake', (amt) => { triggerShake(amt); if (navigator.vibrate) navigator.vibrate(40); });
+
+        socket.on('gameState', (state) => {
+            gameState = state;
+            // Autocuracion: si el servidor ya no me registra, regresar al lobby
+            if (myPlayerId && !isGameOver && !state.players[myPlayerId]) {
+                isGameOver = true;
+                window.location.href = "index.html";
+                return;
+            }
+            updateHUD();
+        });
+
+        socket.on('gameOver', (data) => {
+            isGameOver = true;
+            // Compat: payload nuevo {gameId, entryFee, leaderboard} o array antiguo
+            const ranking = Array.isArray(data) ? data : ((data && data.leaderboard) || []);
+            finalizarJuego(ranking);
+            // Premio: 80% del pozo al 1er lugar, 20% comisión de la casa
+            if (!Array.isArray(data) && data && data.gameId) pagarPremio(data);
+            // El servidor expulsa a todos en ~10s: cuenta regresiva de salida
+            const btn = document.getElementById("btn-respawn-action");
+            let restante = 10;
+            const countdownIv = setInterval(() => {
+                restante--;
+                if (btn) btn.innerText = `VOLVER AL LOBBY (${restante}s) 🔄`;
+                if (restante <= 0) {
+                    clearInterval(countdownIv);
+                    window.location.href = "index.html";
+                }
+            }, 1000);
+        });
+
+        // Control del premio UNA sola vez.
+        // - Modo economía (serverConfig.economy = true): el servidor ya pagó con Admin SDK.
+        //   Aquí solo se escribe el marcador si el servidor no pudo (red de seguridad) y
+        //   deja la solicitud 'premio' pendiente para que el ADMIN la acredite.
+        // - Modo degradado: se crea el marcador en partidas/{gameId} y el ganador genera
+        //   su solicitud 'pagos' tipo premio (NUNCA se sube el saldo desde el cliente).
+        async function pagarPremio(data) {
+            try {
+                const fb = await import("https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js");
+                const fs = await import("https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js");
+                const fba = await import("https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js");
+                const cfg = await import("./js/firebase-config.js");
+                const app = fb.getApps().length ? fb.getApps()[0] : fb.initializeApp(cfg.firebaseConfig);
+                const db = fs.getFirestore(app);
+                const auth = fba.getAuth(app);
+
+                const lb = data.leaderboard || [];
+                const entryFee = Number(data.entryFee) || 0;
+                const jugadores = lb.length;
+                if (entryFee <= 0 || jugadores < 2) return; // sala gratuita o sin partida real
+
+                const pozo = +(jugadores * entryFee).toFixed(2);
+                const comision = +(pozo * 0.2).toFixed(2);   // 20% para la casa
+                const neto = +(pozo - comision).toFixed(2);  // 80% para el ganador
+                const ganador = lb[0] || null;
+                const ganadorUid = ganador && ganador.uid ? ganador.uid : null;
+                const ganadorNick = ganador && ganador.nick ? ganador.nick : "—";
+                const soyElGanador = ganador && ganador.id === myPlayerId;
+
+                // En modo economía el marcador lo creó el servidor: si existe, no tocar nada.
+                const refPartida = fs.doc(db, "partidas", data.gameId);
+                const premioOk = await fs.getDoc(refPartida).then(s => s.exists()).catch(() => false);
+
+                if (window.__economyMode === true) {
+                    if (!premioOk) {
+                        // Red de seguridad: el servidor no alcanzó a escribir → marcador + pendiente admin
+                        await fs.setDoc(refPartida, {
+                            gameId: data.gameId, salaId: roomId, pozo, comision, neto,
+                            jugadores: jugadores, precioEntrada: entryFee,
+                            ganadorUid: ganadorUid || "", ganadorNick,
+                            estado: "premio_pendiente_admin",
+                            fecha: fs.serverTimestamp()
+                        });
+                    }
+                    return;
+                }
+
+                await fs.runTransaction(db, async (t) => {
+                    const snap = await t.get(refPartida);
+                    if (!snap.exists()) {
+                        t.set(refPartida, {
+                            gameId: data.gameId, salaId: roomId, pozo, comision, neto,
+                            jugadores: jugadores, precioEntrada: entryFee,
+                            ganadorUid: ganadorUid || "", ganadorNick,
+                            estado: ganadorUid ? "pagada" : "premio_pendiente_admin",
+                            creadoPorUid: auth.currentUser ? auth.currentUser.uid : null,
+                            fecha: fs.serverTimestamp()
+                        });
+                    }
+                    // Solicitud de premio solo del propio ganador → el admin acredita neto
+                    // y acumula la comisión de la casa en metricas. Nadie sube su saldo solo.
+                    const user = auth.currentUser;
+                    if (soyElGanador && user) {
+                        const refPremio = fs.doc(db, "pagos", "premio_" + data.gameId);
+                        const sPremio = await t.get(refPremio);
+                        if (!sPremio.exists()) {
+                            t.set(refPremio, {
+                                usuarioId: user.uid,
+                                usuario: ganadorNick,
+                                tipo: "premio",
+                                monto: neto,
+                                comision: comision,
+                                estado: "pendiente",
+                                partidaId: data.gameId,
+                                referencia: "Premio partida " + data.gameId,
+                                fecha: fs.serverTimestamp()
+                            });
+                        }
+                    }
+                });
+                if (!ganadorUid) {
+                    console.warn("Premio sin UID vinculado: queda 'premio_pendiente_admin' en partidas para el panel.");
+                }
+            } catch (e) {
+                console.warn("No se pudo procesar el premio:", e);
+            }
+        }
+
+        socket.on('gameStarted', (data) => {
+            initAudio();
+            playSound('pickup');
+        });
+
+        // BUCLE DE ENVÍO DE INPUTS (60 FPS)
+        setInterval(() => {
+            if (!myPlayerId || !gameState || gameState.lobbyActive || !gameState.gameStarted) return;
+            const me = gameState.players[myPlayerId];
+            if (!me || me.isDead) return;
+            const rect = canvas.getBoundingClientRect();
+            keys.angle = Math.atan2(mouseY - (rect.top + rect.height / 2), mouseX - (rect.left + rect.width / 2));
+            socket.emit('playerInput', keys);
+        }, 1000 / 60);
+
+        function intentarAbrirTienda(e) {
+            if (e && e.cancelable) e.preventDefault();
+            if (!gameState || !myPlayerId) return;
+            const me = gameState.players[myPlayerId];
+            if (!me) return;
+            const cercaDeTienda = (gameState.shopZones || []).some(s => Math.hypot(me.x - s.x, me.y - s.y) < s.radius);
+            if (cercaDeTienda) toggleShop(true);
+        }
+
+        function toggleShop(open) { document.getElementById("shop-modal").style.display = open ? "block" : "none"; }
+
+        function comprarItem(type) {
+            socket.emit('buyShopItem', type);
+        }
+
+        // ── Plazas del lobby de espera (ocupadas / libres, ej. 2/10) ──
+        function mostrarPlazas(ocupadas, total) {
+            const wrap = document.getElementById("lobby-seats-wrap");
+            if (!wrap) return;
+            wrap.style.display = "block";
+            document.getElementById("lobby-seats-count").innerText =
+                ocupadas + "/" + total + " plazas · quedan " + Math.max(0, total - ocupadas) + " libres";
+            const cont = document.getElementById("lobby-seats");
+            if (cont.childElementCount !== total) {
+                cont.innerHTML = "";
+                for (let i = 0; i < total; i++) {
+                    const d = document.createElement("div");
+                    d.className = "seat-dot";
+                    cont.appendChild(d);
+                }
+            }
+            Array.prototype.forEach.call(cont.children, (d, i) => d.classList.toggle("ocupada", i < ocupadas));
+        }
+
+        function ocultarPlazas() {
+            const wrap = document.getElementById("lobby-seats-wrap");
+            if (wrap) wrap.style.display = "none";
+        }
+
+        function updateHUD() {
+            if (!gameState || !myPlayerId) return;
+            const me = gameState.players[myPlayerId];
+            if (!me) return;
+
+            isDead = me.isDead;
+            document.body.classList.toggle("dead", !!isDead);
+
+            // Overlay de Lobby
+            const lobbyOverlay = document.getElementById("lobby-overlay");
+            const lobbyCountdown = document.getElementById("lobby-countdown");
+            const lobbyText = document.getElementById("lobby-text");
+            const lobbyTitle = document.getElementById("lobby-title");
+            const lobbyPotWrap = document.getElementById("lobby-pot-wrap");
+
+            if (gameState.gameStarted) {
+                lobbyOverlay.style.display = "none";
+                lobbyPotWrap.style.display = "none";
+                ocultarPlazas();
+            } else if (gameState.lobbyActive) {
+                lobbyOverlay.style.display = "flex";
+                lobbyTitle.innerText = "¡PARTIDA EN MARCHA!";
+                lobbyCountdown.style.display = "block";
+                lobbyCountdown.innerText = gameState.countdown || 0;
+                lobbyText.innerText = "Prepárate para extraer energía...";
+                lobbyPotWrap.style.display = "none";
+                ocultarPlazas();
+            } else {
+                lobbyOverlay.style.display = "flex";
+                lobbyTitle.innerText = "ESPERANDO JUGADORES";
+                lobbyCountdown.style.display = "none";
+                lobbyText.innerText = "Necesitamos 2 jugadores para comenzar. La partida iniciará automáticamente.";
+                lobbyPotWrap.style.display = "block";
+                // Plazas ocupadas y libres en vivo (ej. 2/10)
+                const total = gameState.maxPlayers || 10;
+                const ocupadas = Object.keys(gameState.players || {}).length;
+                mostrarPlazas(ocupadas, total);
+            }
+
+            if (isDead && !isGameOver) {
+                const respawnSec = me.canRespawn ? "¡RESPONDE!" : `...${Math.ceil((300 - (me.respawnTimer || 0)) / 60)}s`;
+                document.getElementById("death-title").innerText = "NÚCLEO DESTRUIDO";
+                document.getElementById("death-subtext").innerText = "Perdiste todas las gemas no aseguradas. " + respawnSec;
+                document.getElementById("death-card-container").className = "death-card";
+                document.getElementById("btn-respawn-action").innerText = me.canRespawn ? "RESPAWNEAR 🔄" : "ESPERANDO...";
+                document.getElementById("btn-respawn-action").disabled = !me.canRespawn;
+                document.getElementById("death-screen").style.display = "flex";
+            } else if (!isGameOver) {
+                document.getElementById("death-screen").style.display = "none";
+            }
+
+            const maxHp = me.maxHp || 100;
+            const curHp = me.hp || 0;
+            document.getElementById("hp-fill").style.width = `${(curHp / maxHp) * 100}%`;
+
+            const maxShield = me.maxShield || 50;
+            const curShield = me.shield || 0;
+            let shieldPct = Math.round((curShield / maxShield) * 100);
+            document.getElementById("shield-fill").style.width = `${shieldPct}%`;
+            document.getElementById("hud-shield-text").innerText = `ESCUDO: ${shieldPct}% (${curShield} SHD)`;
+
+            document.getElementById("hud-charge").innerText = `${me.charge || 0} pts`;
+            document.getElementById("hud-bank").innerText = `${me.bankedScore || 0} pts`;
+
+            // Armas
+            const nameEl = document.getElementById("weapon-name");
+            if (me.currentWeapon === 1) {
+                nameEl.innerText = "Pistola Base"; nameEl.style.color = "#38bdf8";
+                document.getElementById("ammo-count").innerText = `${me.ammo || 0} / ${me.maxAmmo || 7}`;
+            } else {
+                nameEl.innerText = "Lanza-Orbes (Especial)"; nameEl.style.color = "#a855f7";
+                document.getElementById("ammo-count").innerText = `∞ (Orbes)`;
+            }
+
+            document.getElementById("bomb-count").innerText = me.bombs || 0;
+            if (me.hasOrbGun) document.getElementById("btn-buy-orbgun").disabled = true;
+            mobileCurrentWeapon = me.currentWeapon || 1;
+
+            // Timer
+            const mins = Math.floor(gameState.gameTime / 60);
+            const secs = gameState.gameTime % 60;
+            document.getElementById("hud-timer").innerText = `${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
+
+            // Indicador Banco
+            document.getElementById("extract-banner").style.display = me.isExtracting ? "block" : "none";
+
+            // Cooldown Dash
+            const dashPercent = Math.min(100, (me.dashProgress || 100));
+            document.getElementById("dash-fill").style.width = `${dashPercent}%`;
+
+            // Anillo de cooldown en el boton dash (movil)
+            const dashBtn = document.getElementById('btn-dash-mobile');
+            if (dashBtn) {
+                if (dashPercent >= 100) {
+                    dashBtn.style.background = '';
+                    dashBtn.style.borderColor = '';
+                    dashBtn.classList.remove('cooldown');
+                } else {
+                    dashBtn.style.background = `conic-gradient(rgba(245, 158, 11, 0.55) ${dashPercent}%, rgba(245, 158, 11, 0.10) ${dashPercent}%)`;
+                    dashBtn.style.borderColor = 'rgba(249, 115, 22, 0.25)';
+                    dashBtn.classList.add('cooldown');
+                }
+            }
+
+            // Municion visible en el boton de disparo (movil)
+            const shootAmmo = document.getElementById('shoot-ammo');
+            if (shootAmmo) {
+                shootAmmo.innerText = me.currentWeapon === 1 ? (me.ammo || 0) : "\u221E";
+                shootAmmo.classList.toggle('low', me.currentWeapon === 1 && (me.ammo || 0) <= 2);
+            }
+
+            // Recarga automatica al quedarse sin balas (QoL en todos los dispositivos)
+            if (!me.isDead && me.currentWeapon === 1 && (me.ammo || 0) <= 0) {
+                const nowTs = Date.now();
+                if (nowTs - lastAutoReload > 600) {
+                    lastAutoReload = nowTs;
+                    socket.emit('playerReload');
+                }
+            }
+
+            // Leaderboard
+            const allPlayers = Object.values(gameState.players).sort((a, b) => b.bankedScore - a.bankedScore);
+            const listEl = document.getElementById("leader-list");
+            listEl.innerHTML = "";
+            allPlayers.forEach(p => {
+                const li = document.createElement("li");
+                if (p.id === myPlayerId) li.className = "you";
+                li.innerText = `${p.nick}: ${p.bankedScore || 0} pts (+${p.charge || 0})`;
+                listEl.appendChild(li);
+            });
+        }
+
+        // RENDERING
+        function render() {
+            requestAnimationFrame(render);
+            if (!gameState || !myPlayerId) return;
+
+            const me = gameState.players[myPlayerId] || { x: 2500, y: 2500 };
+
+            if (gameState.lobbyActive || !gameState.gameStarted) return;
+
+            if (shakeIntensity > 0) shakeIntensity *= 0.9;
+
+            // En px CSS: el transform base (dpr) los escala para cubrir todo el canvas.
+            ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+            ctx.save();
+
+            let offsetX = (Math.random() - 0.5) * shakeIntensity;
+            let offsetY = (Math.random() - 0.5) * shakeIntensity;
+            // Cámara alejada en táctil para más visión de campo; centrada en el jugador.
+            const viewZoom = isTouchDevice ? 0.72 : 0.92;
+            // Centro en px CSS: el transform base (dpr) lo lleva a px de dispositivo.
+            // Usar canvas.width/2 aqui multiplicaria dpr dos veces y sacaria la camara
+            // de la pantalla (personaje "en la esquina") en moviles de alta densidad.
+            ctx.translate(window.innerWidth / 2, window.innerHeight / 2);
+            ctx.scale(viewZoom, viewZoom);
+            ctx.translate(-me.x + offsetX / viewZoom, -me.y + offsetY / viewZoom);
+
+            // Rejilla del Mapa
+            const MAP_SIZE = gameState.mapSize || 5000;
+            ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1.5;
+            for (let x = 0; x <= MAP_SIZE; x += 150) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, MAP_SIZE); ctx.stroke(); }
+            for (let y = 0; y <= MAP_SIZE; y += 150) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(MAP_SIZE, y); ctx.stroke(); }
+
+            // Zonas Peligrosas
+            (gameState.hazardZones || []).forEach(hz => {
+                ctx.beginPath(); ctx.arc(hz.x, hz.y, hz.radius, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(34, 197, 94, 0.15)'; ctx.fill();
+                ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2; ctx.stroke();
+            });
+
+            // Speed Pads
+            (gameState.speedPads || []).forEach(pad => {
+                ctx.fillStyle = 'rgba(56, 189, 248, 0.25)'; ctx.fillRect(pad.x, pad.y, pad.w, pad.h);
+                ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2; ctx.strokeRect(pad.x, pad.y, pad.w, pad.h);
+            });
+
+            // Tiendas
+            (gameState.shopZones || []).forEach(sz => {
+                ctx.beginPath(); ctx.arc(sz.x, sz.y, sz.radius, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(56, 189, 248, 0.12)'; ctx.fill();
+                ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2; ctx.stroke();
+            });
+
+            // Zona Roja
+            if (gameState.zoneShrinking || gameState.gameTime <= 60) {
+                ctx.fillStyle = 'rgba(239, 68, 68, 0.15)';
+                ctx.beginPath();
+                ctx.rect(0, 0, MAP_SIZE, MAP_SIZE);
+                ctx.arc(MAP_SIZE / 2, MAP_SIZE / 2, gameState.zoneRadius, 0, Math.PI * 2, true);
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.arc(MAP_SIZE / 2, MAP_SIZE / 2, gameState.zoneRadius, 0, Math.PI * 2);
+                ctx.strokeStyle = '#ef4444';
+                ctx.lineWidth = 8;
+                ctx.stroke();
+            }
+
+            // Banco Central
+            const bankZone = gameState.bankZone;
+            if (bankZone) {
+                ctx.beginPath(); ctx.arc(bankZone.x, bankZone.y, bankZone.radius, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(34, 197, 94, 0.15)'; ctx.fill();
+                ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 3; ctx.stroke();
+            }
+
+            // Airdrops
+            (gameState.airdrops || []).forEach(ad => {
+                ctx.fillStyle = '#facc15'; ctx.fillRect(ad.x - ad.radius, ad.y - ad.radius, ad.radius * 2, ad.radius * 2);
+                ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.strokeRect(ad.x - ad.radius, ad.y - ad.radius, ad.radius * 2, ad.radius * 2);
+            });
+
+            // Obstáculos
+            (gameState.obstacles || []).forEach(obs => {
+                if (obs.hp <= 0) return;
+                let hpRatio = obs.hp / obs.maxHp;
+                ctx.fillStyle = hpRatio > 0.5 ? '#334155' : '#475569';
+                ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+                ctx.strokeStyle = hpRatio < 0.4 ? '#ef4444' : '#64748b';
+                ctx.lineWidth = 2; ctx.strokeRect(obs.x, obs.y, obs.w, obs.h);
+            });
+
+            // Orbes y Medicinas
+            (gameState.droppedEnergy || []).forEach(g => {
+                ctx.beginPath(); ctx.arc(g.x, g.y, 6, 0, Math.PI * 2); ctx.fillStyle = '#facc15'; ctx.fill();
+            });
+            (gameState.healthKits || []).forEach(h => {
+                ctx.fillStyle = '#22c55e'; ctx.fillRect(h.x - 7, h.y - 7, 14, 14);
+            });
+
+            // Bombas y Explosiones
+            (gameState.bombs || []).forEach(bm => {
+                ctx.beginPath(); ctx.arc(bm.currentX, bm.currentY, 10, 0, Math.PI * 2); ctx.fillStyle = '#ef4444'; ctx.fill();
+            });
+            (gameState.explosions || []).forEach(exp => {
+                ctx.beginPath(); ctx.arc(exp.x, exp.y, exp.radius, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(249, 115, 22, ${exp.alpha})`; ctx.fill();
+            });
+
+            // Proyectiles
+            (gameState.bullets || []).forEach(b => {
+                ctx.beginPath(); ctx.arc(b.x, b.y, b.isOrbBullet ? 8 : 4, 0, Math.PI * 2);
+                ctx.fillStyle = b.isOrbBullet ? '#a855f7' : '#fbbf24'; ctx.fill();
+            });
+
+            // Renderizar Jugadores Reales
+            Object.values(gameState.players).forEach(p => {
+                if (p.isDead) return;
+
+                ctx.save();
+                const barW = 44, barH = 4; const topY = p.y - 38;
+
+                ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(p.x - barW / 2, topY, barW, barH);
+                ctx.fillStyle = '#ef4444'; ctx.fillRect(p.x - barW / 2, topY, (p.hp / p.maxHp) * barW, barH);
+
+                if (p.shield > 0) {
+                    ctx.fillStyle = '#3b82f6'; ctx.fillRect(p.x - barW / 2, topY - 5, (p.shield / p.maxShield) * barW, 3);
+                }
+
+                ctx.fillStyle = '#ffffff'; ctx.font = 'bold 11px Segoe UI'; ctx.textAlign = 'center';
+                ctx.fillText(p.nick, p.x, topY - 8);
+
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                ctx.fillStyle = (p.skin && p.skin.c1) ? p.skin.c1 : '#38bdf8';
+                ctx.fill();
+                ctx.strokeStyle = p.isDashing ? '#38bdf8' : '#fff'; ctx.lineWidth = p.isDashing ? 4 : 2.5; ctx.stroke();
+                if (p.isDashing) {
+                    ctx.shadowBlur = 20;
+                    ctx.shadowColor = '#38bdf8';
+                    ctx.beginPath(); ctx.arc(p.x, p.y, p.radius + 3, 0, Math.PI * 2);
+                    ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2; ctx.stroke();
+                    ctx.shadowBlur = 0;
+                }
+
+                ctx.beginPath(); ctx.moveTo(p.x, p.y);
+                ctx.lineTo(p.x + Math.cos(p.angle) * (p.radius + 12), p.y + Math.sin(p.angle) * (p.radius + 12));
+                ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4; ctx.stroke();
+                ctx.restore();
+            });
+
+            ctx.restore();
+
+            renderMinimap();
+        }
+
+        // MINIMAPA MULTIJUGADOR
+        function renderMinimap() {
+            if (!gameState) return;
+            const MAP_SIZE = gameState.mapSize || 5000;
+            miniCtx.clearRect(0, 0, 160, 160);
+            let scale = 160 / MAP_SIZE;
+
+            miniCtx.fillStyle = '#38bdf8';
+            (gameState.shopZones || []).forEach(sz => {
+                miniCtx.beginPath(); miniCtx.arc(sz.x * scale, sz.y * scale, 3, 0, Math.PI * 2); miniCtx.fill();
+            });
+
+            if (gameState.bankZone) {
+                miniCtx.fillStyle = '#22c55e';
+                miniCtx.beginPath(); miniCtx.arc(gameState.bankZone.x * scale, gameState.bankZone.y * scale, 5, 0, Math.PI * 2); miniCtx.fill();
+            }
+
+            miniCtx.fillStyle = '#eab308';
+            (gameState.airdrops || []).forEach(ad => {
+                miniCtx.beginPath(); miniCtx.arc(ad.x * scale, ad.y * scale, 4, 0, Math.PI * 2); miniCtx.fill();
+            });
+
+            if (gameState.zoneShrinking || gameState.gameTime <= 60) {
+                miniCtx.strokeStyle = 'rgba(239, 68, 68, 0.9)';
+                miniCtx.lineWidth = 2;
+                miniCtx.beginPath();
+                miniCtx.arc((MAP_SIZE / 2) * scale, (MAP_SIZE / 2) * scale, gameState.zoneRadius * scale, 0, Math.PI * 2);
+                miniCtx.stroke();
+            }
+
+            Object.values(gameState.players).forEach(p => {
+                if (p.isDead) return;
+                miniCtx.fillStyle = p.id === myPlayerId ? '#ffffff' : '#ef4444';
+                miniCtx.beginPath(); miniCtx.arc(p.x * scale, p.y * scale, p.id === myPlayerId ? 4 : 3, 0, Math.PI * 2); miniCtx.fill();
+            });
+        }
+
+        function finalizarJuego(ranking) {
+            const posicionJugador = ranking.findIndex(e => e.id === myPlayerId) + 1;
+            const primerLugar = ranking[0];
+
+            const titleEl = document.getElementById("death-title");
+            const subtextEl = document.getElementById("death-subtext");
+            const cardEl = document.getElementById("death-card-container");
+
+            if (posicionJugador === 1) {
+                titleEl.innerText = "¡VICTORIA TÁCTICA! 🎉";
+                titleEl.style.color = "#22c55e";
+                subtextEl.innerText = `¡Dominaste la partida! Quedaste en 1.° Lugar asegurando ${primerLugar.bankedScore} pts en el Banco y reclamas el bote de $${roomPot} USD.`;
+                cardEl.className = "death-card win-card";
+            } else {
+                titleEl.innerText = "PARTIDA FINALIZADA - DERROTA ❌";
+                titleEl.style.color = "#ef4444";
+                subtextEl.innerText = `Quedaste en el Puesto #${posicionJugador}. El ganador fue ${primerLugar.nick} con ${primerLugar.bankedScore} pts.`;
+                cardEl.className = "death-card";
+            }
+
+            document.getElementById("btn-respawn-action").innerText = "VOLVER AL LOBBY 🔄";
+            document.getElementById("death-screen").style.display = "flex";
+        }
+
+        function respawnPlayer() {
+            if (isGameOver) {
+                window.location.href = "index.html";
+            } else {
+                socket.emit('requestRespawn');
+            }
+        }
+
+        let exitConfirmPending = false;
+        let exitConfirmTimer = null;
+        function salirAlLobby(ev) {
+            const btn = ev && ev.currentTarget ? ev.currentTarget : null;
+            if (!exitConfirmPending) {
+                exitConfirmPending = true;
+                if (btn) {
+                    btn.dataset.origHtml = btn.innerHTML;
+                    btn.innerHTML = "¿Confirmar salida?";
+                    btn.classList.add("confirming");
+                }
+                exitConfirmTimer = setTimeout(() => {
+                    exitConfirmPending = false;
+                    if (btn && btn.dataset.origHtml) {
+                        btn.innerHTML = btn.dataset.origHtml;
+                        btn.classList.remove("confirming");
+                    }
+                }, 3000);
+                return;
+            }
+            clearTimeout(exitConfirmTimer);
+            socket.emit('leaveRoom');
+            window.location.href = "index.html";
+        }
+
+        render();
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,141 @@
+const fs = require('fs');
+const content = String.raw`rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────
+// REGLAS DE FIRESTORE — WinOrbs (ANTICHEAT · Fase 1 endurecida)
+// Pega este contenido en: Firebase Console → Firestore Database → Rules
+//
+// ⚠️ PASO MANUAL OBLIGATORIO:
+// 1) Regístrate en la app con tu email de administrador.
+// 2) Copia tu UID (Consola → Authentication → Users).
+// 3) Pégalo abajo en ADMIN_UID y publica las reglas.
+//
+// ECONOMÍA:
+// - Modo economía (servidor con serviceAccountKey.json): el servidor escribe
+//   entradas/premios/partidas vía Admin SDK (bypasa estas reglas). El cliente
+//   JAMÁS sube su saldo: solo el admin o el servidor pueden hacerlo.
+// - Modo degradado (sin clave): el cliente crea marcadores (partidas/entradas)
+//   y solicitudes 'premio' que el admin acredita MANUALMENTE.
+// ─────────────────────────────────────────────────────────────
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null && (
+        request.auth.uid == "2TRnwllarqhaggRR8so48rSVzji1" ||
+        request.auth.token.email == "winorbs@admins.com"
+      );
+    }
+
+    // ── Perfiles de usuario ──
+    match /usuarios/{uid} {
+      allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
+
+      // Crear perfil propio al registrarse (saldo 0, sin ban, apodo seguro)
+      allow create: if request.auth != null && request.auth.uid == uid
+                    && request.resource.data.saldo == 0
+                    && request.resource.data.baneado == false
+                    && request.resource.data.apodo is string
+                    && request.resource.data.apodo.size() >= 3
+                    && request.resource.data.apodo.size() <= 16
+                    && !request.resource.data.apodo.matches('.*[<>&\"].*');
+
+      // Actualizar:
+      //  - Admin: puede todo (aprobar pagos, banear, ajustar saldo, acreditar premios).
+      //  - Dueño: edita su perfil y BAJA su saldo (retiro/entrada). NUNCA puede
+      //    SUBIRLO ni cambiarse el baneado. → Fábrica de dinero CERRADA.
+      allow update: if isAdmin()
+                    || (request.auth != null && request.auth.uid == uid
+                        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['baneado'])
+                        && request.resource.data.saldo <= resource.data.saldo);
+
+      allow delete: if isAdmin();
+    }
+
+    // ── Solicitudes de depósito / retiro / premio ──
+    match /pagos/{id} {
+      allow read: if request.auth != null && (isAdmin() || resource.data.usuarioId == request.auth.uid);
+
+      // Crear: solo para sí mismo, siempre 'pendiente', monto con tope de sanidad.
+      // Un 'premio' solo es válido si referencia una partida marcada donde el
+      // solicitante ES el ganador y el monto coincide exactamente con su neto.
+      allow create: if request.auth != null
+                    && request.resource.data.usuarioId == request.auth.uid
+                    && request.resource.data.estado == 'pendiente'
+                    && request.resource.data.tipo in ['deposito', 'retiro', 'premio']
+                    && request.resource.data.monto is number
+                    && request.resource.data.monto > 0
+                    && request.resource.data.monto <= 10000
+                    && (request.resource.data.tipo in ['deposito', 'retiro']
+                        || (request.resource.data.tipo == 'premio'
+                            && request.resource.data.partidaId is string
+                            && get(/databases/$(database)/documents/partidas/$(request.resource.data.partidaId)).data.ganadorUid == request.auth.uid
+                            && get(/databases/$(database)/documents/partidas/$(request.resource.data.partidaId)).data.estado in ['pagada', 'premio_pendiente_admin']
+                            && request.resource.data.monto >= get(/databases/$(database)/documents/partidas/$(request.resource.data.partidaId)).data.neto - 0.01
+                            && request.resource.data.monto <= get(/databases/$(database)/documents/partidas/$(request.resource.data.partidaId)).data.neto + 0.01));
+
+      // El admin mueve el estado (aprobado/pagado/rechazado) y acredita el saldo.
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+// ── Tienda de skins ──
+    match /skins/{id} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // ── Métricas internas (comisiones de la casa): SOLO admin.
+    // El servidor (Admin SDK) las escribe igualmente; los clientes no.
+    match /metricas/{id} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ── Partidas: marcador atómico del premio. No mueven dinero por sí mismas.
+    // Modo degradado: el cliente crea el marcador (creadoPorUid == auth.uid).
+    // Modo economía: el servidor lo crea vía Admin SDK.
+    match /partidas/{gameId} {
+      allow read: if request.auth != null && (isAdmin() || resource.data.ganadorUid == request.auth.uid);
+      allow create: if (request.auth != null && isAdmin())
+                    || (request.auth != null
+                        && request.resource.data.gameId is string
+                        && request.resource.data.salaId is string
+                        && request.resource.data.pozo is number
+                        && request.resource.data.pozo > 0
+                        && request.resource.data.pozo <= 100000
+                        && request.resource.data.comision is number
+                        && request.resource.data.neto is number
+                        && request.resource.data.comision >= request.resource.data.pozo * 0.2 - 0.01
+                        && request.resource.data.comision <= request.resource.data.pozo * 0.2 + 0.01
+                        && request.resource.data.neto >= request.resource.data.pozo * 0.8 - 0.01
+                        && request.resource.data.neto <= request.resource.data.pozo * 0.8 + 0.01
+                        && request.resource.data.comision + request.resource.data.neto <= request.resource.data.pozo + 0.01
+                        && request.resource.data.estado in ['pagada', 'premio_pendiente_admin']
+                        && request.resource.data.creadoPorUid == request.auth.uid
+                        && request.resource.data.ganadorUid == request.auth.uid);
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ── Entradas pagadas (auditoría del cobro) ──
+    match /entradas/{id} {
+      allow read: if request.auth != null && (isAdmin() || resource.data.usuarioId == request.auth.uid);
+      // Modo degradado: el jugador registra su propia entrada cobrada.
+      allow create: if request.auth != null
+                    && request.resource.data.usuarioId == request.auth.uid
+                    && request.resource.data.salaId is string
+                    && request.resource.data.estado == 'cobrada'
+                    && request.resource.data.monto is number
+                    && request.resource.data.monto > 0
+                    && request.resource.data.monto <= 10000;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+  }
+}
+`;
+fs.writeFileSync('firestore.rules', content, 'utf8');
+console.log('RULES_OK');

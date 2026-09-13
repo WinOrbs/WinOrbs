@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#060a12">
+  <title>WinOrbs — Login</title>
+  <!-- Design System Neón Arena compartido -->
+  <link rel="stylesheet" href="/css/arena.css">
+  <style>
+    /* ── Neón Arena: la base (vars, atmósfera, formularios) vive en /css/arena.css ── */
+    html, body { height: 100%; }
+
+    /* Fondo de marca, atenuado bajo la atmósfera del arena */
+    #login-bg {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      background: url(assets/login/loginbg.jpg) center/cover no-repeat;
+      opacity: .35;
+      filter: saturate(.8);
+      pointer-events: none;
+    }
+
+    /* La atmósfera (orbs + grid + viñeta + grain) flota sobre la imagen */
+    .atmo { z-index: 0; }
+
+    /* Veladura hacia el fondo profundo */
+    body.auth-mode::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(ellipse at 50% 0%, rgba(6, 10, 18, .15), rgba(3, 6, 12, .8));
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    /* ── Contenedor principal ── */
+    #app {
+      position: relative;
+      z-index: 2;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    /* ── Tarjeta de acceso glass ── */
+    .login-card {
+      position: relative;
+      z-index: 2;
+      max-width: 360px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 26px 22px 22px;
+      text-align: center;
+      background: rgba(8, 13, 26, .78);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      box-shadow: 0 24px 60px -30px rgba(0, 0, 0, .85), 0 0 40px -18px rgba(56, 189, 248, .35), inset 0 1px 0 rgba(255, 255, 255, .06);
+      transition: border-color .3s, box-shadow .3s;
+    }
+    .login-card:hover {
+      border-color: rgba(56, 189, 248, .4);
+      box-shadow: 0 24px 60px -30px rgba(0, 0, 0, .85), 0 0 55px -14px rgba(56, 189, 248, .5), inset 0 1px 0 rgba(255, 255, 255, .06);
+    }
+
+    /* ── Logo de marca con pulso de energía cian ── */
+    .logo-login {
+      width: 320px;
+      max-width: 100%;
+      height: 100px;
+      position: relative;
+      margin: 0 auto 10px;
+      background-size: cover;
+      background-repeat: no-repeat;
+      background-position: center;
+      cursor: pointer;
+      animation: arena-pulse 2.4s infinite ease-in-out;
+      transition: transform .3s;
+      overflow: visible;
+    }
+    .logo-login:hover { transform: scale(1.06); }
+
+    /* ── Mensaje de error (se activa con la clase .visible) ── */
+    .auth-err {
+      display: none;
+      font-size: 13px;
+      color: #ff8f8f;
+      background: rgba(248, 113, 113, .1);
+      border: 1px solid rgba(248, 113, 113, .3);
+      border-radius: 8px;
+      padding: 7px 9px;
+      margin: 8px 0;
+    }
+    .auth-err.visible { display: block; }
+
+    /* ── Divisor + iconos sociales ── */
+    .social-message {
+      display: flex;
+      align-items: center;
+      padding-top: 1rem;
+      margin: 4px 0 2px;
+    }
+    .social-message .line {
+      height: 1px;
+      flex: 1 1 0%;
+      background: rgba(148, 163, 184, .25);
+    }
+    .social-message .message {
+      padding: 0 .75rem;
+      font-family: var(--font-display);
+      font-size: 11px;
+      letter-spacing: 1.6px;
+      text-transform: uppercase;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .social-icons {
+      display: flex;
+      justify-content: center;
+    }
+    .social-icons .icon {
+      border-radius: 10px;
+      padding: .7rem;
+      border: 1px solid transparent;
+      background-color: transparent;
+      margin-left: 8px;
+      cursor: pointer;
+      transition: .25s;
+    }
+    .social-icons .icon:hover { background-color: rgba(56, 189, 248, .1); border-color: var(--line); }
+    .social-icons .icon svg {
+      height: 1.25rem;
+      width: 1.25rem;
+      fill: var(--text);
+      display: block;
+    }
+
+    /* ── Campos con icono ── */
+    .login-card .field {
+      display: flex;
+      align-items: center;
+      gap: .5em;
+      border-radius: 12px;
+      padding: .65em .8em;
+      border: 1px solid var(--line);
+      outline: none;
+      color: var(--text);
+      background: var(--surface-deep);
+      margin-bottom: 10px;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .login-card .field:focus-within {
+      border-color: var(--line-glow);
+      box-shadow: 0 0 0 3px rgba(56, 189, 248, .12), 0 0 20px rgba(56, 189, 248, .15);
+    }
+    .login-card .input-icon {
+      height: 1.3em;
+      width: 1.3em;
+      fill: var(--cyan);
+      color: var(--cyan);
+      flex-shrink: 0;
+      opacity: .85;
+    }
+    .login-card .input-field {
+      background: none;
+      border: none;
+      outline: none;
+      width: 100%;
+      color: var(--text);
+      font-family: var(--font-body);
+      font-weight: 500;
+      font-size: 15px;
+      padding: 4px 2px;
+      min-width: 0;
+    }
+    .login-card .input-field::placeholder { color: #475569; }
+
+    /* ── Botón Entrar con barrido de brillo ── */
+    .auth-btn {
+      position: relative;
+      overflow: hidden;
+      padding: .65em 1.1em;
+      color: #041019;
+      background: linear-gradient(90deg, #0ea5e9, #38bdf8);
+      border: none;
+      border-radius: 10px;
+      font-family: var(--font-display);
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      cursor: pointer;
+      box-shadow: 0 8px 22px -10px rgba(56, 189, 248, .8);
+      transition: transform .18s, box-shadow .18s, filter .18s;
+      margin-top: 1.4em;
+      width: 100%;
+    }
+    .auth-btn::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: -70%;
+      width: 45%;
+      height: 100%;
+      background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .55), transparent);
+      transform: skewX(-20deg);
+      transition: left .55s ease;
+    }
+    .auth-btn:hover::after { left: 135%; }
+    .auth-btn:hover {
+      transform: translateY(-2px);
+      filter: brightness(1.08);
+      box-shadow: 0 12px 28px -10px rgba(56, 189, 248, .9);
+    }
+    .auth-btn:disabled { opacity: .55; cursor: default; transform: none; }
+
+    /* ── Invitado + alternar registro ── */
+    .auth-guest-wrap { margin-top: 16px; }
+    .auth-guest {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-family: var(--font-body);
+      font-size: 13px;
+      cursor: pointer;
+      text-decoration: underline;
+      transition: color .2s;
+    }
+    .auth-guest:hover { color: var(--cyan); }
+    .auth-toggle { margin-top: 12px; }
+    .auth-toggle a {
+      color: var(--cyan);
+      font-size: 13px;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .auth-toggle a:hover { text-decoration: underline; text-shadow: 0 0 12px rgba(56, 189, 248, .5); }
+
+    /* ── Pulso de energía del logo ── */
+    @keyframes arena-pulse {
+      0%, 100% { filter: drop-shadow(0 0 6px rgba(56, 189, 248, .55)) drop-shadow(0 0 22px rgba(56, 189, 248, .25)); }
+      50% { filter: drop-shadow(0 0 2px rgba(56, 189, 248, .35)) drop-shadow(0 0 12px rgba(56, 189, 248, .15)); }
+    }
+  </style>
+</head>
+<body class="auth-mode">
+  <div id="login-bg" aria-hidden="true"></div>
+  <div class="atmo" aria-hidden="true">
+    <div class="orb orb-a"></div>
+    <div class="orb orb-b"></div>
+    <div class="orb orb-c"></div>
+    <div class="orb orb-d"></div>
+    <div class="atmo-grid"></div>
+    <div class="atmo-vignette"></div>
+    <div class="atmo-grain"></div>
+  </div>
+  <div id="app">
+    <!-- Solo pantalla de login -->
+    <section>
+      <div class="login-card">
+        <div class="logo-login" style="background-image: url(assets/login/logo-login.png);"></div>
+        <div class="auth-err"></div>
+
+        <div class="social-message">
+          <div class="line"></div>
+          <p class="message">Login with social accounts</p>
+          <div class="line"></div>
+        </div>
+        <div class="social-icons">
+          <button class="icon" aria-label="Log in with Google" type="button">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+              <path d="M16.318 13.714v5.484h9.078c-0.37 2.354-2.745 6.901-9.078 6.901-5.458 0-9.917-4.521-9.917-10.099s4.458-10.099 9.917-10.099c3.109 0 5.193 1.318 6.38 2.464l4.339-4.182c-2.786-2.599-6.396-4.182-10.719-4.182-8.844 0-16 7.151-16 16s7.156 16 16 16c9.234 0 15.365-6.49 15.365-15.635 0-1.052-0.115-1.854-0.255-2.651z"></path>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Login / Registro (Firebase Auth: email + contraseña) -->
+        <form class="auth-pane" id="login-form" novalidate>
+          <div class="field" id="field-user" style="display: none;">
+            <svg class="input-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+              <path d="M13.106 7.222c0-2.967-2.249-5.032-5.482-5.032-3.35 0-5.646 2.318-5.646 5.702 0 3.493 2.235 5.708 5.762 5.708.862 0 1.689-.123 2.304-.335v-.862c-.43.199-1.354.328-2.29.328-2.926 0-4.813-1.88-4.813-4.798 0-2.844 1.921-4.881 4.594-4.881 2.735 0 4.608 1.688 4.608 4.156 0 1.682-.554 2.769-1.416 2.769-.492 0-.772-.28-.772-.76V5.206H8.923v.834h-.11c-.266-.595-.881-.964-1.6-.964-1.4 0-2.378 1.162-2.378 2.823 0 1.737.957 2.906 2.379 2.906.8 0 1.415-.39 1.709-1.087h.11c.081.67.703 1.148 1.503 1.148 1.572 0 2.57-1.415 2.57-3.643zm-7.177.704c0-1.197.54-1.907 1.456-1.907.93 0 1.524.738 1.524 1.907S8.308 9.84 7.371 9.84c-.895 0-1.442-.725-1.442-1.914z"></path>
+            </svg>
+            <input class="input-field" type="text" id="login-user" maxlength="16" placeholder="Nombre de usuario" autocomplete="username" autocapitalize="none">
+          </div>
+          <div class="field">
+            <svg class="input-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+              <path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V4zm2-1a1 1 0 0 0-1 1v.4l7 4.55L15 4.4V4a1 1 0 0 0-1-1H2zm13 2.65L8 10.2 1 5.65V12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V5.65z"></path>
+            </svg>
+            <input class="input-field" type="email" id="login-email" placeholder="Email" autocomplete="email">
+          </div>
+          <div class="field">
+            <svg class="input-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+              <path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2zm3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"></path>
+            </svg>
+            <input class="input-field" type="password" id="login-pass" placeholder="Contraseña" autocomplete="current-password">
+          </div>
+          <button class="auth-btn" type="submit" id="btn-entrar">Entrar</button>
+        </form>
+        <div class="auth-toggle">
+          <a href="#" id="toggle-registro">¿No tienes cuenta? Crear cuenta</a>
+        </div>
+
+        <div class="auth-guest-wrap">
+          <button class="auth-guest" type="button">Jugar como invitado</button>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import {
+      getAuth,
+      createUserWithEmailAndPassword,
+      signInWithEmailAndPassword,
+      signInAnonymously,
+      signOut,
+      GoogleAuthProvider,
+      signInWithPopup
+    } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+    import {
+      getFirestore,
+      doc,
+      getDoc,
+      setDoc,
+      serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { firebaseConfig } from "./js/firebase-config.js";
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    const form = document.getElementById("login-form");
+    const emailInput = document.getElementById("login-email");
+    const passInput = document.getElementById("login-pass");
+    const userInput = document.getElementById("login-user");
+    const fieldUser = document.getElementById("field-user");
+    const errBox = document.querySelector(".auth-err");
+    const btnEntrar = document.getElementById("btn-entrar");
+    const btnGuest = document.querySelector(".auth-guest");
+    const toggleLink = document.getElementById("toggle-registro");
+
+    let modoRegistro = false;
+
+    function mostrarError(msg) {
+      errBox.textContent = msg;
+      errBox.classList.add("visible");
+    }
+
+    function limpiarError() {
+      errBox.textContent = "";
+      errBox.classList.remove("visible");
+    }
+
+    function guardarSesion(uid, apodo) {
+      try {
+        localStorage.setItem("ode_uid", uid);
+        localStorage.setItem("ode_user", apodo);
+      } catch (e) { }
+    }
+
+    function apodoDesdeEmail(email) {
+      const base = (email || "").split("@")[0].replace(/[^a-zA-Z0-9_]/g, "");
+      return (base.length >= 3 ? base : "Jugador") + "_" + Math.random().toString(36).slice(2, 5);
+    }
+
+    function mensajeFirebase(code) {
+      const mapa = {
+        "auth/invalid-credential": "Email o contraseña incorrectos.",
+        "auth/wrong-password": "Email o contraseña incorrectos.",
+        "auth/user-not-found": "No existe una cuenta con ese email. Crea una cuenta.",
+        "auth/email-already-in-use": "Ese email ya está registrado. Inicia sesión.",
+        "auth/weak-password": "La contraseña es muy débil (mínimo 6 caracteres).",
+        "auth/invalid-email": "El email no tiene un formato válido.",
+        "auth/too-many-requests": "Demasiados intentos. Espera un momento e inténtalo de nuevo.",
+        "auth/network-request-failed": "Error de red. Revisa tu conexión.",
+        "auth/operation-not-allowed": "El acceso con Email/Contraseña no está habilitado en la consola de Firebase."
+      };
+      return mapa[code] || ("Error: " + (code || "desconocido"));
+    }
+
+    // Alternar entre modo login y modo registro
+    toggleLink.addEventListener("click", function (e) {
+      e.preventDefault();
+      modoRegistro = !modoRegistro;
+      fieldUser.style.display = modoRegistro ? "flex" : "none";
+      passInput.setAttribute("autocomplete", modoRegistro ? "new-password" : "current-password");
+      btnEntrar.textContent = modoRegistro ? "Crear cuenta" : "Entrar";
+      toggleLink.textContent = modoRegistro ? "¿Ya tienes cuenta? Iniciar sesión" : "¿No tienes cuenta? Crear cuenta";
+      limpiarError();
+    });
+
+    // Crea el documento de perfil si no existe (cuentas sin perfil)
+    async function asegurarPerfil(uid, apodo, email) {
+      const ref = doc(db, "usuarios", uid);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) {
+        await setDoc(ref, {
+          apodo: apodo,
+          email: email || "",
+          saldo: 0,
+          baneado: false,
+          creadoEn: serverTimestamp()
+        });
+        return { apodo: apodo, baneado: false };
+      }
+      return snap.data();
+    }
+
+    form.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      limpiarError();
+
+      const email = emailInput.value.trim().toLowerCase();
+      const pass = passInput.value;
+      const arroba = email.indexOf("@");
+
+      if (!email || arroba < 1 || arroba === email.length - 1) {
+        return mostrarError("Ingresa un email válido.");
+      }
+      if (pass.length < 6) {
+        return mostrarError("La contraseña debe tener al menos 6 caracteres.");
+      }
+
+      btnEntrar.disabled = true;
+      try {
+        if (modoRegistro) {
+          const apodo = userInput.value.trim();
+          if (apodo.length < 3) {
+            btnEntrar.disabled = false;
+            return mostrarError("El nombre de usuario debe tener al menos 3 caracteres.");
+          }
+          const cred = await createUserWithEmailAndPassword(auth, email, pass);
+          await setDoc(doc(db, "usuarios", cred.user.uid), {
+            apodo: apodo,
+            email: email,
+            saldo: 0,
+            baneado: false,
+            creadoEn: serverTimestamp()
+          });
+          guardarSesion(cred.user.uid, apodo);
+        } else {
+          const cred = await signInWithEmailAndPassword(auth, email, pass);
+          const perfil = await asegurarPerfil(cred.user.uid, apodoDesdeEmail(email), email);
+          if (perfil && perfil.baneado) {
+            await signOut(auth);
+            btnEntrar.disabled = false;
+            return mostrarError("Tu cuenta está baneada. Contacta al soporte.");
+          }
+          guardarSesion(cred.user.uid, (perfil && perfil.apodo) || apodoDesdeEmail(email));
+        }
+        window.location.href = "index.html";
+      } catch (err) {
+        btnEntrar.disabled = false;
+        mostrarError(mensajeFirebase(err.code));
+      }
+    });
+
+    // Entrar como invitado (cuenta anónima de Firebase con perfil propio)
+    btnGuest.addEventListener("click", async function () {
+      limpiarError();
+      btnGuest.disabled = true;
+      try {
+        const cred = await signInAnonymously(auth);
+        const apodo = "Invitado_" + Math.random().toString(36).slice(2, 7);
+        await setDoc(doc(db, "usuarios", cred.user.uid), {
+          apodo: apodo,
+          email: "",
+          saldo: 0,
+          baneado: false,
+          invitado: true,
+          creadoEn: serverTimestamp()
+        }, { merge: true });
+        guardarSesion(cred.user.uid, apodo);
+        window.location.href = "index.html";
+      } catch (err) {
+        btnGuest.disabled = false;
+        mostrarError("No se pudo entrar como invitado. " + mensajeFirebase(err.code));
+      }
+    });
+
+    // Iniciar sesión con Google (Firebase Auth popup)
+    const btnGoogle = document.querySelector(".social-icons .icon");
+    btnGoogle.addEventListener("click", async function () {
+      limpiarError();
+      btnGoogle.disabled = true;
+      try {
+        const cred = await signInWithPopup(auth, new GoogleAuthProvider());
+        const email = cred.user.email || "";
+        const perfil = await asegurarPerfil(cred.user.uid, apodoDesdeEmail(email), email);
+        if (perfil && perfil.baneado) {
+          await signOut(auth);
+          btnGoogle.disabled = false;
+          return mostrarError("Tu cuenta está baneada. Contacta al soporte.");
+        }
+        guardarSesion(cred.user.uid, (perfil && perfil.apodo) || apodoDesdeEmail(email));
+        window.location.href = "index.html";
+      } catch (err) {
+        btnGoogle.disabled = false;
+        if (err.code === "auth/popup-closed-by-user") return mostrarError("Cerraste la ventana de Google sin terminar el acceso.");
+        if (err.code === "auth/popup-blocked") return mostrarError("El navegador bloqueó la ventana de Google. Habilita las ventanas emergentes e inténtalo de nuevo.");
+        if (err.code === "auth/cancelled-popup-request") return null;
+        if (err.code === "auth/operation-not-allowed" || err.code === "auth/configuration-not-found") {
+          return mostrarError("El acceso con Google no está habilitado en Firebase Console → Authentication → Sign-in method.");
+        }
+        mostrarError("No se pudo iniciar con Google. " + mensajeFirebase(err.code));
+      }
+    });
+  </script>
+</body>
+</html>

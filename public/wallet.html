@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#060a12">
+  <title>WinOrbs — Mi Wallet</title>
+  <!-- Design System Neón Arena compartido -->
+  <link rel="stylesheet" href="/css/arena.css">
+  <!-- Cliente Socket.io para notificar solicitudes por Telegram vía server.js -->
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    /* ── Neón Arena: la base (vars, atmósfera, formularios, botones, msgs) vive en /css/arena.css ── */
+    body { padding: 20px; }
+
+    .top-bar {
+      max-width: 560px; margin: 0 auto 16px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .top-bar a {
+      color: var(--muted); font-family: var(--font-display); font-weight: 600;
+      font-size: 12px; letter-spacing: 1.2px; text-transform: uppercase;
+      text-decoration: none; transition: color .2s, text-shadow .2s;
+    }
+    .top-bar a:hover { color: var(--cyan); text-shadow: 0 0 12px rgba(56, 189, 248, .4); }
+
+    .saldo-chip {
+      background: rgba(34, 197, 94, .1); color: #7dffa8;
+      border: 1px solid rgba(34, 197, 94, .35);
+      font-family: var(--font-display); font-weight: 700;
+      padding: 5px 14px; border-radius: 999px; font-size: 13.5px;
+      text-shadow: 0 0 14px rgba(34, 197, 94, .4);
+      animation: saldoPulse 3.2s ease-in-out infinite;
+    }
+    @keyframes saldoPulse {
+      0%, 100% { box-shadow: 0 0 0 rgba(34, 197, 94, 0); }
+      50% { box-shadow: 0 0 18px rgba(34, 197, 94, .3); }
+    }
+
+    .card {
+      max-width: 560px; margin: 0 auto;
+      background: var(--surface);
+      backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--line); border-radius: 18px;
+      padding: 24px;
+      box-shadow: 0 24px 60px -30px rgba(0, 0, 0, .85), inset 0 1px 0 rgba(255, 255, 255, .05);
+    }
+    h1 { font-family: var(--font-display); font-size: 21px; letter-spacing: 1px; margin-bottom: 2px; }
+    h2 {
+      font-family: var(--font-display); font-size: 11.5px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 2px; color: var(--cyan);
+      margin: 24px 0 6px;
+    }
+    h2::before { content: "// "; color: var(--muted); }
+    .sub { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+
+    /* Pestañas Depósito / Retiro */
+    .tabs { display: flex; gap: 8px; margin: 14px 0 4px; }
+    .tab {
+      flex: 1; padding: .6em;
+      background: var(--surface-deep); color: var(--muted);
+      border: 1px solid var(--line); border-radius: 10px;
+      font-family: var(--font-display); font-weight: 700; font-size: 13px;
+      letter-spacing: 1px; text-transform: uppercase;
+      cursor: pointer; transition: .2s;
+    }
+    .tab:hover { color: var(--cyan); border-color: rgba(56, 189, 248, .4); }
+    .tab.active {
+      background: rgba(56, 189, 248, .12); color: var(--cyan);
+      border-color: var(--line-glow);
+      box-shadow: 0 0 18px rgba(56, 189, 248, .2);
+    }
+
+    textarea { resize: vertical; min-height: 54px; }
+    .aviso { color: var(--amber); font-size: 12.5px; margin-top: 8px; }
+
+    /* Historial de solicitudes */
+    .hist { list-style: none; margin-top: 8px; }
+    .hist li {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 9px 12px;
+      background: var(--surface-deep); border: 1px solid rgba(148, 163, 184, .12);
+      border-radius: 10px; margin-bottom: 6px; font-size: 12.5px; gap: 8px;
+    }
+    .hist .tipo { font-weight: 700; font-family: var(--font-display); }
+    .hist .tipo.dep { color: var(--green); }
+    .hist .tipo.ret { color: var(--red); }
+    .hist .estado { padding: 2px 9px; border-radius: 999px; font-weight: 700; font-size: 11px; font-family: var(--font-display); }
+    .estado.pendiente { background: rgba(245, 158, 11, .15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, .35); }
+    .estado.aprobado, .estado.pagado { background: rgba(34, 197, 94, .15); color: #7dffa8; border: 1px solid rgba(34, 197, 94, .35); }
+    .estado.rechazado { background: rgba(248, 113, 113, .12); color: #ff8f8f; border: 1px solid rgba(248, 113, 113, .35); }
+    .hist small { color: var(--muted); }
+    .vacio { color: var(--muted); font-size: 12.5px; margin-top: 8px; }
+
+    /* Retiro: acento de precaución rojo */
+    .btn.retiro {
+      background: rgba(248, 113, 113, .12); color: var(--red);
+      border: 1px solid rgba(248, 113, 113, .35); box-shadow: none;
+    }
+    .btn.retiro:hover { border-color: rgba(248, 113, 113, .6); box-shadow: 0 0 18px rgba(248, 113, 113, .25); }
+
+    /* Tarjeta read-only con los datos registrados (depósito) */
+    .tarjeta-datos {
+      background: var(--surface-deep);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 13.5px;
+      color: #e2e8f0;
+      margin-bottom: 4px;
+    }
+    .tarjeta-datos.vacio { color: var(--muted); border-style: dashed; }
+
+    /* Tarjetas de cuenta de cobro (retiro) */
+    #ret-cards { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
+    .tarjeta-cobro {
+      display: block; width: 100%; text-align: left;
+      background: var(--surface-deep); color: #e2e8f0;
+      border: 1px solid var(--line); border-radius: 12px;
+      padding: 11px 14px; cursor: pointer; transition: .18s;
+    }
+    .tarjeta-cobro b {
+      font-family: var(--font-display); font-size: 13px; letter-spacing: .6px;
+      text-transform: uppercase; display: block; margin-bottom: 3px; color: var(--cyan);
+    }
+    .tarjeta-cobro small { display: block; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+    .tarjeta-cobro:hover { border-color: rgba(56, 189, 248, .45); }
+    .tarjeta-cobro.seleccionada {
+      border-color: var(--line-glow);
+      background: rgba(56, 189, 248, .08);
+      box-shadow: 0 0 16px rgba(56, 189, 248, .18);
+    }
+
+    /* Comisión 20% de la casa (retiro) */
+    .resumen-comision {
+      display: none;
+      margin: 8px 0 4px; padding: 9px 12px;
+      background: rgba(245, 158, 11, .08);
+      border: 1px solid rgba(245, 158, 11, .3);
+      border-radius: 10px;
+      color: #fbbf24; font-size: 13px; font-family: var(--font-display); font-weight: 600;
+    }
+
+    /* Comprobante de pago */
+    input[type="file"] { color: var(--muted); font-size: 12.5px; }
+    input[type="file"]::file-selector-button {
+      background: rgba(56, 189, 248, .12); color: var(--cyan);
+      border: 1px solid rgba(56, 189, 248, .4); border-radius: 8px;
+      padding: 7px 12px; margin-right: 10px; cursor: pointer;
+      font-family: var(--font-display); font-weight: 600;
+    }
+    #dep-preview {
+      max-width: 100%; max-height: 220px; display: block;
+      border-radius: 10px; border: 1px solid var(--line); margin: 10px 0 8px;
+    }
+    .btn.quitar {
+      background: rgba(248, 113, 113, .1); color: var(--red);
+      border-color: rgba(248, 113, 113, .35); box-shadow: none;
+      padding: 7px 14px; font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="atmo" aria-hidden="true">
+    <div class="orb orb-a"></div>
+    <div class="orb orb-b"></div>
+    <div class="orb orb-c"></div>
+    <div class="orb orb-d"></div>
+    <div class="atmo-grid"></div>
+    <div class="atmo-vignette"></div>
+    <div class="atmo-grain"></div>
+  </div>
+  <div class="top-bar">
+    <a href="index.html">← Volver al lobby</a>
+    <span class="saldo-chip" id="chip-saldo">$0.00</span>
+  </div>
+
+  <div class="card">
+    <h1>💰 Mi Wallet</h1>
+    <p class="sub">Deposita para jugar o retira tus ganancias. El admin aprueba cada solicitud.</p>
+    <div class="msg" id="msg"></div>
+
+    <div class="tabs">
+      <button class="tab active" id="tab-deposito" type="button">Depositar</button>
+      <button class="tab" id="tab-retiro" type="button">Retirar</button>
+    </div>
+
+    <!-- Formulario de depósito -->
+    <div id="sec-deposito">
+      <label>Monto a depositar ($ USD)</label>
+      <input type="number" id="dep-monto" min="1" step="0.50" placeholder="Ej: 10.00">
+      <label>Método de pago</label>
+      <select id="dep-metodo">
+        <option>Pago Móvil</option>
+        <option>Transferencia Bancaria</option>
+        <option>Zelle</option>
+        <option>Binance (USDT)</option>
+        <option>Otro</option>
+      </select>
+      <label>Datos del pago registrados en tu Perfil (no editables)</label>
+      <div class="tarjeta-datos" id="dep-datos-card">Cargando tus datos…</div>
+      <label>Referencia / Nº de operación (solo números)</label>
+      <input type="text" id="dep-referencia" maxlength="12" inputmode="numeric" placeholder="Ej: 003456789">
+      <label>Comprobante de pago (imagen, opcional)</label>
+      <input type="file" id="dep-comprobante" accept="image/*">
+      <div id="dep-preview-wrap" style="display:none;">
+        <img id="dep-preview" alt="Comprobante de pago">
+        <button class="btn sec quitar" id="btn-quitar-comprobante" type="button">Quitar comprobante</button>
+      </div>
+      <button class="btn" id="btn-deposito">Enviar solicitud de depósito</button>
+      <p class="aviso">⚠️ Tu saldo se acredita cuando el administrador apruebe el pago. Solo se aceptan pagos desde tu Pago Móvil registrado.</p>
+    </div>
+
+    <!-- Formulario de retiro -->
+    <div id="sec-retiro" style="display: none;">
+      <label>Monto a retirar ($ USD)</label>
+      <input type="number" id="ret-monto" min="1" step="0.50" placeholder="Ej: 5.00">
+      <div class="resumen-comision" id="ret-comision"></div>
+      <label>Cuenta de cobro (toca una tarjeta para alternar)</label>
+      <div id="ret-cards"></div>
+      <button class="btn retiro" id="btn-retiro">Solicitar retiro</button>
+      <p class="aviso">⚠️ El monto queda reservado de tu saldo hasta que el admin revise la solicitud. Si la rechaza, se te devuelve. Al pagar, la casa retiene un 20% de comisión.</p>
+    </div>
+
+    <h2>Historial de solicitudes</h2>
+    <ul class="hist" id="lista-historial"></ul>
+    <p class="vacio" id="hist-vacio">Cargando historial…</p>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+    import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
+    import {
+      getFirestore,
+      doc,
+      onSnapshot,
+      collection,
+      addDoc,
+      query,
+      where,
+      runTransaction,
+      serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { firebaseConfig } from "./js/firebase-config.js";
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    const socket = io(); // para notificar solicitudes por Telegram vía server.js
+
+    const $ = (id) => document.getElementById(id);
+
+    function msg(texto, tipo) {
+      const m = $("msg");
+      m.textContent = texto;
+      m.className = "msg " + tipo;
+      setTimeout(() => { m.className = "msg"; m.textContent = ""; }, 6000);
+    }
+
+    let uid = null;
+    let perfil = null;
+    let cobroSeleccionado = null;   // tarjeta de cobro activa {metodo, lineas[]}
+    let comprobanteArchivo = null;  // imagen del comprobante elegida
+    const COMISION_CASA = 0.2;      // 20% que retiene la casa al pagar el retiro
+
+    // Guard de sesión + saldo y datos de cobro en vivo
+    onAuthStateChanged(auth, (user) => {
+      if (!user) { window.location.href = "login.html"; return; }
+      uid = user.uid;
+
+      onSnapshot(doc(db, "usuarios", uid), (snap) => {
+        if (!snap.exists()) return;
+        perfil = snap.data();
+        $("chip-saldo").textContent = "$" + Number(perfil.saldo || 0).toFixed(2);
+        renderTarjetaDeposito();
+        renderTarjetasRetiro();
+        renderComision();
+      }, (e) => msg("Sin permiso para leer tu perfil. ¿Publicaste las reglas con tu UID/email? (" + (e.code || "") + ")", "err"));
+    });
+
+    // ── Datos registrados (tu Pago Móvil = banco + teléfono + cédula del Perfil) ──
+    function construirDatosCobro(metodo) {
+      if (!perfil) return "";
+      if (metodo === "Pago Móvil") {
+        return "Banco: " + (perfil.banco || "—") +
+               " — Teléf: " + (perfil.telefono || "—") +
+               " — CI: " + (perfil.cedula || "—");
+      }
+      if (metodo === "Transferencia Bancaria") {
+        return "Banco: " + (perfil.banco || "—") + " — CI: " + (perfil.cedula || "—");
+      }
+      if (metodo === "Zelle") return perfil.email ? "Email: " + perfil.email : "";
+      if (metodo === "Binance (USDT)") return "Coordina la billetera USDT con el soporte";
+      return "";
+    }
+
+    // Tarjeta read-only del depósito: no se puede declarar otro Pago Móvil
+    function renderTarjetaDeposito() {
+      if (!perfil) return;
+      const card = $("dep-datos-card");
+      const datos = construirDatosCobro($("dep-metodo").value);
+      card.textContent = datos || "Sin datos registrados. Completa banco, teléfono y cédula en tu Perfil.";
+      card.classList.toggle("vacio", !datos);
+    }
+
+    // Tarjetas de cobro del retiro (se alternan al tocarlas)
+    function cuentasCobro() {
+      const cuentas = [];
+      if (perfil.banco || perfil.telefono || perfil.cedula) {
+        cuentas.push({
+          metodo: "Pago Móvil",
+          lineas: [
+            "Banco: " + (perfil.banco || "—"),
+            "Teléf: " + (perfil.telefono || "—"),
+            "CI: " + (perfil.cedula || "—")
+          ]
+        });
+      }
+      if (perfil.banco && perfil.cedula) {
+        cuentas.push({
+          metodo: "Transferencia Bancaria",
+          lineas: ["Banco: " + perfil.banco, "CI: " + perfil.cedula]
+        });
+      }
+      if (perfil.email) {
+        cuentas.push({ metodo: "Zelle", lineas: ["Email: " + perfil.email] });
+      }
+      return cuentas;
+    }
+
+    function renderTarjetasRetiro() {
+      if (!perfil) return;
+      const cont = $("ret-cards");
+      cont.innerHTML = "";
+      const cuentas = cuentasCobro();
+      if (cuentas.length === 0) {
+        const p = document.createElement("p");
+        p.className = "vacio";
+        p.textContent = "Sin cuentas registradas. Completa tu Perfil (banco, teléfono y cédula) para poder retirar.";
+        cont.appendChild(p);
+        cobroSeleccionado = null;
+        return;
+      }
+      if (!cobroSeleccionado || !cuentas.some(c => c.metodo === cobroSeleccionado.metodo)) {
+        cobroSeleccionado = cuentas[0];
+      }
+      cuentas.forEach((c) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "tarjeta-cobro" + (c.metodo === cobroSeleccionado.metodo ? " seleccionada" : "");
+        const titulo = document.createElement("b");
+        titulo.textContent = c.metodo;
+        btn.appendChild(titulo);
+        c.lineas.forEach((l) => {
+          const small = document.createElement("small");
+          small.textContent = l;
+          btn.appendChild(small);
+        });
+        btn.addEventListener("click", () => { cobroSeleccionado = c; renderTarjetasRetiro(); });
+        cont.appendChild(btn);
+      });
+    }
+
+    // Comisión 20% de la casa en vivo
+    function renderComision() {
+      const monto = parseFloat($("ret-monto").value) || 0;
+      const wrap = $("ret-comision");
+      if (monto > 0) {
+        const comision = +(monto * COMISION_CASA).toFixed(2);
+        const neto = +(monto - comision).toFixed(2);
+        wrap.textContent = "Comisión casa (20%): $" + comision.toFixed(2) + " · Recibes: $" + neto.toFixed(2);
+        wrap.style.display = "block";
+      } else {
+        wrap.style.display = "none";
+      }
+    }
+
+    // Pestañas
+    $("tab-deposito").addEventListener("click", () => cambiarTab(true));
+    $("tab-retiro").addEventListener("click", () => cambiarTab(false));
+    function cambiarTab(esDeposito) {
+      $("tab-deposito").classList.toggle("active", esDeposito);
+      $("tab-retiro").classList.toggle("active", !esDeposito);
+      $("sec-deposito").style.display = esDeposito ? "block" : "none";
+      $("sec-retiro").style.display = esDeposito ? "none" : "block";
+      renderTarjetaDeposito();
+      renderTarjetasRetiro();
+    }
+
+    $("dep-metodo").addEventListener("change", renderTarjetaDeposito);
+    $("ret-monto").addEventListener("input", renderComision);
+    $("dep-referencia").addEventListener("input", (e) => { e.target.value = e.target.value.replace(/\D/g, ""); });
+
+    // ── COMPROBANTE (subida a Firebase Storage) ──
+    $("dep-comprobante").addEventListener("change", (e) => {
+      comprobanteArchivo = e.target.files && e.target.files[0] ? e.target.files[0] : null;
+      const wrap = $("dep-preview-wrap");
+      if (comprobanteArchivo) {
+        $("dep-preview").src = URL.createObjectURL(comprobanteArchivo);
+        wrap.style.display = "block";
+      } else {
+        $("dep-preview").src = "";
+        wrap.style.display = "none";
+      }
+    });
+    $("btn-quitar-comprobante").addEventListener("click", limpiarComprobante);
+    function limpiarComprobante() {
+      comprobanteArchivo = null;
+      $("dep-comprobante").value = "";
+      $("dep-preview").src = "";
+      $("dep-preview-wrap").style.display = "none";
+    }
+    async function subirComprobante() {
+      if (!comprobanteArchivo || !uid) return null;
+      const storage = getStorage(app);
+      const nombreLimpio = comprobanteArchivo.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const refArchivo = sRef(storage, "comprobantes/" + uid + "/" + Date.now() + "_" + nombreLimpio);
+      await uploadBytes(refArchivo, comprobanteArchivo, { contentType: comprobanteArchivo.type || "image/jpeg" });
+      return await getDownloadURL(refArchivo);
+    }
+
+    // ── DEPÓSITO (los datos de pago son los registrados en tu Perfil) ──
+    $("btn-deposito").addEventListener("click", async () => {
+      if (!uid || !perfil) return msg("Espera: cargando tu sesión…", "err");
+      const monto = parseFloat($("dep-monto").value);
+      const metodo = $("dep-metodo").value;
+      const datos = construirDatosCobro(metodo);
+      const referencia = $("dep-referencia").value.trim();
+
+      if (!monto || monto < 1) return msg("Ingresa un monto válido (mínimo $1).", "err");
+      if (!datos) return msg("No hay datos de pago registrados. Completa banco, teléfono y cédula en tu Perfil.", "err");
+      if (!referencia && !comprobanteArchivo) return msg("Ingresa la referencia (solo números) o adjunta el comprobante.", "err");
+
+      $("btn-deposito").disabled = true;
+      try {
+        const comprobanteUrl = await subirComprobante();
+        await addDoc(collection(db, "pagos"), {
+          usuario: perfil.apodo || "Jugador",
+          usuarioId: uid,
+          tipo: "deposito",
+          metodo: metodo,
+          datosCobro: datos,
+          referencia: referencia || "N/A",
+          comprobanteUrl: comprobanteUrl || "",
+          monto: monto,
+          estado: "pendiente",
+          fecha: serverTimestamp()
+        });
+        socket.emit("notifyPlayerTelegram",
+          "🔔 NUEVO DEPÓSITO — " + (perfil.apodo || "Jugador") + " — $" + monto.toFixed(2) + " USD — " + metodo +
+          (comprobanteUrl ? " — con comprobante 📎" : ""));
+        msg("Solicitud enviada. Tu saldo se acredita cuando el admin la apruebe.", "ok");
+        $("dep-monto").value = "";
+        $("dep-referencia").value = "";
+        limpiarComprobante();
+      } catch (e) {
+        msg("No se pudo enviar: " + (e.code || e.message), "err");
+      }
+      $("btn-deposito").disabled = false;
+    });
+
+    // ── RETIRO (transacción: valida y descuenta el saldo atómicamente; la casa retiene 20%) ──
+    $("btn-retiro").addEventListener("click", async () => {
+      if (!uid || !perfil) return msg("Espera: cargando tu sesión…", "err");
+      const monto = parseFloat($("ret-monto").value);
+      const metodo = cobroSeleccionado ? cobroSeleccionado.metodo : "";
+      const datos = cobroSeleccionado ? cobroSeleccionado.lineas.join(" · ") : "";
+
+      if (!monto || monto < 1) return msg("Ingresa un monto válido (mínimo $1).", "err");
+      if (!datos) return msg("Selecciona una cuenta de cobro (o registra tus datos en el Perfil).", "err");
+
+      const comision = +(monto * COMISION_CASA).toFixed(2);
+      const neto = +(monto - comision).toFixed(2);
+
+      $("btn-retiro").disabled = true;
+      try {
+        await runTransaction(db, async (t) => {
+          const refUsuario = doc(db, "usuarios", uid);
+          const snap = await t.get(refUsuario);
+          const saldoActual = Number((snap.data() || {}).saldo || 0);
+          if (saldoActual < monto) throw new Error("SALDO_INSUFICIENTE");
+          t.update(refUsuario, { saldo: saldoActual - monto });
+          t.set(doc(collection(db, "pagos")), {
+            usuario: perfil.apodo || "Jugador",
+            usuarioId: uid,
+            tipo: "retiro",
+            metodo: metodo,
+            datosCobro: datos,
+            referencia: "—",
+            monto: monto,
+            comision: comision,
+            neto: neto,
+            estado: "pendiente",
+            fecha: serverTimestamp()
+          });
+        });
+        socket.emit("notifyPlayerTelegram",
+          "💸 NUEVO RETIRO — " + (perfil.apodo || "Jugador") + " — $" + monto.toFixed(2) + " USD (neto $" + neto.toFixed(2) + ") — " + metodo);
+        msg("Solicitud enviada. El monto queda reservado hasta que el admin la revise.", "ok");
+        $("ret-monto").value = "";
+        renderComision();
+      } catch (e) {
+        if (e.message === "SALDO_INSUFICIENTE" || (e.code || "").includes("aborted")) {
+          msg("No tienes saldo suficiente para ese retiro.", "err");
+        } else {
+          msg("No se pudo enviar: " + (e.code || e.message), "err");
+        }
+      }
+      $("btn-retiro").disabled = false;
+    });
+
+    // ── HISTORIAL (solo mis solicitudes) ──
+    onAuthStateChanged(auth, (user) => {
+      if (!user) return;
+      onSnapshot(query(collection(db, "pagos"), where("usuarioId", "==", user.uid)), (snapshot) => {
+        const items = [];
+        snapshot.forEach((d) => items.push(d.data()));
+        items.sort((a, b) => ((b.fecha && b.fecha.seconds) || 0) - ((a.fecha && a.fecha.seconds) || 0));
+
+        const lista = $("lista-historial");
+        lista.innerHTML = "";
+        if (items.length === 0) {
+          $("hist-vacio").textContent = "Aún no tienes solicitudes.";
+          return;
+        }
+        $("hist-vacio").textContent = "";
+        items.slice(0, 15).forEach((p) => {
+          const li = document.createElement("li");
+          const fecha = p.fecha && p.fecha.seconds
+            ? new Date(p.fecha.seconds * 1000).toLocaleString("es-VE", { dateStyle: "short", timeStyle: "short" })
+            : "—";
+          li.innerHTML =
+            '<span class="tipo ' + (p.tipo === "retiro" ? "ret" : "dep") + '">' +
+            (p.tipo === "retiro" ? "Retiro" : "Depósito") + " $" + Number(p.monto || 0).toFixed(2) +
+            (p.tipo === "retiro" && p.neto ? ' <small>· neto $' + Number(p.neto).toFixed(2) + "</small>" : "") +
+            "</span>" +
+            "<small>" + (p.metodo || "") + " · " + fecha + (p.comprobanteUrl ? " · 📎" : "") + "</small>" +
+            '<span class="estado ' + (p.estado || "pendiente") + '">' + (p.estado || "pendiente") + "</span>";
+          lista.appendChild(li);
+        });
+      }, (e) => {
+        $("hist-vacio").textContent = "Sin permiso para el historial. ¿Reglas publicadas? (" + (e.code || "") + ")";
+      });
+    });
+  </script>
+</body>
+</html>

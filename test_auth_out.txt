@@ -1,0 +1,11 @@
+﻿[PASS] Salas cargadas: 3
+[PASS] adminCreateRoom rechazado sin auth: No tienes permisos de administrador.
+[PASS] adminDestroyRoom rechazado sin auth (sala_1 sigue viva)
+[PASS] Auth con password correcto: true
+[PASS] Auth con password incorrecto rechazado: false
+[PASS] adminCreateRoom funciona con auth: Con Auth
+[PASS] Evento notifyTelegram enviado (sin error)
+[PASS] notifyTelegram rechazado sin auth (no crash)
+
+=== RESUMEN ===
+Total: 8 | Pasaron: 8 | Fallaron: 0

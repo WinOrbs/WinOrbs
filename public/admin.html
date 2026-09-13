@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WinOrbs - Panel de Control Admin</title>
+    <!-- Cliente Socket.io para comunicación en vivo con server.js -->
+    <script src="/socket.io/socket.io.js"></script>
+    <!-- Design System Neón Arena (base: vars + atmósfera; esta página conserva su layout propio) -->
+    <link rel="stylesheet" href="/css/arena.css">
+    <style>
+        * { box-sizing: border-box; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+        body { margin: 0; background-color: #0f172a; color: #f8fafc; display: flex; height: 100vh; overflow: hidden; }
+        
+        /* Sidebar Navigation */
+        .sidebar { width: 260px; background-color: #1e293b; padding: 24px; border-right: 1px solid #334155; flex-shrink: 0; }
+        .sidebar h2 { color: #38bdf8; font-size: 22px; text-transform: uppercase; margin: 0 0 32px 0; letter-spacing: 1px; }
+        .menu-item { padding: 12px 16px; margin-bottom: 8px; border-radius: 8px; cursor: pointer; color: #94a3b8; font-weight: 500; transition: all 0.2s; }
+        .menu-item:hover, .menu-item.active { background-color: #0284c7; color: #ffffff; }
+
+        /* Main Content */
+        .content { flex: 1; padding: 32px; overflow-y: auto; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; }
+        .header h1 { margin: 0; font-size: 28px; }
+        .status-badge { display: flex; align-items: center; gap: 8px; background: #1e293b; padding: 8px 16px; border-radius: 20px; font-size: 14px; border: 1px solid #334155; }
+        .status-dot { width: 10px; height: 10px; background-color: #22c55e; border-radius: 50%; }
+
+        /* Section Visibility */
+        .section { display: none; }
+        .section.active { display: block; }
+
+        /* Metrics Cards */
+        .grid-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 32px; }
+        .card { background-color: #1e293b; padding: 20px; border-radius: 12px; border: 1px solid #334155; }
+        .card h3 { margin: 0 0 8px 0; color: #94a3b8; font-size: 13px; text-transform: uppercase; }
+        .card .amount { font-size: 26px; font-weight: 700; color: #38bdf8; }
+
+        /* Forms & Inputs */
+        .form-container { background-color: #1e293b; padding: 24px; border-radius: 12px; border: 1px solid #334155; max-width: 600px; margin-bottom: 32px; }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; margin-bottom: 6px; color: #94a3b8; font-size: 14px; }
+        .form-group input, .form-group select { width: 100%; padding: 10px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; color: #fff; font-size: 14px; }
+        
+        /* Tables */
+        .table-container { background-color: #1e293b; border-radius: 12px; border: 1px solid #334155; overflow: hidden; margin-bottom: 30px; }
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th, td { padding: 14px 16px; border-bottom: 1px solid #334155; font-size: 14px; }
+        th { background-color: #0f172a; color: #94a3b8; font-weight: 600; text-transform: uppercase; font-size: 12px; }
+        tr:last-child td { border-bottom: none; }
+
+        /* Buttons & Badges */
+        .btn { padding: 8px 14px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px; transition: opacity 0.2s; }
+        .btn:hover { opacity: 0.9; }
+        .btn-primary { background-color: #0284c7; color: white; }
+        .btn-approve { background-color: #22c55e; color: white; }
+        .btn-reject { background-color: #ef4444; color: white; margin-left: 4px; }
+        .btn-warn { background-color: #f59e0b; color: #000; }
+        .badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+        .badge-pending { background-color: #f59e0b; color: #000; }
+        .badge-success { background-color: #22c55e; color: #000; }
+        .badge-danger { background-color: #ef4444; color: #fff; }
+        
+        .toggle-switch { cursor: pointer; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+        .toggle-on { background-color: #22c55e; color: #000; }
+        .toggle-off { background-color: #64748b; color: #fff; }
+
+        /* Modal Styles */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); justify-content: center; align-items: center; z-index: 1000; }
+        .modal-overlay.active { display: flex; }
+        .modal { background: #1e293b; padding: 24px; border-radius: 12px; border: 1px solid #334155; width: 100%; max-width: 400px; }
+        .modal h3 { margin-top: 0; color: #f8fafc; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+
+        /* Banner de error de reglas / permisos */
+        #banner-reglas {
+            display: none; max-width: 760px; margin: 0 0 20px;
+            background: #2a1215; border: 1px solid #ef4444; color: #ffb4b4;
+            padding: 14px 16px; border-radius: 10px; font-size: 13px; line-height: 1.7;
+        }
+        #banner-reglas b { color: #ff8f8f; }
+    </style>
+    <style id="arena-reskin">
+        /* ── Neón Arena · reskin ligero (no cambia estructura ni funcionalidad) ── */
+        * { font-family: var(--font-body); }
+        body { background: var(--bg); color: var(--text); }
+
+        .sidebar {
+            background: linear-gradient(180deg, rgba(8, 13, 26, .92), rgba(8, 13, 26, .68));
+            border-right: 1px solid var(--line);
+            backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+        }
+        .sidebar h2 {
+            font-family: var(--font-display); color: var(--cyan);
+            text-shadow: 0 0 22px rgba(56, 189, 248, .5); letter-spacing: 3px;
+        }
+        .menu-item {
+            font-family: var(--font-display); font-size: 13.5px;
+            border-left: 2px solid transparent;
+        }
+        .menu-item:hover { background: rgba(56, 189, 248, .08); color: var(--cyan); }
+        .menu-item.active {
+            background: rgba(56, 189, 248, .14); color: var(--cyan);
+            box-shadow: inset 2px 0 0 var(--cyan);
+        }
+
+        .header h1 { font-family: var(--font-display); letter-spacing: 1px; }
+        .status-badge { background: var(--surface); border: 1px solid var(--line); font-family: var(--font-display); }
+        .status-dot { box-shadow: 0 0 10px var(--green); animation: livePulse 1.6s ease-in-out infinite; }
+        @keyframes livePulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .4; transform: scale(.75); } }
+
+        h3 { font-family: var(--font-display); letter-spacing: .5px; margin: 18px 0 10px; }
+        .card, .form-container, .table-container, .modal {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+        }
+        .card .amount { font-family: var(--font-display); text-shadow: 0 0 16px rgba(56, 189, 248, .35); }
+        .form-group label { font-family: var(--font-display); font-size: 11.5px; letter-spacing: 1.2px; text-transform: uppercase; }
+        .form-group input, .form-group select {
+            background: var(--surface-deep); border: 1px solid var(--line); border-radius: 8px;
+            transition: border-color .2s, box-shadow .2s;
+        }
+        .form-group input:focus, .form-group select:focus {
+            outline: none; border-color: var(--line-glow);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, .12);
+        }
+        th { background: var(--surface-deep); font-family: var(--font-display); letter-spacing: 1px; }
+        th, td { border-bottom: 1px solid rgba(148, 163, 184, .1); }
+        .btn { font-family: var(--font-display); letter-spacing: .5px; }
+        .btn-primary { background: linear-gradient(90deg, #0ea5e9, #38bdf8); color: #041019; font-weight: 700; }
+        .btn-approve { background: linear-gradient(90deg, #16a34a, #22c55e); color: #041209; font-weight: 700; }
+        .btn-reject { background: rgba(248, 113, 113, .15); color: var(--red); border: 1px solid rgba(248, 113, 113, .4); }
+        .btn-warn { background: rgba(245, 158, 11, .15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, .4); }
+        .badge-pending { background: rgba(245, 158, 11, .18); color: #fbbf24; }
+        .badge-success { background: rgba(34, 197, 94, .18); color: #7dffa8; }
+        .badge-danger { background: rgba(248, 113, 113, .18); color: #ff8f8f; }
+        .toggle-on { background: rgba(34, 197, 94, .25); color: #7dffa8; }
+        .toggle-off { background: rgba(100, 116, 139, .3); color: #cbd5e1; }
+        #banner-reglas { background: rgba(248, 113, 113, .08); border-color: rgba(248, 113, 113, .45); }
+    </style>
+</head>
+<body>
+    <div class="atmo" aria-hidden="true">
+        <div class="orb orb-a"></div>
+        <div class="orb orb-b"></div>
+        <div class="orb orb-c"></div>
+        <div class="orb orb-d"></div>
+        <div class="atmo-grid"></div>
+        <div class="atmo-vignette"></div>
+        <div class="atmo-grain"></div>
+    </div>
+
+    <!-- Overlay de Autenticación -->
+    <div class="modal-overlay active" id="auth-overlay">
+        <div class="modal">
+            <h3>🔐 Acceso de Administrador</h3>
+            <p style="color: #94a3b8; font-size: 14px; margin-top: 8px;">Ingresa la contraseña de administrador para gestionar salas y finanzas.</p>
+            <div class="form-group" style="margin-top: 16px;">
+                <input type="email" id="admin-email" placeholder="Email de admin (Firebase)" style="margin-bottom: 8px;" onkeypress="if(event.key==='Enter') authAdmin()">
+                <input type="password" id="admin-password" placeholder="Contraseña de la cuenta Firebase" style="margin-bottom: 8px;" onkeypress="if(event.key==='Enter') authAdmin()">
+                <input type="password" id="admin-panel-password" placeholder="Clave del panel (ADMIN_PASSWORD, ej: admin123)" onkeypress="if(event.key==='Enter') authAdmin()">
+                <small style="color:#64748b; display:block; margin-top:6px; font-size:11px;">Son dos claves distintas: la de tu cuenta Firebase y la del panel definida en server.js (ADMIN_PASSWORD, por defecto admin123).</small>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" onclick="authAdmin()" style="width: 100%;">Acceder</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Menú Lateral -->
+    <div class="sidebar">
+        <h2>WinOrbs Admin</h2>
+        <div class="menu-item active" onclick="switchSection('finanzas', this)">💰 Finanzas & Pagos</div>
+        <div class="menu-item" onclick="switchSection('salas', this)">⚙️ Gestión de Salas</div>
+        <div class="menu-item" onclick="switchSection('skins', this)">🛒 Tienda de Skins</div>
+        <div class="menu-item" onclick="switchSection('usuarios', this)">👥 Usuarios</div>
+    </div>
+
+    <!-- Área de Trabajo -->
+    <div class="content">
+        <div class="header">
+            <h1 id="section-title">Finanzas & Pagos (Caja Chica)</h1>
+            <div style="display: flex; gap: 12px; align-items: center;">
+                <button class="btn btn-warn" onclick="salirAdmin()" style="font-size: 12px;">🚪 Salir</button>
+                <div class="status-badge">
+                    <div class="status-dot"></div>
+                    <span id="socket-status">Socket Node.js Activo</span>
+                </div>
+                <div class="status-badge">
+                    <span id="admin-sesion" style="font-size: 12px;">Firebase: sin sesión</span>
+                    <span id="admin-uid" style="color: #64748b; font-size: 11px;"></span>
+                    <button class="btn btn-primary" id="btn-copiar-uid" onclick="copiarUIDAdmin()" style="display: none; font-size: 11px; padding: 4px 8px;">Copiar UID</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Banner de permisos (se activa si Firestore deniega acceso) -->
+        <div id="banner-reglas"></div>
+
+        <!-- 1. MÓDULO FINANZAS -->
+        <div id="sec-finanzas" class="section active">
+            <div class="grid-cards">
+                <div class="card">
+                    <h3>Comisión Casa (20%)</h3>
+                    <div class="amount" id="stat-ganancias">$0.00 USD</div>
+                </div>
+                <div class="card">
+                    <h3>Saldo Global Usuarios</h3>
+                    <div class="amount" style="color: #22c55e;" id="stat-saldo-global">$0.00 USD</div>
+                </div>
+                <div class="card">
+                    <h3>Pagos Pendientes</h3>
+                    <div class="amount" style="color: #f59e0b;" id="stat-pendientes">0</div>
+                </div>
+                <div class="card">
+                    <h3>Retiros Pendientes</h3>
+                    <div class="amount" style="color: #ef4444;" id="stat-retiros-pendientes">0</div>
+                </div>
+            </div>
+
+            <h3>Solicitudes de Depósito / Retiro</h3>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Usuario</th>
+                            <th>Tipo</th>
+                            <th>Método / Cuenta</th>
+                            <th>Monto</th>
+                            <th>Referencia / TxID</th>
+                            <th>Estado</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-pagos">
+                        <tr>
+                            <td colspan="7" style="text-align: center; color: #94a3b8;">Escuchando solicitudes en Firebase Firestore...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h3 style="margin-top: 28px;">Premios Pendientes (ganador sin UID vinculado)</h3>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Sala / Partida</th>
+                            <th>Ganador (apodo)</th>
+                            <th>Pozo</th>
+                            <th>Comisión Casa</th>
+                            <th>Neto a Pagar</th>
+                            <th>Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-premios">
+                        <tr>
+                            <td colspan="6" style="text-align: center; color: #94a3b8;">Sin premios pendientes.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 2. MÓDULO SALAS (SOCKET.IO Y NODE.JS) -->
+        <div id="sec-salas" class="section">
+            <div class="form-container">
+                <h3>Crear Nueva Sala en Servidor Node.js</h3>
+                <div class="form-group">
+                    <label>Nombre de la Sala</label>
+                    <input type="text" id="sala-nombre" placeholder="Ej: Arena Torneo $2.00">
+                </div>
+                <div class="form-group">
+                    <label>Costo de Entrada ($ USD)</label>
+                    <input type="number" id="sala-precio" value="1.00" step="0.50">
+                </div>
+                <div class="form-group">
+                    <label>Capacidad Máxima (2 a 15 jugadores)</label>
+                    <input type="number" id="sala-max" value="10" min="2" max="15">
+                </div>
+                <div class="form-group">
+                    <label>Tipo de Sala</label>
+                    <select id="sala-tipo" onchange="togglePasswordInput(this.value)">
+                        <option value="publica">Pública</option>
+                        <option value="privada">Privada con Clave</option>
+                    </select>
+                </div>
+                <div class="form-group" id="group-clave" style="display: none;">
+                    <label>Contraseña de la Sala</label>
+                    <input type="password" id="sala-clave" placeholder="****">
+                </div>
+                <button class="btn btn-primary" onclick="crearSalaNode()">Emitir y Publicar Sala</button>
+            </div>
+
+            <h3>Salas en Ejecución (Memoria Node.js)</h3>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID / Nombre</th>
+                            <th>Entrada</th>
+                            <th>Jugadores</th>
+                            <th>Pozo Acumulado</th>
+                            <th>Tipo</th>
+                            <th>Acción Emergency</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-salas">
+                        <tr>
+                            <td colspan="6" style="text-align: center; color: #94a3b8;">Conectando con el socket del servidor...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 3. MÓDULO SKINS -->
+        <div id="sec-skins" class="section">
+            <div class="form-container">
+                <h3>Agregar Nueva Skin a la Tienda</h3>
+                <div class="form-group">
+                    <label>Nombre de la Skin</label>
+                    <input type="text" id="skin-nombre" placeholder="Ej: Orbe Neón Dorado">
+                </div>
+                <div class="form-group">
+                    <label>Precio ($ USD)</label>
+                    <input type="number" id="skin-precio" value="2.50" step="0.10">
+                </div>
+                <div class="form-group">
+                    <label>URL de Imagen PNG (Firebase Storage)</label>
+                    <input type="text" id="skin-url" placeholder="https://firebasestorage.googleapis.com/...">
+                </div>
+                <button class="btn btn-primary" onclick="crearSkin()">Añadir a la Tienda</button>
+            </div>
+
+            <h3>Skins en la Tienda</h3>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Vista</th>
+                            <th>Nombre</th>
+                            <th>Precio</th>
+                            <th>Estado</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-skins">
+                        <tr>
+                            <td colspan="5" style="text-align: center; color: #94a3b8;">No hay skins en la tienda.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 4. MÓDULO USUARIOS -->
+        <div id="sec-usuarios" class="section">
+            <div class="form-group" style="max-width: 400px;">
+                <label>Buscador de Jugadores (Apodo / ID)</label>
+                <input type="text" id="buscar-usuario" placeholder="Escribe para buscar..." onkeyup="filtrarUsuarios()">
+            </div>
+
+            <h3>Lista de Jugadores Registrados</h3>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID Usuario</th>
+                            <th>Apodo</th>
+                            <th>Saldo ($ USD)</th>
+                            <th>Estado</th>
+                            <th>Acciones Saldo</th>
+                            <th>Moderación</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-usuarios">
+                        <tr>
+                            <td colspan="6" style="text-align: center; color: #94a3b8;">Sin usuarios registrados.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Ajuste Manual de Saldo -->
+    <div class="modal-overlay" id="modal-saldo">
+        <div class="modal">
+            <h3>Ajustar Saldo de Usuario</h3>
+            <p id="modal-usuario-info" style="color: #94a3b8; font-size: 14px;"></p>
+            <div class="form-group">
+                <label>Monto a Ajustar (+ sumar, - restar)</label>
+                <input type="number" id="monto-ajuste" step="0.5" placeholder="Ej: 10.00 o -5.00">
+            </div>
+            <div class="modal-actions">
+                <button class="btn" style="background:#64748b; color:white;" onclick="cerrarModalSaldo()">Cancelar</button>
+                <button class="btn btn-primary" onclick="confirmarAjusteSaldo()">Aplicar Cambio</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Integración con Socket.io (Salas) + Firebase SDK v10 (Pagos, Skins, Usuarios) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getFirestore, collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, increment, setDoc, getDoc, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // Configuración de Firebase (config pública, seguridad vía Firestore Rules)
+        const firebaseConfig = {
+            apiKey: "AIzaSyCjw8xJek1GRRjHuw7x60DQQUawiBHhhWk",
+            authDomain: "winorbs20.firebaseapp.com",
+            databaseURL: "https://winorbs20-default-rtdb.firebaseio.com",
+            projectId: "winorbs20",
+            storageBucket: "winorbs20.firebasestorage.app",
+            messagingSenderId: "462725673786",
+            appId: "1:462725673786:web:5a105a0cf3bc64fe555603",
+            measurementId: "G-PNKMEL53P9"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        // Conexión Socket.io
+        const socket = io();
+
+        socket.on('connect', () => {
+            document.getElementById('socket-status').innerText = "Servidor Node.js Online";
+            document.getElementById('socket-status').previousElementSibling.style.backgroundColor = "#22c55e";
+        });
+
+        socket.on('disconnect', () => {
+            document.getElementById('socket-status').innerText = "Node.js Desconectado";
+            document.getElementById('socket-status').previousElementSibling.style.backgroundColor = "#ef4444";
+        });
+
+        socket.on('adminAuthed', (ok) => {
+            if (ok) {
+                document.getElementById('auth-overlay').style.display = 'none';
+            } else {
+                alert("Clave del panel incorrecta.\n\nLa clave del panel es ADMIN_PASSWORD en server.js (por defecto: admin123).\nNo es la contraseña de tu cuenta Firebase: son dos claves distintas.");
+            }
+        });
+
+        // Autenticación de admin (2 pasos con claves separadas):
+        // 1) Firebase Auth: email + contraseña de tu cuenta → da permisos Firestore según rules
+        // 2) Clave del panel: ADMIN_PASSWORD definida en server.js (por defecto "admin123")
+        window.authAdmin = async function() {
+            const email = document.getElementById('admin-email').value.trim();
+            const password = document.getElementById('admin-password').value;
+            const clavePanel = document.getElementById('admin-panel-password').value;
+            if (!email || !password || !clavePanel) return alert("Completa los 3 campos: email, contraseña de Firebase y clave del panel.");
+            try {
+                const cred = await signInWithEmailAndPassword(auth, email, password);
+                iniciarListenersAdmin();
+                mostrarSesionAdmin(cred.user);
+            } catch (e) {
+                return alert("No se pudo iniciar sesión en Firebase: " + (e.code || e.message) +
+                    "\n\nVerifica: ¿Email/Contraseña habilitado en la consola? ¿Registraste esta cuenta en login.html? ¿Pegaste su UID o email en firestore.rules y la publicaste?");
+            }
+            socket.emit('adminAuth', { password: clavePanel });
+        };
+
+        // Notificación de Telegram (dirigida al servidor, no expone token)
+        function notificarTelegram(mensaje) {
+            socket.emit('notifyTelegram', mensaje);
+        }
+
+        // NAVEGACIÓN
+        window.switchSection = function(sectionId, element) {
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
+            document.getElementById('sec-' + sectionId).classList.add('active');
+            element.classList.add('active');
+            
+            const titles = {
+                'finanzas': 'Finanzas & Pagos (Caja Chica)',
+                'salas': 'Gestor y Creador de Salas (Socket.io)',
+                'skins': 'Tienda y Gestor de Skins',
+                'usuarios': 'Gestión de Usuarios y Moderación'
+            };
+            document.getElementById('section-title').innerText = titles[sectionId];
+        };
+
+        window.togglePasswordInput = function(val) {
+            document.getElementById('group-clave').style.display = (val === 'privada') ? 'block' : 'none';
+        };
+
+        // 1. MÓDULO FINANCIERO & PAGOS (Firestore)
+        // Los listeners se activan SOLO tras iniciar sesión en Firebase (ver iniciarListenersAdmin):
+        // un listener sin permisos muere para siempre, por eso no se registran al cargar la página.
+        // Escapa HTML en celdas del panel (anti XSS: apodos/nicks maliciosos)
+        function escapeHTML(s) {
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        function escucharPagos() {
+        onSnapshot(collection(db, "pagos"), (snapshot) => {
+            const tabla = document.getElementById("tabla-pagos");
+            tabla.innerHTML = "";
+            let depositosPendientes = 0;
+            let retirosPendientes = 0;
+
+            if(snapshot.empty) {
+                tabla.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #94a3b8;">Sin solicitudes recientes.</td></tr>`;
+                return;
+            }
+
+            snapshot.forEach((docSnap) => {
+                const p = docSnap.data();
+                const esRetiro = p.tipo === 'retiro';
+                const esPremio = p.tipo === 'premio';
+                if(p.estado === "pendiente") {
+                    if(esRetiro) retirosPendientes++; else depositosPendientes++;
+                }
+
+                const montoNum = Number(p.monto || 0);
+                const comisionCobro = (p.comision != null && !isNaN(Number(p.comision))) ? Number(p.comision) : +(montoNum * 0.2).toFixed(2);
+                const netoCobro = (p.neto != null && !isNaN(Number(p.neto))) ? Number(p.neto) : +(montoNum - comisionCobro).toFixed(2);
+                const urlComp = p.comprobanteUrl ? String(p.comprobanteUrl).replace(/&/g, '&amp;').replace(/"/g, '&quot;') : "";
+const colorTipo = esRetiro ? '#ef4444' : esPremio ? '#f59e0b' : '#22c55e';
+                const metodoTxt = esPremio ? 'Premio de partida' : (p.metodo || 'Pago Móvil');
+
+                tabla.innerHTML += `
+                    <tr>
+                        <td>${escapeHTML(p.usuario || '@Jugador')}</td>
+                        <td><b style="color: ${colorTipo}">${escapeHTML((p.tipo || 'deposito').toUpperCase())}</b></td>
+                        <td>${escapeHTML(metodoTxt)}<br><small style="color:#94a3b8;">${escapeHTML(p.datosCobro || '')}</small></td>
+                        <td><b>$${montoNum.toFixed(2)} USD</b>${esRetiro || esPremio ? `<br><small style="color:#94a3b8;">Comisión: $${comisionCobro.toFixed(2)} · Neto: $${netoCobro.toFixed(2)}</small>` : ''}</td>
+                        <td><code>${escapeHTML(p.referencia || 'N/A')}</code>${urlComp ? `<br><a href="${urlComp}" target="_blank" rel="noopener" style="color:#38bdf8;">📎 Ver comprobante</a>` : ''}</td>
+                        <td><span class="badge ${p.estado === 'pendiente' ? 'badge-pending' : p.estado === 'aprobado' || p.estado === 'pagado' ? 'badge-success' : 'badge-danger'}">${escapeHTML(p.estado)}</span></td>
+                        <td>
+                            ${p.estado === 'pendiente' ? `
+                                <button class="btn btn-approve" onclick="procesarPago('${docSnap.id}', '${escapeHTML(p.usuarioId)}', ${montoNum}, '${esRetiro ? 'pagado' : 'aprobado'}', ${esRetiro}, ${comisionCobro.toFixed(2)}, ${netoCobro.toFixed(2)}, ${esPremio})">${esRetiro ? 'Marcar Pagado' : 'Aprobar'}</button>
+                                <button class="btn btn-reject" onclick="procesarPago('${docSnap.id}', '${escapeHTML(p.usuarioId)}', ${montoNum}, 'rechazado', ${esRetiro})">Rechazar</button>
+                            ` : 'Completado'}
+                        </td>
+                    </tr>
+                `;
+            });
+
+            document.getElementById("stat-pendientes").innerText = depositosPendientes;
+            document.getElementById("stat-retiros-pendientes").innerText = retirosPendientes;
+        }, (e) => errorReglas("pagos", e));
+        }
+
+        window.procesarPago = async function(idPago, idUsuario, monto, nuevoEstado, esRetiro = false, comision = 0, neto = 0, esPremio = false) {
+            try {
+                await updateDoc(doc(db, "pagos", idPago), { estado: nuevoEstado });
+
+                if(nuevoEstado === 'aprobado' && idUsuario && esPremio) {
+                    // Premio: acredita el neto al ganador y acumula la comisión de la casa (20%)
+                    await updateDoc(doc(db, "usuarios", idUsuario), { saldo: increment(monto) });
+                    const comisionPremio = Number(comision) > 0 ? Number(comision) : +(Number(monto) * 0.25).toFixed(2);
+                    await setDoc(doc(db, "metricas", "casa"), { comisionesAcumuladas: increment(comisionPremio) }, { merge: true });
+                } else if(nuevoEstado === 'aprobado' && idUsuario && !esRetiro && !esPremio) {
+                    await updateDoc(doc(db, "usuarios", idUsuario), { saldo: increment(monto) });
+                } else if(nuevoEstado === 'rechazado' && idUsuario && esRetiro) {
+                    await updateDoc(doc(db, "usuarios", idUsuario), { saldo: increment(monto) });
+                } else if(nuevoEstado === 'pagado' && esRetiro) {
+                    // La casa retiene su comisión (20%) del retiro — métrica acumulativa
+                    const comisionNum = Number(comision) > 0 ? Number(comision) : +(Number(monto) * 0.2).toFixed(2);
+                    await setDoc(doc(db, "metricas", "casa"), { comisionesAcumuladas: increment(comisionNum) }, { merge: true });
+                }
+
+                notificarTelegram(`🔔 <b>PAGO ACTUALIZADO</b>\nID: ${idPago}\nNuevo Estado: <b>${nuevoEstado.toUpperCase()}</b>\nMonto: $${monto} USD${(nuevoEstado === 'pagado' && esRetiro) ? `\nNeto a pagar: $${Number(neto > 0 ? neto : Number(monto) - Number(comision)).toFixed(2)} USD · Comisión casa: $${Number(comision > 0 ? comision : Number(monto) * 0.2).toFixed(2)} USD` : ''}`);
+                alert(`Solicitud actualizada a: ${nuevoEstado}`);
+            } catch(e) { alert("Error al procesar: " + e.message); }
+        };
+
+        // Premios que quedaron pendientes (ganador sin UID vinculado al jugar)
+        function escucharPremios() {
+            onSnapshot(query(collection(db, "partidas"), where("estado", "==", "premio_pendiente_admin")), (snapshot) => {
+                const tabla = document.getElementById("tabla-premios");
+                tabla.innerHTML = "";
+                if (snapshot.empty) {
+                    tabla.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #94a3b8;">Sin premios pendientes.</td></tr>`;
+                    return;
+                }
+                snapshot.forEach((docSnap) => {
+                    const p = docSnap.data();
+                    const tr = document.createElement("tr");
+                    const celda = (html) => { const td = document.createElement("td"); td.innerHTML = html; return td; };
+                    tr.appendChild(celda(`<b>${p.salaId || docSnap.id}</b><br><small style="color:#64748b">${docSnap.id}</small>`));
+                    tr.appendChild(celda(p.ganadorNick || '—'));
+                    tr.appendChild(celda(`$${parseFloat(p.pozo || 0).toFixed(2)} USD`));
+                    tr.appendChild(celda(`<span style="color:#22c55e">$${parseFloat(p.comision || 0).toFixed(2)} USD</span>`));
+                    tr.appendChild(celda(`<b style="color:#f59e0b">$${parseFloat(p.neto || 0).toFixed(2)} USD</b>`));
+                    const tdAccion = document.createElement("td");
+                    const btn = document.createElement("button");
+                    btn.className = "btn btn-approve";
+                    btn.textContent = "Pagar premio";
+                    btn.addEventListener("click", () => pagarPremioPendiente(docSnap.id, p.ganadorNick || "", parseFloat(p.neto || 0)));
+                    tdAccion.appendChild(btn);
+                    tr.appendChild(tdAccion);
+                    tabla.appendChild(tr);
+                });
+            }, (e) => errorReglas("partidas", e));
+        }
+
+        window.pagarPremioPendiente = async function (gameId, ganadorNick, neto) {
+            try {
+                const q = query(collection(db, "usuarios"), where("apodo", "==", ganadorNick));
+                const res = await getDocs(q);
+                if (res.empty) { alert("No hay usuario con el apodo '" + ganadorNick + "'. Créditalo manualmente desde la tabla de usuarios."); return; }
+                const uidGanador = res.docs[0].id;
+                const snap = await getDoc(doc(db, "usuarios", uidGanador));
+                const saldo = Number((snap.data() || {}).saldo || 0);
+                const snapPart = await getDoc(doc(db, "partidas", gameId));
+                const comisionPart = Number((snapPart.data() || {}).comision || 0);
+                await updateDoc(doc(db, "usuarios", uidGanador), { saldo: +(saldo + Number(neto || 0)).toFixed(2) });
+                if (comisionPart > 0) {
+                    await setDoc(doc(db, "metricas", "casa"), { comisionesAcumuladas: increment(comisionPart) }, { merge: true });
+                }
+                await updateDoc(doc(db, "partidas", gameId), { estado: "pagada", pagadoPorAdmin: true });
+                notificarTelegram(`🏆 <b>PREMIO PAGADO (manual)</b>\nPartida: ${gameId}\nGanador: ${ganadorNick}\nNeto: $${Number(neto || 0).toFixed(2)} USD\nComisión casa: $${comisionPart.toFixed(2)} USD`);
+                alert("Premio pagado al ganador.");
+            } catch (e) { alert("Error al pagar premio: " + (e.message || e)); }
+        };
+
+        // Escuchar Ganancias de Comisión en Firestore
+        function escucharMetricas() {
+        onSnapshot(collection(db, "metricas"), (snapshot) => {
+            snapshot.forEach(docSnap => {
+                if(docSnap.id === "casa") {
+                    document.getElementById("stat-ganancias").innerText = `$${(docSnap.data().comisionesAcumuladas || 0).toFixed(2)} USD`;
+                }
+            });
+        }, (e) => errorReglas("metricas", e));
+        }
+
+        // 2. MÓDULO SALAS (SOCKET.IO)
+        window.crearSalaNode = function() {
+            const nombre = document.getElementById("sala-nombre").value;
+            const precio = parseFloat(document.getElementById("sala-precio").value);
+            const max = parseInt(document.getElementById("sala-max").value);
+            const tipo = document.getElementById("sala-tipo").value;
+            const clave = document.getElementById("sala-clave").value;
+
+            if(!nombre) return alert("Ingresa un nombre para la sala");
+
+            const nuevaSala = {
+                id: "sala_" + Date.now(),
+                nombre: nombre,
+                precioEntrada: precio,
+                maxJugadores: max,
+                esPrivada: (tipo === 'privada'),
+                password: (tipo === 'privada') ? clave : ""
+            };
+
+            socket.emit('adminCreateRoom', nuevaSala);
+            alert("Orden de creación enviada a Node.js");
+            document.getElementById("sala-nombre").value = "";
+        };
+
+        socket.on('roomsList', (salasList) => {
+            const tabla = document.getElementById("tabla-salas");
+            tabla.innerHTML = "";
+
+            if(!salasList || salasList.length === 0) {
+                tabla.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #94a3b8;">No hay salas activas en la memoria de Node.js.</td></tr>`;
+                return;
+            }
+
+            salasList.forEach((s) => {
+                const playerCount = s.jugadoresConectados || 0;
+                const canStart = playerCount >= 2;
+                tabla.innerHTML += `
+                    <tr>
+                        <td><b>${s.nombre}</b><br><small style="color:#64748b">${s.id}</small></td>
+                        <td>$${parseFloat(s.precioEntrada || 0).toFixed(2)} USD</td>
+                        <td>${playerCount} / ${s.maxJugadores}</td>
+                        <td><b style="color:#22c55e">$${parseFloat(s.pozoActual || 0).toFixed(2)} USD</b></td>
+                        <td>${s.esPrivada ? '🔒 Privada' : '🌐 Pública'}</td>
+                        <td>
+                            <button class="btn btn-approve" onclick="iniciarPartida('${s.id}')" ${!canStart ? 'disabled' : ''}>▶ Iniciar</button>
+                            <button class="btn btn-reject" onclick="destruirSalaNode('${s.id}')">✖ Cerrar</button>
+                        </td>
+                    </tr>
+                `;
+            });
+        });
+
+        window.iniciarPartida = function(salaId) {
+            if(!confirm("¿Iniciar la partida en esta sala? Los jugadores conectados comenzarán en 5 segundos.")) return;
+            socket.emit('startGame', { roomId: salaId });
+        };
+
+        window.destruirSalaNode = function(salaId) {
+            if(!confirm("¿Cerrar esta sala de emergencia en Node.js?")) return;
+            socket.emit('adminDestroyRoom', { roomId: salaId });
+        };
+
+        window.salirAdmin = function() {
+            window.location.href = "index.html";
+        };
+
+        // 3. MÓDULO SKINS (Firestore)
+        window.crearSkin = async function() {
+            const nombre = document.getElementById("skin-nombre").value;
+            const precio = parseFloat(document.getElementById("skin-precio").value);
+            const url = document.getElementById("skin-url").value;
+
+            if(!nombre || !url) return alert("Completa los datos requeridos");
+
+            try {
+                await addDoc(collection(db, "skins"), { nombre, precio, imagenUrl: url, activo: true });
+                alert("Skin agregada a la tienda.");
+                document.getElementById("skin-nombre").value = ""; 
+                document.getElementById("skin-url").value = "";
+            } catch(e) { alert("Error: " + e.message); }
+        };
+
+        onSnapshot(collection(db, "skins"), (snapshot) => {
+            const tabla = document.getElementById("tabla-skins");
+            tabla.innerHTML = "";
+            if(snapshot.empty) {
+                tabla.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #94a3b8;">No hay skins configuradas.</td></tr>`;
+                return;
+            }
+
+            snapshot.forEach((docSnap) => {
+                const sk = docSnap.data();
+                tabla.innerHTML += `
+                    <tr>
+                        <td><img src="${sk.imagenUrl}" width="32" height="32" style="border-radius:50%"></td>
+                        <td><b>${sk.nombre}</b></td>
+                        <td>$${sk.precio} USD</td>
+                        <td><span class="toggle-switch ${sk.activo ? 'toggle-on' : 'toggle-off'}" onclick="toggleSkin('${docSnap.id}', ${!sk.activo})">${sk.activo ? 'ACTIVA' : 'INACTIVA'}</span></td>
+                        <td><button class="btn btn-reject" onclick="eliminarSkin('${docSnap.id}')">Eliminar</button></td>
+                    </tr>
+                `;
+            });
+        });
+
+        window.toggleSkin = async function(id, estado) {
+            await updateDoc(doc(db, "skins", id), { activo: estado });
+        };
+
+        window.eliminarSkin = async function(id) {
+            if(confirm("¿Eliminar esta skin de la tienda?")) await deleteDoc(doc(db, "skins", id));
+        };
+
+        // 4. MÓDULO USUARIOS Y MODERACIÓN (Firestore)
+        let usuariosLocales = [];
+        let usuarioSeleccionadoId = null;
+
+        function escucharUsuarios() {
+        onSnapshot(collection(db, "usuarios"), (snapshot) => {
+            usuariosLocales = [];
+            let saldoGlobal = 0;
+
+            snapshot.forEach((docSnap) => {
+                const u = docSnap.data();
+                u.id = docSnap.id;
+                usuariosLocales.push(u);
+                saldoGlobal += (u.saldo || 0);
+            });
+
+            document.getElementById("stat-saldo-global").innerText = `$${saldoGlobal.toFixed(2)} USD`;
+            renderUsuarios(usuariosLocales);
+        }, (e) => errorReglas("usuarios", e));
+        }
+
+        // ── Control de listeners y sesión del admin ──
+        let listenersListos = false;
+        function iniciarListenersAdmin() {
+            if (listenersListos) return;
+            listenersListos = true;
+            escucharPagos();
+            escucharMetricas();
+            escucharUsuarios();
+            escucharPremios();
+        }
+
+        function errorReglas(coleccion, e) {
+            const banner = document.getElementById("banner-reglas");
+            if (!banner) return alert("Permiso denegado en '" + coleccion + "': " + (e.code || e.message));
+            banner.style.display = "block";
+            banner.innerHTML =
+                "⛔ Permiso denegado en <b>" + coleccion + "</b> (" + (e.code || "") + ").<br>" +
+                "1) Publica las reglas de firestore.rules con tu UID o email dentro de isAdmin().<br>" +
+                "2) Desactiva AdBlock/uBlock para firestore.googleapis.com.<br>" +
+                "3) Recarga el panel.";
+        }
+
+        function mostrarSesionAdmin(user) {
+            const chip = document.getElementById("admin-sesion");
+            if (chip) chip.innerText = "Firebase: " + (user.email || "invitado");
+            const uidEl = document.getElementById("admin-uid");
+            if (uidEl) uidEl.innerText = " · UID: " + user.uid.substring(0, 10) + "…";
+            const btn = document.getElementById("btn-copiar-uid");
+            if (btn) btn.style.display = "inline-block";
+        }
+
+        // Si la sesión ya existe (recarga después de loguearte), activa los listeners sin re-pedir login
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                iniciarListenersAdmin();
+                mostrarSesionAdmin(user);
+            }
+        });
+
+        window.copiarUIDAdmin = function() {
+            const uid = auth.currentUser && auth.currentUser.uid;
+            if (!uid) return alert("Inicia sesión primero.");
+            navigator.clipboard.writeText(uid).then(() => {
+                alert("UID copiado:\n" + uid + "\n\nPégalo en firestore.rules (isAdmin) y dale a Publicar.");
+            });
+        };
+
+        function renderUsuarios(lista) {
+            const tabla = document.getElementById("tabla-usuarios");
+            tabla.innerHTML = "";
+            if(lista.length === 0) {
+                tabla.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #94a3b8;">Sin usuarios encontrados.</td></tr>`;
+                return;
+            }
+
+            lista.forEach((u) => {
+                tabla.innerHTML += `
+                    <tr>
+                        <td><code>${u.id.substring(0,8)}...</code></td>
+                        <td><b>${u.apodo || 'Sin apodo'}</b></td>
+                        <td><b style="color:#22c55e">$${(u.saldo || 0).toFixed(2)} USD</b></td>
+                        <td><span class="badge ${u.baneado ? 'badge-danger' : 'badge-success'}">${u.baneado ? 'BANEADO' : 'ACTIVO'}</span></td>
+                        <td>
+                            <button class="btn btn-approve" onclick="modificarSaldo('${u.id}', 5.00)">+$5</button>
+                            <button class="btn btn-warn" onclick="modificarSaldo('${u.id}', -5.00)">-$5</button>
+                            <button class="btn btn-primary" onclick="abrirModalSaldo('${u.id}', '${u.apodo || u.id}')">Ajustar</button>
+                        </td>
+                        <td>
+                            <button class="btn ${u.baneado ? 'btn-approve' : 'btn-reject'}" onclick="toggleBan('${u.id}', ${!u.baneado})">${u.baneado ? 'Desbanear' : 'Banear'}</button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        window.filtrarUsuarios = function() {
+            const query = document.getElementById("buscar-usuario").value.toLowerCase();
+            const filtrados = usuariosLocales.filter(u => 
+                (u.apodo && u.apodo.toLowerCase().includes(query)) || u.id.toLowerCase().includes(query)
+            );
+            renderUsuarios(filtrados);
+        };
+
+        window.modificarSaldo = async function(userId, monto) {
+            try {
+                await updateDoc(doc(db, "usuarios", userId), { saldo: increment(monto) });
+            } catch(e) { alert("Error al modificar saldo: " + e.message); }
+        };
+
+        window.abrirModalSaldo = function(userId, apodo) {
+            usuarioSeleccionadoId = userId;
+            document.getElementById("modal-usuario-info").innerText = `Usuario: ${apodo}`;
+            document.getElementById("monto-ajuste").value = "";
+            document.getElementById("modal-saldo").classList.add("active");
+        };
+
+        window.cerrarModalSaldo = function() {
+            document.getElementById("modal-saldo").classList.remove("active");
+            usuarioSeleccionadoId = null;
+        };
+
+        window.confirmarAjusteSaldo = async function() {
+            const monto = parseFloat(document.getElementById("monto-ajuste").value);
+            if(isNaN(monto) || !usuarioSeleccionadoId) return alert("Ingresa un monto válido");
+            
+            await modificarSaldo(usuarioSeleccionadoId, monto);
+            cerrarModalSaldo();
+        };
+
+        window.toggleBan = async function(userId, banStatus) {
+            try {
+                await updateDoc(doc(db, "usuarios", userId), { baneado: banStatus });
+            } catch(e) { alert("Error al cambiar estado: " + e.message); }
+        };
+    </script>
+</body>
+</html>

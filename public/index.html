@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#060a12">
+    <title>WinOrbs - Entrar a Jugar</title>
+    <!-- Incluimos la librería cliente de Socket.io -->
+    <script src="/socket.io/socket.io.js"></script>
+    <!-- Tipografía: Chakra Petch (display) + Rajdhani (UI) · sin conexión cae al system stack -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Rajdhani:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
+    <style>
+        /* ══════════ NEÓN ARENA · Lobby WinOrbs ══════════ */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            color-scheme: dark;
+            --bg: #060a12;
+            --surface: rgba(15, 23, 42, .55);
+            --surface-deep: rgba(2, 6, 17, .72);
+            --line: rgba(56, 189, 248, .16);
+            --line-glow: rgba(56, 189, 248, .5);
+            --cyan: #38bdf8;
+            --green: #22c55e;
+            --amber: #f59e0b;
+            --red: #f87171;
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --font-display: 'Chakra Petch', 'Rajdhani', 'Segoe UI', system-ui, sans-serif;
+            --font-body: 'Rajdhani', 'Segoe UI', system-ui, sans-serif;
+        }
+
+        html { height: 100%; }
+
+        body {
+            min-height: 100vh;
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--font-body);
+            font-size: 16px;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        ::selection { background: rgba(56, 189, 248, .35); }
+        button:focus-visible, input:focus-visible { outline: 2px solid rgba(56, 189, 248, .7); outline-offset: 2px; }
+
+        /* ── Atmósfera: orbs de energía + grid + viñeta + grain ── */
+        .atmo { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+        .orb { position: absolute; border-radius: 50%; filter: blur(70px); }
+        .orb-a { width: 46vmax; height: 46vmax; left: -12vmax; top: -14vmax; background: radial-gradient(circle, rgba(56, 189, 248, .32), transparent 65%); animation: driftA 26s ease-in-out infinite alternate; }
+        .orb-b { width: 38vmax; height: 38vmax; right: -10vmax; top: 10vmax; background: radial-gradient(circle, rgba(34, 197, 94, .2), transparent 65%); animation: driftB 32s ease-in-out infinite alternate; }
+        .orb-c { width: 30vmax; height: 30vmax; left: 22vmax; bottom: -16vmax; background: radial-gradient(circle, rgba(56, 189, 248, .18), transparent 65%); animation: driftC 24s ease-in-out infinite alternate; }
+        .orb-d { width: 16vmax; height: 16vmax; right: 16vmax; bottom: 8vmax; background: radial-gradient(circle, rgba(168, 85, 247, .12), transparent 65%); animation: driftB 30s ease-in-out infinite alternate-reverse; }
+
+        @keyframes driftA { to { transform: translate(9vmax, 6vmax) scale(1.12); } }
+        @keyframes driftB { to { transform: translate(-8vmax, 7vmax) scale(.9); } }
+        @keyframes driftC { to { transform: translate(6vmax, -8vmax) scale(1.15); } }
+
+        .atmo-grid {
+            position: absolute; inset: 0;
+            background-image:
+                linear-gradient(rgba(56, 189, 248, .05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(56, 189, 248, .05) 1px, transparent 1px);
+            background-size: 44px 44px;
+            -webkit-mask-image: radial-gradient(ellipse 90% 80% at 50% 15%, #000 25%, transparent 78%);
+            mask-image: radial-gradient(ellipse 90% 80% at 50% 15%, #000 25%, transparent 78%);
+        }
+
+        .atmo-vignette { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 0%, transparent 35%, rgba(2, 4, 10, .8) 100%); }
+
+        .atmo-grain {
+            position: absolute; inset: 0; opacity: .05; mix-blend-mode: overlay;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+        }
+
+        /* ── Topbar: sala de espera del torneo ── */
+        .topbar {
+            position: sticky; top: 0; z-index: 20;
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 14px; flex-wrap: wrap;
+            padding: 13px 28px;
+            background: linear-gradient(180deg, rgba(8, 13, 26, .85), rgba(8, 13, 26, .6));
+            backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+            border-bottom: 1px solid var(--line);
+            box-shadow: 0 12px 40px -18px rgba(56, 189, 248, .3);
+            opacity: 0; animation: fadeIn .5s ease-out .05s forwards;
+        }
+
+        @keyframes fadeIn { to { opacity: 1; } }
+
+        .brand { display: flex; flex-direction: column; gap: 3px; }
+        .logo {
+            font-family: var(--font-display); font-weight: 700;
+            font-size: 26px; line-height: 1; letter-spacing: 4px;
+            color: #f8fafc; text-shadow: 0 0 24px rgba(56, 189, 248, .5);
+        }
+        .logo span { color: var(--cyan); }
+        .brand-tag { font-size: 11px; font-weight: 600; letter-spacing: 2.5px; text-transform: uppercase; color: var(--muted); }
+
+        .topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .topbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+        .chip {
+            display: inline-flex; align-items: center; gap: 7px;
+            font-family: var(--font-display); font-weight: 600; font-size: 13.5px;
+            padding: 7px 14px; border-radius: 999px;
+            background: var(--surface); border: 1px solid var(--line);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05);
+        }
+        /* El emoji del chip-usuario lo escribe el JS ("👤 " + apodo): no duplicar ícono en el markup */
+        .chip-user { color: var(--text); }
+        .chip-balance {
+            color: var(--green); border-color: rgba(34, 197, 94, .32);
+            text-shadow: 0 0 14px rgba(34, 197, 94, .4);
+            animation: saldoPulse 3.2s ease-in-out infinite;
+        }
+        .chip-ico { font-size: 13px; filter: drop-shadow(0 0 6px rgba(34, 197, 94, .5)); }
+
+        @keyframes saldoPulse {
+            0%, 100% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 0 0 rgba(34, 197, 94, 0); }
+            50% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 0 18px rgba(34, 197, 94, .3); }
+        }
+
+        .mini-btn {
+            font-family: var(--font-display); font-weight: 600; font-size: 12.5px;
+            letter-spacing: 1.2px; text-transform: uppercase;
+            color: var(--muted); background: var(--surface);
+            border: 1px solid var(--line); border-radius: 10px;
+            padding: 8px 16px; cursor: pointer;
+            transition: color .18s, border-color .18s, box-shadow .18s, transform .18s;
+        }
+        .mini-btn:hover {
+            color: var(--cyan); border-color: var(--line-glow);
+            box-shadow: 0 0 16px rgba(56, 189, 248, .25);
+            transform: translateY(-1px);
+        }
+        .mini-btn-danger:hover {
+            color: var(--red); border-color: rgba(248, 113, 113, .45);
+            box-shadow: 0 0 16px rgba(248, 113, 113, .2);
+        }
+
+        /* ── Layout arena: sidebar de config + salas protagonistas ── */
+        .arena {
+            flex: 1; width: 100%; max-width: 1280px; margin: 0 auto;
+            display: grid; grid-template-columns: 350px minmax(0, 1fr);
+            gap: 22px; align-items: start;
+            padding: 26px 28px 36px;
+        }
+
+        .panel {
+            position: relative;
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+            box-shadow: 0 24px 60px -30px rgba(0, 0, 0, .85), inset 0 1px 0 rgba(255, 255, 255, .05);
+            padding: 22px;
+        }
+
+        .panel-salas { display: flex; flex-direction: column; min-height: 520px; }
+
+        .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+
+        .panel-kicker {
+            font-family: var(--font-display); font-weight: 700; font-size: 12.5px;
+            letter-spacing: 2.5px; text-transform: uppercase; color: var(--muted);
+        }
+
+        .live-badge {
+            display: inline-flex; align-items: center; gap: 7px;
+            font-family: var(--font-display); font-weight: 700; font-size: 10.5px;
+            letter-spacing: 2px; color: var(--green);
+            padding: 4px 11px; border-radius: 999px;
+            background: rgba(34, 197, 94, .08); border: 1px solid rgba(34, 197, 94, .35);
+        }
+        .live-dot {
+            width: 7px; height: 7px; border-radius: 50%; background: var(--green);
+            box-shadow: 0 0 10px var(--green);
+            animation: livePulse 1.6s ease-in-out infinite;
+        }
+        @keyframes livePulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .4; transform: scale(.75); } }
+
+        /* ── Formulario: apodo + skins ── */
+        .form-group { margin-bottom: 20px; }
+
+        label {
+            display: block; margin-bottom: 8px;
+            font-family: var(--font-display); font-weight: 700; font-size: 11.5px;
+            letter-spacing: 1.8px; text-transform: uppercase; color: var(--muted);
+        }
+
+        input {
+            width: 100%; padding: 12px 14px;
+            background: var(--surface-deep); border: 1px solid var(--line); border-radius: 10px;
+            color: var(--text); font-family: var(--font-body); font-weight: 500; font-size: 16px;
+            transition: border-color .2s, box-shadow .2s;
+        }
+        input::placeholder { color: #475569; }
+        input:focus {
+            outline: none; border-color: var(--line-glow);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, .12), 0 0 20px rgba(56, 189, 248, .15);
+        }
+
+        .config-foot {
+            font-size: 13px; color: var(--muted);
+            border-top: 1px dashed rgba(148, 163, 184, .25);
+            padding-top: 14px;
+        }
+
+        /* ── Selector de skins: preview grande + anillo luminoso ── */
+        .skins-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+
+        .skin-card {
+            background: var(--surface-deep);
+            border: 2px solid rgba(51, 65, 85, .6);
+            border-radius: 14px; padding: 13px 8px 11px;
+            cursor: pointer; text-align: center;
+            transition: border-color .2s, transform .2s, box-shadow .2s, background .2s;
+        }
+        .skin-card:hover { border-color: rgba(56, 189, 248, .55); transform: translateY(-2px); }
+        .skin-card.selected {
+            border-color: var(--cyan);
+            background: rgba(56, 189, 248, .08);
+            box-shadow: 0 0 0 1px rgba(56, 189, 248, .45), 0 0 24px rgba(56, 189, 248, .28), inset 0 0 18px rgba(56, 189, 248, .07);
+        }
+
+        .skin-preview {
+            width: 52px; height: 52px; border-radius: 50%;
+            margin: 0 auto 9px auto;
+            box-shadow: 0 6px 16px rgba(0, 0, 0, .5), inset 0 -5px 12px rgba(0, 0, 0, .28);
+            animation: skinFloat 3.4s ease-in-out infinite;
+        }
+        .skin-card:nth-child(2) .skin-preview { animation-delay: .35s; }
+        .skin-card:nth-child(3) .skin-preview { animation-delay: .7s; }
+        .skin-card:nth-child(4) .skin-preview { animation-delay: 1.05s; }
+        @keyframes skinFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+
+        .skin-name { font-size: 13px; font-weight: 600; letter-spacing: .5px; color: var(--text); }
+
+        /* ── Salas en vivo: la protagonista ── */
+        .grid-salas {
+            flex: 1; min-height: 0;
+            display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px; align-content: start;
+            overflow-y: auto;
+            max-height: calc(100vh - 235px);
+            /* aire para que el glow de las tarjetas no se recorte en el scroll */
+            padding: 2px 8px 8px 2px; margin: -2px -8px -8px -2px;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(56, 189, 248, .35) transparent;
+        }
+        .grid-salas::-webkit-scrollbar { width: 6px; }
+        .grid-salas::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, .3); border-radius: 99px; }
+        .grid-salas::-webkit-scrollbar-track { background: transparent; }
+
+        .conectando { grid-column: 1 / -1; color: var(--muted); font-size: 13px; }
+
+        /* Tarjeta de sala (el markup lo genera el JS del lobby: mismas clases y data-*) */
+        .tarjeta-sala {
+            display: flex; flex-direction: column; gap: 12px;
+            background: var(--surface-deep);
+            border: 1px solid var(--line);
+            border-radius: 14px; padding: 16px; text-align: left; color: var(--text);
+            transition: border-color .2s, transform .2s, box-shadow .2s;
+        }
+        .tarjeta-sala:hover {
+            border-color: var(--line-glow);
+            transform: translateY(-2px);
+            box-shadow: 0 14px 34px -18px rgba(56, 189, 248, .4);
+        }
+        .tarjeta-sala.privada {
+            border-color: rgba(245, 158, 11, .38);
+            background: linear-gradient(160deg, rgba(245, 158, 11, .09), var(--surface-deep) 45%);
+        }
+        .tarjeta-sala.privada:hover {
+            border-color: rgba(245, 158, 11, .75);
+            box-shadow: 0 14px 34px -18px rgba(245, 158, 11, .45);
+        }
+
+        .sala-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+        .sala-head h3 {
+            font-family: var(--font-display); font-weight: 600; font-size: 15px;
+            letter-spacing: .5px; color: #f1f5f9; margin: 0;
+        }
+        .badge-tipo {
+            font-family: var(--font-display); font-weight: 700; font-size: 10px;
+            letter-spacing: 1.2px; white-space: nowrap;
+            padding: 4px 9px; border-radius: 999px;
+            background: rgba(56, 189, 248, .1); color: var(--cyan);
+            border: 1px solid rgba(56, 189, 248, .3);
+        }
+        .badge-tipo.es-privada { background: rgba(245, 158, 11, .1); color: var(--amber); border-color: rgba(245, 158, 11, .35); }
+
+        .sala-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        .stat {
+            background: rgba(2, 6, 17, .55);
+            border: 1px solid rgba(148, 163, 184, .12);
+            border-radius: 9px; padding: 7px 9px;
+        }
+        .stat-label { display: block; font-size: 10px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: var(--muted); }
+        .stat-value { font-family: var(--font-display); font-weight: 700; font-size: 15px; color: var(--text); }
+        .stat-sub { color: var(--muted); font-size: 11.5px; font-weight: 600; }
+        .stat-pozo .stat-value { color: var(--green); text-shadow: 0 0 12px rgba(34, 197, 94, .45); }
+
+        /* Botón Unirse con barrido de brillo */
+        .btn-unirse {
+            position: relative; overflow: hidden;
+            width: 100%; margin-top: auto; padding: 10px;
+            font-family: var(--font-display); font-weight: 700; font-size: 13px;
+            letter-spacing: 1.2px; text-transform: uppercase;
+            color: #041019; background: linear-gradient(90deg, #0ea5e9, #38bdf8);
+            border: none; border-radius: 10px; cursor: pointer;
+            box-shadow: 0 8px 22px -10px rgba(56, 189, 248, .8);
+            transition: transform .18s, box-shadow .18s, filter .18s;
+        }
+        .btn-unirse::after {
+            content: ""; position: absolute; top: 0; left: -70%;
+            width: 45%; height: 100%;
+            background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .55), transparent);
+            transform: skewX(-20deg);
+            transition: left .55s ease;
+        }
+        .btn-unirse:hover::after { left: 135%; }
+        .btn-unirse:hover { transform: translateY(-2px); filter: brightness(1.08); box-shadow: 0 12px 28px -10px rgba(56, 189, 248, .9); }
+        .tarjeta-sala.privada .btn-unirse {
+            background: linear-gradient(90deg, #d97706, #f59e0b);
+            box-shadow: 0 8px 22px -10px rgba(245, 158, 11, .8);
+        }
+        .tarjeta-sala.privada .btn-unirse:hover { box-shadow: 0 12px 28px -10px rgba(245, 158, 11, .9); }
+        .btn-unirse:disabled {
+            background: rgba(71, 85, 105, .4); color: var(--muted);
+            cursor: not-allowed; box-shadow: none; transform: none; filter: none;
+        }
+        .btn-unirse:disabled::after { display: none; }
+
+        /* ── Skeletons mientras llega roomsList ── */
+        .skeleton-card {
+            border: 1px solid rgba(148, 163, 184, .12);
+            background: var(--surface-deep);
+            border-radius: 14px; padding: 16px;
+            display: flex; flex-direction: column; gap: 11px;
+        }
+        .sk-line, .sk-btn {
+            background: linear-gradient(90deg, rgba(148, 163, 184, .09) 25%, rgba(148, 163, 184, .22) 50%, rgba(148, 163, 184, .09) 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s linear infinite;
+        }
+        .sk-line { height: 9px; border-radius: 5px; }
+        .sk-title { height: 13px; width: 58%; }
+        .sk-row { display: flex; gap: 10px; }
+        .sk-half { flex: 1; }
+        .sk-short { flex: .55; }
+        .sk-btn { height: 36px; border-radius: 10px; }
+        @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+        /* ── Reveal escalonado al cargar ── */
+        .reveal { opacity: 0; animation: rise .65s cubic-bezier(.16, .84, .3, 1) forwards; }
+        .r1 { animation-delay: .12s; }
+        .r2 { animation-delay: .24s; }
+        @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* ── Accesibilidad: menos movimiento ── */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: .01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: .01ms !important;
+            }
+            .topbar, .reveal { opacity: 1; animation: none; }
+            .orb { animation: none; }
+        }
+
+        /* ── Responsive: se apila topbar → config → salas ── */
+        @media (max-width: 1020px) {
+            .arena { grid-template-columns: 1fr; padding: 18px 16px 30px; }
+            .topbar { padding: 12px 16px; }
+            .panel-salas { min-height: auto; }
+            .grid-salas { max-height: none; overflow: visible; }
+        }
+        @media (max-width: 560px) {
+            .grid-salas { grid-template-columns: 1fr; }
+            .topbar-right { width: 100%; justify-content: space-between; }
+            .logo { font-size: 22px; }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Atmósfera: orbs de energía + grid + viñeta + grain (decorativa) -->
+    <div class="atmo" aria-hidden="true">
+        <div class="orb orb-a"></div>
+        <div class="orb orb-b"></div>
+        <div class="orb orb-c"></div>
+        <div class="orb orb-d"></div>
+        <div class="atmo-grid"></div>
+        <div class="atmo-vignette"></div>
+        <div class="atmo-grain"></div>
+    </div>
+
+    <header class="topbar">
+        <div class="brand">
+            <h1 class="logo">WIN<span>ORBS</span></h1>
+            <span class="brand-tag">Compite en vivo y gana dinero real</span>
+        </div>
+        <div class="topbar-right">
+            <span class="chip chip-user" id="user-chip">Cargando…</span>
+            <span class="chip chip-balance">
+                <span class="chip-ico">💰</span><span id="user-balance">$0.00 USD</span>
+            </span>
+            <nav class="topbar-actions">
+                <button class="mini-btn" id="btn-perfil">Perfil</button>
+                <button class="mini-btn" id="btn-wallet">Wallet</button>
+                <button class="mini-btn mini-btn-danger" id="btn-logout">Salir</button>
+            </nav>
+        </div>
+    </header>
+
+    <main class="arena">
+        <!-- Sidebar: tu configuración -->
+        <aside class="panel panel-config reveal r1">
+            <div class="panel-head">
+                <span class="panel-kicker">// Tu configuración</span>
+            </div>
+
+            <div class="form-group">
+                <label for="player-nickname">Apodo / Name</label>
+                <input type="text" id="player-nickname" placeholder="Ej: ProOrb99" value="Jugador1">
+            </div>
+
+            <!-- Tienda / Selector de Skins (firmas onclick intactas: game.html consume mi_skin) -->
+            <div class="form-group">
+                <label>Elige tu Skin (Aspecto)</label>
+                <div class="skins-grid">
+                    <div class="skin-card selected"
+                        onclick="seleccionarSkin('cielo', '#38bdf8', '#0284c7', '#bae6fd', this)">
+                        <div class="skin-preview" style="background: radial-gradient(circle at 30% 30%, #38bdf8, #0284c7);">
+                        </div>
+                        <div class="skin-name">Cielo</div>
+                    </div>
+                    <div class="skin-card" onclick="seleccionarSkin('fuego', '#f97316', '#c2410c', '#ffedd5', this)">
+                        <div class="skin-preview" style="background: radial-gradient(circle at 30% 30%, #f97316, #c2410c);">
+                        </div>
+                        <div class="skin-name">Fuego</div>
+                    </div>
+                    <div class="skin-card" onclick="seleccionarSkin('neon', '#a855f7', '#6b21a8', '#f3e8ff', this)">
+                        <div class="skin-preview" style="background: radial-gradient(circle at 30% 30%, #a855f7, #6b21a8);">
+                        </div>
+                        <div class="skin-name">Neón</div>
+                    </div>
+                    <div class="skin-card" onclick="seleccionarSkin('esmeralda', '#22c55e', '#15803d', '#dcfce7', this)">
+                        <div class="skin-preview" style="background: radial-gradient(circle at 30% 30%, #22c55e, #15803d);">
+                        </div>
+                        <div class="skin-name">Esmeralda</div>
+                    </div>
+                </div>
+            </div>
+
+            <p class="config-foot">Tu apodo y tu skin viajan contigo a la arena.</p>
+        </aside>
+
+        <!-- Salas en vivo vía Socket.io (protagonista del lobby) -->
+        <section class="panel panel-salas reveal r2">
+            <div class="panel-head">
+                <span class="panel-kicker">// Salas en vivo</span>
+                <span class="live-badge"><span class="live-dot"></span>EN VIVO</span>
+            </div>
+            <div id="lista-salas" class="grid-salas">
+                <p class="conectando">Conectando con el servidor...</p>
+                <div class="skeleton-card" aria-hidden="true">
+                    <div class="sk-line sk-title"></div>
+                    <div class="sk-row"><div class="sk-line sk-half"></div><div class="sk-line sk-half"></div></div>
+                    <div class="sk-row"><div class="sk-line sk-half"></div><div class="sk-line sk-short"></div></div>
+                    <div class="sk-btn"></div>
+                </div>
+                <div class="skeleton-card" aria-hidden="true">
+                    <div class="sk-line sk-title"></div>
+                    <div class="sk-row"><div class="sk-line sk-half"></div><div class="sk-line sk-short"></div></div>
+                    <div class="sk-row"><div class="sk-line sk-half"></div><div class="sk-line sk-half"></div></div>
+                    <div class="sk-btn"></div>
+                </div>
+                <div class="skeleton-card" aria-hidden="true">
+                    <div class="sk-line sk-title"></div>
+                    <div class="sk-row"><div class="sk-line sk-half"></div><div class="sk-line sk-half"></div></div>
+                    <div class="sk-row"><div class="sk-line sk-short"></div><div class="sk-line sk-half"></div></div>
+                    <div class="sk-btn"></div>
+                </div>
+                <div class="skeleton-card" aria-hidden="true">
+                    <div class="sk-line sk-title"></div>
+                    <div class="sk-row"><div class="sk-line sk-short"></div><div class="sk-line sk-half"></div></div>
+                    <div class="sk-row"><div class="sk-line sk-half"></div><div class="sk-line sk-half"></div></div>
+                    <div class="sk-btn"></div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        // Inicializar conexión Socket.io
+        const socket = io();
+        const contenedorSalas = document.getElementById("lista-salas");
+
+        socket.on('serverConfig', (cfg) => {
+            // true = el servidor cobra entradas y paga premios vía Admin SDK
+            window.__economyMode = !!(cfg && cfg.economy);
+        });
+
+        // Completar el apodo con el usuario que vino de login.html (sesión local)
+        try {
+            const usuarioGuardado = localStorage.getItem("ode_user");
+            if (usuarioGuardado) {
+                document.getElementById("player-nickname").value = usuarioGuardado;
+            }
+        } catch (e) { }
+
+        // Mostrar aviso si la sala fue cerrada o la partida finalizo
+        try {
+            const closedMsg = sessionStorage.getItem("room_closed_msg");
+            if (closedMsg) {
+                sessionStorage.removeItem("room_closed_msg");
+                setTimeout(() => alert(closedMsg), 100);
+            }
+        } catch (e) { }
+
+        // Skin seleccionada por defecto
+        window.skinSeleccionada = { c1: '#38bdf8', c2: '#0284c7', border: '#bae6fd' };
+
+        window.seleccionarSkin = function (nombre, c1, c2, border, el) {
+            document.querySelectorAll('.skin-card').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+            window.skinSeleccionada = { nombre, c1, c2, border };
+        };
+
+        // Escuchar actualización de salas en tiempo real desde server.js
+
+        // Escapar los datos que llegan del servidor antes de renderizarlos (evita XSS)
+        function escapeHTML(texto) {
+            return String(texto)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        socket.on('roomsList', (salasList) => {
+            contenedorSalas.innerHTML = "";
+
+            if (!salasList || salasList.length === 0) {
+                contenedorSalas.innerHTML = `<p style="color: #94a3b8; font-size: 13px; grid-column: 1/-1;">No hay salas activas en este momento.</p>`;
+                return;
+            }
+
+            salasList.forEach((sala) => {
+                const estaLlena = (sala.jugadoresConectados || 0) >= sala.maxJugadores;
+
+                const tarjetaSala = document.createElement("div");
+                tarjetaSala.className = `tarjeta-sala ${sala.esPrivada ? 'privada' : 'publica'}`;
+
+                tarjetaSala.innerHTML = `
+                    <div class="sala-head">
+                        <h3>${escapeHTML(sala.nombre)}</h3>
+                        <span class="badge-tipo ${sala.esPrivada ? 'es-privada' : 'es-publica'}">${sala.esPrivada ? '🔒 Privada' : '🌐 Pública'}</span>
+                    </div>
+                    <div class="sala-stats">
+                        <div class="stat">
+                            <span class="stat-label">Entrada</span>
+                            <span class="stat-value">$${escapeHTML(parseFloat(sala.precioEntrada || 0).toFixed(2))}</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">Jugadores</span>
+                            <span class="stat-value">${escapeHTML(sala.jugadoresConectados || 0)}<span class="stat-sub"> / ${escapeHTML(sala.maxJugadores)}</span></span>
+                        </div>
+                        <div class="stat stat-pozo">
+                            <span class="stat-label">Pozo</span>
+                            <span class="stat-value">$${escapeHTML(parseFloat(sala.pozoActual || 0).toFixed(2))}</span>
+                        </div>
+                    </div>
+                    <button class="btn-unirse"
+                        data-sala="${escapeHTML(sala.id)}"
+                        data-privada="${sala.esPrivada ? '1' : '0'}"
+                        data-precio="${escapeHTML(parseFloat(sala.precioEntrada || 0).toFixed(2))}"
+                        ${estaLlena ? 'disabled' : ''}>
+                        ${estaLlena ? 'Sala Llena' : 'Unirse a la Sala'}
+                    </button>
+                `;
+
+                // Listener en vez de onclick inline (el id de la sala no puede inyectar código)
+                tarjetaSala.querySelector('.btn-unirse').addEventListener('click', async function () {
+                    const precio = parseFloat(this.dataset.precio || '0');
+                    if (window.verificarSaldoParaUnirse && !window.verificarSaldoParaUnirse(precio)) return;
+                    if (precio > 0 && window.__economyMode !== true) {
+                        // Modo degradado: el cliente cobra. En modo economía el SERVIDOR
+                        // cobra al conectar (joinRoom), para que nadie pueda colarse sin pagar.
+                        const cobrado = await window.cobrarEntrada(this.dataset.sala, precio);
+                        if (!cobrado) return; // saldo insuficiente o error al cobrar
+                    }
+                    unirseASala(this.dataset.sala, this.dataset.privada === '1');
+                });
+
+                contenedorSalas.appendChild(tarjetaSala);
+            });
+        });
+
+        // Entrar a la sala seleccionada
+        window.unirseASala = function (salaId, esPrivada) {
+            const nick = document.getElementById("player-nickname").value.trim();
+            if (!nick) {
+                alert("Por favor, ingresa un apodo antes de unirte.");
+                return;
+            }
+
+            let password = "";
+            if (esPrivada) {
+                password = prompt("Esta sala es privada. Ingresa la contraseña:");
+                if (password === null) return;
+            }
+
+            // Guardar configuración en sessionStorage para que game.html se conecte
+            sessionStorage.setItem("mi_nick", nick);
+            sessionStorage.setItem("mi_skin", JSON.stringify(window.skinSeleccionada));
+            sessionStorage.setItem("mi_sala_id", salaId);
+            sessionStorage.setItem("mi_sala_password", password);
+
+            // Redirigir al lienzo del juego
+            window.location.href = `game.html?sala=${salaId}`;
+        };
+    </script>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, runTransaction, collection, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { firebaseConfig } from "./js/firebase-config.js";
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        window.__saldo = null;
+        window.__perfil = null;
+
+        // Guard de sesión: sin usuario autenticado → volver a login
+        onAuthStateChanged(auth, (user) => {
+            if (!user) {
+                try {
+                    localStorage.removeItem("ode_uid");
+                    localStorage.removeItem("ode_user");
+                } catch (e) { }
+                window.location.href = "login.html";
+                return;
+            }
+
+            // Saldo y apodo en vivo (Firestore)
+            onSnapshot(doc(db, "usuarios", user.uid), (snap) => {
+                if (!snap.exists()) return;
+                const p = snap.data();
+                window.__perfil = p;
+                window.__saldo = Number(p.saldo || 0);
+
+                const balance = document.getElementById("user-balance");
+                if (balance) balance.innerText = "$" + window.__saldo.toFixed(2) + " USD";
+
+                const chip = document.getElementById("user-chip");
+                if (chip) chip.innerText = "👤 " + (p.apodo || "Jugador");
+
+                const nick = document.getElementById("player-nickname");
+                if (nick && p.apodo) nick.value = p.apodo;
+            }, (e) => {
+                if (!window.__avisoReglas) {
+                    window.__avisoReglas = true;
+                    alert("No se pudo leer tu saldo (" + (e.code || "") + ").\n\nPublica las reglas de firestore.rules con tu UID o email dentro de isAdmin().");
+                }
+            });
+        });
+
+        // Navegación: Perfil / Wallet / Salir
+        document.getElementById("btn-perfil").addEventListener("click", () => {
+            window.location.href = "perfil.html";
+        });
+        document.getElementById("btn-wallet").addEventListener("click", () => {
+            window.location.href = "wallet.html";
+        });
+        document.getElementById("btn-logout").addEventListener("click", async () => {
+            try { await signOut(auth); } catch (e) { }
+            try {
+                localStorage.removeItem("ode_uid");
+                localStorage.removeItem("ode_user");
+            } catch (e) { }
+            window.location.href = "login.html";
+        });
+
+        // Cobro de entrada al unirse (transacción atómica).
+        // Nota: si abandonas la sala antes de que inicie la partida, la entrada no se reembolsa.
+        window.cobrandoEntrada = false;
+        window.cobrarEntrada = async function (salaId, precio) {
+            if (window.cobrandoEntrada) return false;
+            window.cobrandoEntrada = true;
+            try {
+                const user = auth.currentUser;
+                if (!user) { alert("Inicia sesión para unirte a la sala."); return false; }
+                if (window.__saldo !== null && window.__saldo < precio) {
+                    const ir = confirm("Tu saldo ($" + window.__saldo.toFixed(2) + " USD) no cubre la entrada ($" + precio.toFixed(2) + " USD).\n¿Ir a la Wallet para depositar?");
+                    if (ir) window.location.href = "wallet.html";
+                    return false;
+                }
+                await runTransaction(db, async (t) => {
+                    const ref = doc(db, "usuarios", user.uid);
+                    const snap = await t.get(ref);
+                    const saldo = Number((snap.data() || {}).saldo || 0);
+                    if (saldo < precio) throw new Error("SALDO_INSUFICIENTE");
+                    t.update(ref, { saldo: +(saldo - precio).toFixed(2) });
+                    t.set(doc(collection(db, "entradas")), {
+                        usuarioId: user.uid,
+                        salaId: salaId,
+                        monto: precio,
+                        estado: "cobrada",
+                        fecha: serverTimestamp()
+                    });
+                });
+                return true;
+            } catch (e) {
+                if ((e.message || "").includes("SALDO_INSUFICIENTE")) {
+                    const ir = confirm("Tu saldo no cubre la entrada ($" + precio.toFixed(2) + " USD).\n¿Ir a la Wallet para depositar?");
+                    if (ir) window.location.href = "wallet.html";
+                } else {
+                    alert("No se pudo cobrar la entrada: " + (e.code || e.message));
+                }
+                return false;
+            } finally {
+                window.cobrandoEntrada = false;
+            }
+        };
+
+        // Validación de saldo antes de unirse a una sala de pago
+        // (el cobro real se hace justo aquí arriba con cobrarEntrada)
+        window.verificarSaldoParaUnirse = function (precio) {
+            if (window.__saldo === null) return true; // aún sin datos, no bloquear
+            if (window.__saldo < precio) {
+                const ir = confirm("Tu saldo ($" + window.__saldo.toFixed(2) + " USD) no cubre la entrada ($" +
+                    precio.toFixed(2) + " USD).\n¿Ir a la Wallet para depositar?");
+                if (ir) window.location.href = "wallet.html";
+                return false;
+            }
+            return true;
+        };
+    </script>
+</body>
+
+</html>
