@@ -2022,9 +2022,13 @@
         onAuthStateChanged(auth, async (user) => {
             window.__miUid = user ? user.uid : null;
             window.__miToken = null;
+            window.__identidadLista = false;
             if (user) {
                 try { window.__miToken = await user.getIdToken(); } catch (e) { }
             }
+            // La identidad está lista (con token o sin sesión); el joinRoom
+            // del juego solo se emite a partir de aquí.
+            window.__identidadLista = true;
             // Vincula identidad (uid + token) con el servidor una vez resuelta la sesión
             if (user && window.socket && window.socket.connected) {
                 if (!window.__authEnviado) {
@@ -2477,6 +2481,16 @@
                 await new Promise(r => setTimeout(r, 50));
             }
         }
+
+        // Espera a que la identidad esté COMPLETA (uid + token resueltos) para
+        // no emitir joinRoom a ciegas: en salas de pago el servidor exige token.
+        async function esperarIdentidadCompleta(timeoutMs = 8000) {
+            const inicio = Date.now();
+            while (window.__identidadLista !== true && Date.now() - inicio < timeoutMs) {
+                await new Promise(r => setTimeout(r, 50));
+            }
+        }
+
         function emitirJoin() {
             socket.emit('joinRoom', {
                 roomId, password, nick: playerNick, skin: playerSkin,
@@ -2484,7 +2498,14 @@
                 token: window.__miToken || null
             });
         }
-        esperarIdentidad().then(() => emitirJoin());
+        let joinEnviado = false;
+        async function joinCuandoListo() {
+            if (joinEnviado || myPlayerId) return;
+            joinEnviado = true;
+            await esperarIdentidadCompleta();
+            if (!myPlayerId) emitirJoin();
+        }
+        joinCuandoListo();
 
         socket.on('serverConfig', (cfg) => {
             // true = el servidor cobra entradas y paga premios vía Admin SDK
@@ -2526,7 +2547,9 @@
         socket.on('connect', () => {
             connOverlay.classList.remove("visible");
             if (!myPlayerId) {
-                emitirJoin();
+                // Nunca emitir joinRoom antes de resolver uid+token (salas de pago)
+                joinEnviado = false;
+                joinCuandoListo();
             }
         });
 
@@ -2534,6 +2557,16 @@
             const el = document.getElementById("announcement-banner");
             el.innerText = text; el.style.display = "block";
             setTimeout(() => el.style.display = "none", 4000);
+        });
+
+        // Aviso NO fatal (ej. tienda: "No tienes suficientes gemas"): solo banner,
+        // sin alert ni expulsión de la partida.
+        socket.on('aviso', (text) => {
+            const el = document.getElementById("announcement-banner");
+            if (!el) return;
+            el.innerText = '⚠️ ' + String(text || '').slice(0, 120);
+            el.style.display = "block";
+            setTimeout(() => el.style.display = "none", 3000);
         });
 
         socket.on('playSound', (type) => playSound(type));
@@ -2601,11 +2634,15 @@
                 const lb = data.leaderboard || [];
                 const entryFee = Number(data.entryFee) || 0;
                 const jugadores = lb.length;
-                if (entryFee <= 0 || jugadores < 2) return; // sala gratuita o sin partida real
+                if (entryFee <= 0 || jugadores < 1) return; // sala gratuita o sin jugadores
 
-                const pozo = +(jugadores * entryFee).toFixed(2);
-                const comision = +(pozo * 0.2).toFixed(2);   // 20% para la casa
-                const neto = +(pozo - comision).toFixed(2);  // 80% para el ganador
+                // Bote ESTÁTICO: el servidor manda el premio neto real (80%);
+                // el pozo y la comisión (20% casa) se derivan de ahí.
+                const neto = (data.premioNeto !== undefined && data.premioNeto !== null)
+                    ? +(Number(data.premioNeto)).toFixed(2)
+                    : +((data.pozoTotal !== undefined ? data.pozoTotal : +(jugadores * entryFee).toFixed(2)) * 0.8).toFixed(2);
+                const pozo = +(neto / 0.8).toFixed(2);
+                const comision = +(pozo - neto).toFixed(2);
                 const ganador = lb[0] || null;
                 const ganadorUid = ganador && ganador.uid ? ganador.uid : null;
                 const ganadorNick = ganador && ganador.nick ? ganador.nick : "—";

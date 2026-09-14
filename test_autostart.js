@@ -87,7 +87,7 @@ async function run() {
 
     log(`Premio neto correcto (premioNeto=${gameOverData && gameOverData.premioNeto})`,
         !!gameOverData && gameOverData.entryFee > 0 &&
-        Math.abs(gameOverData.premioNeto - +(gameOverData.entryFee * 0.8).toFixed(2)) < 0.005);
+        Math.abs(gameOverData.premioNeto - +(3 * gameOverData.entryFee * 0.8).toFixed(2)) < 0.005); // bote estático de 3 inscritos
 
     // Limpieza
     admin.emit('adminDestroyRoom', { roomId: ROOM });

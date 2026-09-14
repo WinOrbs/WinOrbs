@@ -298,6 +298,9 @@
             border: 1px solid rgba(56, 189, 248, .3);
         }
         .badge-tipo.es-privada { background: rgba(245, 158, 11, .1); color: var(--amber); border-color: rgba(245, 158, 11, .35); }
+        .badge-tipo.es-iniciada { background: rgba(239, 68, 68, .1); color: #fb7185; border-color: rgba(239, 68, 68, .4); }
+
+        .tarjeta-sala.iniciada { opacity: .55; pointer-events: none; }
 
         .sala-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
         .sala-pozo-detalle {
@@ -574,14 +577,17 @@
 
             salasList.forEach((sala) => {
                 const estaLlena = (sala.jugadoresConectados || 0) >= sala.maxJugadores;
+                const estaIniciada = !!sala.iniciada;
 
                 const tarjetaSala = document.createElement("div");
-                tarjetaSala.className = `tarjeta-sala ${sala.esPrivada ? 'privada' : 'publica'}`;
+                tarjetaSala.className = `tarjeta-sala ${sala.esPrivada ? 'privada' : 'publica'} ${estaIniciada ? 'iniciada' : ''}`;
 
                 tarjetaSala.innerHTML = `
                     <div class="sala-head">
                         <h3>${escapeHTML(sala.nombre)}</h3>
-                        <span class="badge-tipo ${sala.esPrivada ? 'es-privada' : 'es-publica'}">${sala.esPrivada ? '🔒 Privada' : '🌐 Pública'}</span>
+                        ${estaIniciada
+                            ? '<span class="badge-tipo es-iniciada">▶ Iniciada</span>'
+                            : `<span class="badge-tipo ${sala.esPrivada ? 'es-privada' : 'es-publica'}">${sala.esPrivada ? '🔒 Privada' : '🌐 Pública'}</span>`}
                     </div>
                     <div class="sala-stats">
                         <div class="stat">
@@ -602,8 +608,8 @@
                         data-sala="${escapeHTML(sala.id)}"
                         data-privada="${sala.esPrivada ? '1' : '0'}"
                         data-precio="${escapeHTML(parseFloat(sala.precioEntrada || 0).toFixed(2))}"
-                        ${estaLlena ? 'disabled' : ''}>
-                        ${estaLlena ? 'Sala Llena' : 'Unirse a la Sala'}
+                        ${estaLlena || estaIniciada ? 'disabled' : ''}>
+                        ${estaIniciada ? 'Partida en curso' : (estaLlena ? 'Sala Llena' : 'Unirse a la Sala')}
                     </button>
                 `;
 

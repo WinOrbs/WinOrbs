@@ -247,9 +247,10 @@ async function servidorPagarPremio(room, gameId, abandono = false) {
     try {
         const lb = room.getLeaderboard();
         const ganador = lb[0];
-        // Con 1 solo jugador solo paga si es victoria por abandono (bote neto de 1 entrada)
+        // Con 1 solo jugador solo paga si es victoria por abandono (bote estático)
         if (!ganador || (lb.length < 2 && !abandono)) return; // partida sin ganador real
-        const pozo = +(lb.length * room.entryFee).toFixed(2);
+        // Bote ESTÁTICO fijado al arrancar la partida; el 20% va a la casa
+        const pozo = +(room.pozoTotal || (lb.length * room.entryFee)).toFixed(2);
         if (!(pozo > 0)) return;
         const comision = +(pozo * 0.2).toFixed(2);
         const neto = +(pozo - comision).toFixed(2);
@@ -329,6 +330,7 @@ class GameRoom {
         this.waitingTimer = null;      // contador de espera de 30 s
         this.lastPlayerCount = 0;
         this.soloTimer = null;         // victoria por abandono (10 s)
+        this.pozoTotal = 0;            // bote estático fijado al arrancar la partida
         this.pendingStart = null;
         this.ending = false;
 
@@ -601,7 +603,8 @@ class GameRoom {
         const cost = ITEM_COSTOS[itemType];
         if (!cost) return; // ítem desconocido (whitelist anti-exploit)
         if (p.charge < cost) {
-            io.sockets.sockets.get(socketId)?.emit('errorMsg', 'No tienes suficientes gemas.');
+            // Aviso no fatal: NO saca al jugador de la partida (a diferencia de errorMsg)
+            io.sockets.sockets.get(socketId)?.emit('aviso', 'No tienes suficientes gemas.');
             return;
         }
 
@@ -742,6 +745,9 @@ class GameRoom {
         this.lobbyActive = true;
         this.countdown = 5;
         this.pendingStart = null;
+        // Bote ESTÁTICO: se fija una sola vez con los inscritos al arrancar la
+        // partida; ya no cambia aunque alguien abandone durante el juego.
+        this.pozoTotal = +(Object.keys(this.players).length * this.entryFee).toFixed(2);
         if (!this.interval) this.startLoop();
         io.to(this.id).emit('playSound', 'explosion');
         io.to(this.id).emit('gameStarted', { countdown: this.countdown });
@@ -830,13 +836,14 @@ class GameRoom {
         const gameId = this.id + '_' + Date.now();
         const leaderboard = this.getLeaderboard();
 
-        // Modo economía: el SERVIDOR paga el pozo (80% ganador, 20% casa) vía Admin SDK
+        // Modo economía: el SERVIDOR paga el premio vía Admin SDK
         if (FIREBASE_ECONOMY && FIREBASE_DB) {
             servidorPagarPremio(this, gameId, abandono);
         }
 
-        // Premio neto real que recibe el ganador (80% del pozo; comisión 20% ya descontada)
-        const pozo = +(leaderboard.length * this.entryFee).toFixed(2);
+        // Bote ESTÁTICO fijado al arrancar (no cambia con abandonos);
+        // premio neto real = 80% del bote (comisión del 20% ya descontada).
+        const pozo = +(this.pozoTotal || (leaderboard.length * this.entryFee)).toFixed(2);
         const premioNeto = +(pozo * 0.8).toFixed(2);
 
         io.to(this.id).emit('gameOver', {
@@ -893,6 +900,7 @@ class GameRoom {
         this.waitingTimer = null;
         this.lastPlayerCount = 0;
         this.soloTimer = null;
+        this.pozoTotal = 0;
         this.ending = false;
         this.initEnergy();
     }
@@ -1221,14 +1229,18 @@ class GameRoom {
     }
 
     getSummary() {
+        const iniciada = this.gameStarted || this.lobbyActive;
         return {
             id: this.id,
             nombre: this.name,
             maxJugadores: this.maxPlayers,
             jugadoresConectados: Object.keys(this.players).length,
             precioEntrada: this.entryFee,
-            pozoActual: Object.keys(this.players).length * this.entryFee,
-            esPrivada: this.isPrivate
+            // En inscripción: bote en vivo (inscritos × entrada). Una vez
+            // iniciada la partida: bote estático fijado al arrancar.
+            pozoActual: iniciada ? this.pozoTotal : Object.keys(this.players).length * this.entryFee,
+            esPrivada: this.isPrivate,
+            iniciada: iniciada
         };
     }
 
@@ -1270,6 +1282,27 @@ class GameRoom {
 rooms["sala_1"] = new GameRoom("sala_1", "Arena Principiantes", 6, 1.00, false);
 rooms["sala_2"] = new GameRoom("sala_2", "Liga Pro High Roller", 4, 5.00, false);
 rooms["sala_vip"] = new GameRoom("sala_vip", "Privada VIP", 4, 10.00, true, "1234");
+
+// ── Salas automáticas por tier: 5 × $0.50, 5 × $1, 5 × $3, 5 × $5 (10 plazas) ──
+const SALAS_AUTO = [
+    { pref: 'p05', nombre: 'Rápida $0.50', fee: 0.50, count: 5 },
+    { pref: 'p1', nombre: 'Arena $1', fee: 1.00, count: 5 },
+    { pref: 'p3', nombre: 'Liga $3', fee: 3.00, count: 5 },
+    { pref: 'p5', nombre: 'High Roller $5', fee: 5.00, count: 5 }
+];
+
+function ensureRooms() {
+    SALAS_AUTO.forEach(t => {
+        for (let i = 1; i <= t.count; i++) {
+            const id = `${t.pref}_${i}`;
+            if (!rooms[id]) {
+                rooms[id] = new GameRoom(id, `${t.nombre} · #${i}`, 10, t.fee, false);
+            }
+        }
+    });
+}
+ensureRooms();
+setInterval(ensureRooms, 30000); // repone salas destruidas por el admin
 
 // Throttle del broadcast de salas: las acciones del admin son inmediatas (immediate=true);
 // join/leave/disconnect se agrupan en una sola emisión cada 250 ms (anti DoS ligero).
@@ -1325,7 +1358,9 @@ async function verificarUidEnSala(socket, room, payload) {
 async function salirDeSala(socket, room) {
     if (!room || !room.players[socket.id]) return;
     const p = room.players[socket.id];
-    if (FIREBASE_ECONOMY && !room.gameStarted && p.pagoEntrada) {
+    // Reembolso solo mientras se inscribe; una vez arranca la partida
+    // (lobby de countdown incluido) la entrada ya no se devuelve.
+    if (FIREBASE_ECONOMY && !room.gameStarted && !room.lobbyActive && p.pagoEntrada) {
         const uid = socket.verifiedUid || p.uid;
         if (uid) {
             await servidorReembolsar(uid, p.pagoEntrada.entradasId, p.pagoEntrada.monto);
@@ -1403,8 +1438,8 @@ io.on('connection', (socket) => {
         if (rooms[roomId]) {
             const room = rooms[roomId];
 
-            // Reembolsar entradas si la partida aún no empezó (modo economía)
-            if (FIREBASE_ECONOMY && !room.gameStarted) {
+            // Reembolsar entradas solo si la partida aún no arrancó
+            if (FIREBASE_ECONOMY && !room.gameStarted && !room.lobbyActive) {
                 Object.values(room.players).forEach(p => {
                     if (p.pagoEntrada && p.uid) {
                         servidorReembolsar(p.uid, p.pagoEntrada.entradasId, p.pagoEntrada.monto);
