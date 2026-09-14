@@ -242,13 +242,12 @@ async function servidorReembolsar(uid, entradasId, monto) {
     }
 }
 
-async function servidorPagarPremio(room, gameId, abandono = false) {
+async function servidorPagarPremio(room, gameId) {
     if (!FIREBASE_ECONOMY || !FIREBASE_DB || !room || !gameId) return;
     try {
         const lb = room.getLeaderboard();
         const ganador = lb[0];
-        // Con 1 solo jugador solo paga si es victoria por abandono (bote neto de 1 entrada)
-        if (!ganador || (lb.length < 2 && !abandono)) return; // partida sin ganador real
+        if (!ganador || lb.length < 2) return; // partida sin ganador real
         const pozo = +(lb.length * room.entryFee).toFixed(2);
         if (!(pozo > 0)) return;
         const comision = +(pozo * 0.2).toFixed(2);
@@ -319,16 +318,12 @@ class GameRoom {
         this.speedPads = this.generateSpeedPads();
         this.airdrops = [];
         this.obstacles = this.generateObstacles();
-        this.walls = this.generateWalls();
 
         this.airdropTimer = 0;
         this.hazardTimer = 0;
         this.lobbyActive = false;
         this.gameStarted = false;
         this.countdown = 0;
-        this.waitingTimer = null;      // contador de espera de 30 s
-        this.lastPlayerCount = 0;
-        this.soloTimer = null;         // victoria por abandono (10 s)
         this.pendingStart = null;
         this.ending = false;
 
@@ -381,64 +376,6 @@ class GameRoom {
         return obs;
     }
 
-    // Muros simétricos en los 4 cuadrantes: se genera en el cuadrante
-    // superior-izquierdo y se refleja; sin solapes (pasillo mínimo 95 px) y
-    // lejos de banco, tiendas y turbos.
-    generateWalls() {
-        const walls = [];
-        const minGap = 95;
-        const margin = 160;
-        const blocked = [];
-        blocked.push({
-            x: this.bankZone.x - this.bankZone.radius - 80,
-            y: this.bankZone.y - this.bankZone.radius - 80,
-            w: (this.bankZone.radius + 80) * 2,
-            h: (this.bankZone.radius + 80) * 2
-        });
-        this.shopZones.forEach(s => {
-            blocked.push({ x: s.x - s.radius - 70, y: s.y - s.radius - 70, w: (s.radius + 70) * 2, h: (s.radius + 70) * 2 });
-        });
-        const overlapsBlocked = (r) => blocked.some(b =>
-            r.x - minGap < b.x + b.w && r.x + r.w + minGap > b.x &&
-            r.y - minGap < b.y + b.h && r.y + r.h + minGap > b.y);
-        const overlapsWall = (r) => walls.some(o =>
-            r.x - minGap < o.x + o.w && r.x + r.w + minGap > o.x &&
-            r.y - minGap < o.y + o.h && r.y + r.h + minGap > o.y);
-        const overlapsPad = (r) => this.speedPads.some(pd =>
-            r.x - 40 < pd.x + pd.w && r.x + r.w + 40 > pd.x &&
-            r.y - 40 < pd.y + pd.h && r.y + r.h + 40 > pd.y);
-        const maxGrupo = 5;
-        for (let i = 0; i < 60 && walls.length < maxGrupo * 4; i++) {
-            const w = 80 + Math.random() * 110;
-            const h = 40 + Math.random() * 90;
-            const x = margin + Math.random() * Math.max(1, MAP_SIZE / 2 - margin - minGap - w);
-            const y = margin + Math.random() * Math.max(1, MAP_SIZE / 2 - margin - minGap - h);
-            const variantes = [
-                { x, y, w, h },
-                { x: MAP_SIZE - x - w, y, w, h },
-                { x, y: MAP_SIZE - y - h, w, h },
-                { x: MAP_SIZE - x - w, y: MAP_SIZE - y - h, w, h }
-            ];
-            if (variantes.some(v => v.x < margin || v.y < margin ||
-                v.x + v.w > MAP_SIZE - margin || v.y + v.h > MAP_SIZE - margin ||
-                overlapsBlocked(v) || overlapsWall(v) || overlapsPad(v))) continue;
-            variantes.forEach(v => walls.push({ ...v, hp: 30, maxHp: 30 }));
-        }
-        return walls;
-    }
-
-    // Punto de spawn/respawn que nunca cae dentro de un muro u obstáculo
-    spawnPoint() {
-        const solid = [...this.walls, ...this.obstacles];
-        for (let i = 0; i < 40; i++) {
-            const x = Math.random() * (MAP_SIZE - 600) + 300;
-            const y = Math.random() * (MAP_SIZE - 600) + 300;
-            const dentro = (r) => x > r.x - 30 && x < r.x + r.w + 30 && y > r.y - 30 && y < r.y + r.h + 30;
-            if (!solid.some(dentro)) return { x, y };
-        }
-        return { x: Math.random() * (MAP_SIZE - 600) + 300, y: Math.random() * (MAP_SIZE - 600) + 300 };
-    }
-
     generateHealthKit() {
         this.droppedHealthKits.push({
             id: 'h_' + randID(),
@@ -460,14 +397,13 @@ class GameRoom {
     }
 
     addPlayer(socketId, nick, skin, uid) {
-        const sp = this.spawnPoint();
         this.players[socketId] = {
             id: socketId,
             nick: sanitizeNick(nick),
             uid: uid || null, // UID de Firebase: necesario para premios
             skin: sanitizeSkin(skin),
-            x: sp.x,
-            y: sp.y,
+            x: Math.random() * (MAP_SIZE - 600) + 300,
+            y: Math.random() * (MAP_SIZE - 600) + 300,
             hp: 100, maxHp: 100,
             shield: 0, maxShield: 50,
             charge: 0, bankedScore: 0,
@@ -485,9 +421,7 @@ class GameRoom {
             dashProgress: 100,
             dashCooldown: 0,
             isDashing: false,
-            lastShotAt: 0,
-            turboTimer: 0,
-            turboCooldown: 0
+            lastShotAt: 0
         };
     }
 
@@ -636,11 +570,8 @@ class GameRoom {
         p.charge = 0;
         p.isDashing = false;
         p.dashTimer = 0;
-        const sp = this.spawnPoint();
-        p.x = sp.x;
-        p.y = sp.y;
-        p.turboTimer = 0;
-        p.turboCooldown = 0;
+        p.x = Math.random() * (MAP_SIZE - 600) + 300;
+        p.y = Math.random() * (MAP_SIZE - 600) + 300;
         p.currentWeapon = 1;
         p.ammo = p.maxAmmo;
         p.canRespawn = false;
@@ -654,34 +585,11 @@ class GameRoom {
         }, 1000 / 60);
 
         this.timerInterval = setInterval(() => {
-            const playerCount = Object.keys(this.players).length;
-
             if (this.gameStarted) {
                 this.gameTime--;
-
-                // ── Victoria por abandono ──
-                if (!this.ending) {
-                    if (playerCount === 0) {
-                        this.endGame({ abandono: true, inmediato: true });
-                    } else if (playerCount === 1) {
-                        this.soloTimer = this.soloTimer === null ? 10 : this.soloTimer - 1;
-                        io.to(this.id).emit('soloWarning', { segundos: Math.max(0, this.soloTimer) });
-                        if (this.soloTimer <= 0) {
-                            this.endGame({ abandono: true });
-                        }
-                    } else if (this.soloTimer !== null) {
-                        this.soloTimer = null;
-                        io.to(this.id).emit('soloWarning', null);
-                    }
-                }
             } else if (this.lobbyActive && this.countdown > 0) {
                 this.countdown--;
-                // Si durante el arranque queda 1 solo jugador, el inicio se cancela
-                if (playerCount < 2) {
-                    this.lobbyActive = false;
-                    this.countdown = 0;
-                    io.to(this.id).emit('announcement', '⚠️ Inicio cancelado: quedó un solo jugador en la sala.');
-                } else if (this.countdown <= 0) {
+                if (this.countdown <= 0) {
                     this.gameStarted = true;
                     this.lobbyActive = false;
                     io.to(this.id).emit('playSound', 'explosion');
@@ -696,25 +604,16 @@ class GameRoom {
                 }
             }
 
-            // ── Espera con contador de 30 s ──
-            // Arranca al cubrir el cupo mínimo (2), se reinicia a 30 con cada
-            // inscrito nuevo; si la sala baja de 2, el contador desaparece.
-            if (!this.gameStarted && !this.lobbyActive) {
-                if (playerCount >= 2) {
-                    if (this.lastPlayerCount > 0 && playerCount > this.lastPlayerCount && this.waitingTimer !== null) {
-                        this.waitingTimer = 30;
-                        io.to(this.id).emit('announcement', `👋 ${playerCount} inscritos · espera reiniciada a 30s`);
-                    }
-                    if (this.waitingTimer === null) this.waitingTimer = 30;
-                    this.waitingTimer--;
-                    if (this.waitingTimer <= 0) {
-                        this.waitingTimer = null;
-                        this.startLobby();
-                    }
-                } else {
-                    this.waitingTimer = null;
+            const now = Date.now();
+            const playerCount = Object.keys(this.players).length;
+            if (playerCount >= 2 && !this.gameStarted && !this.lobbyActive) {
+                if (!this.pendingStart) {
+                    this.pendingStart = now;
+                } else if (now - this.pendingStart >= 10000) {
+                    this.startLobby();
                 }
-                this.lastPlayerCount = playerCount;
+            } else if (playerCount < 2) {
+                this.pendingStart = null;
             }
         }, 1000);
 
@@ -756,41 +655,26 @@ class GameRoom {
     }
 
     spawnAirdrop() {
-        if (this.airdrops.length >= 2) return; // tope de 2 airdrops activos
         const angle = Math.random() * Math.PI * 2;
         const dist = (MAP_SIZE / 2 - 300) * 0.8;
         this.airdrops.push({
-            id: 'ad_' + randID(),
             x: MAP_SIZE / 2 + Math.cos(angle) * dist,
             y: MAP_SIZE / 2 + Math.sin(angle) * dist,
-            radius: 40,
-            landed: false,
-            landTimer: 240,      // ~4 s de caída (60 fps)
-            hp: 60,
-            maxHp: 60,
-            age: 0               // ticks desde el aterrizaje
+            radius: 50,
+            life: 300
         });
-    }
 
-    // Al llegar la vida de la caja a 0 por disparos, suelta el botín:
-    // 5 orbes ×25 alrededor de la caja (recogida automática al tocarlos).
-    openAirdrop(ad) {
-        const idx = this.airdrops.indexOf(ad);
-        if (idx >= 0) this.airdrops.splice(idx, 1);
-        for (let i = 0; i < 5; i++) {
-            const a = (Math.PI * 2 * i) / 5 + Math.random() * 0.6;
-            const d = ad.radius + 20 + Math.random() * 40;
-            this.droppedEnergy.push({
-                id: 'e_' + randID(),
-                x: ad.x + Math.cos(a) * d,
-                y: ad.y + Math.sin(a) * d,
-                val: 25,
-                life: 900 // caduca a los ~15 s
-            });
-        }
-        this.explosions.push({ x: ad.x, y: ad.y, radius: 70, alpha: 1 });
-        io.to(this.id).emit('playSound', 'explosion');
-        io.to(this.id).emit('announcement', '💥 ¡CAJA ABIERTA! Recoge los 5 orbes ×25.');
+        setTimeout(() => {
+            for (let i = 0; i < 5; i++) {
+                this.droppedEnergy.push({
+                    id: 'e_' + randID(),
+                    x: this.airdrops[0]?.x + (Math.random() - 0.5) * 200,
+                    y: this.airdrops[0]?.y + (Math.random() - 0.5) * 200,
+                    val: 25
+                });
+            }
+            this.airdrops.shift();
+        }, 8000);
     }
 
     spawnHazard() {
@@ -821,30 +705,22 @@ class GameRoom {
         this.hazardInterval = null;
     }
 
-    endGame(opts = {}) {
+    endGame() {
         if (this.ending) return;
         this.ending = true;
-        const abandono = !!opts.abandono;
-        this.soloTimer = null;
 
         const gameId = this.id + '_' + Date.now();
         const leaderboard = this.getLeaderboard();
 
         // Modo economía: el SERVIDOR paga el pozo (80% ganador, 20% casa) vía Admin SDK
         if (FIREBASE_ECONOMY && FIREBASE_DB) {
-            servidorPagarPremio(this, gameId, abandono);
+            servidorPagarPremio(this, gameId);
         }
-
-        // Premio neto real que recibe el ganador (80% del pozo; comisión 20% ya descontada)
-        const pozo = +(leaderboard.length * this.entryFee).toFixed(2);
-        const premioNeto = +(pozo * 0.8).toFixed(2);
 
         io.to(this.id).emit('gameOver', {
             gameId: gameId,
             entryFee: this.entryFee,
-            leaderboard: leaderboard,
-            abandono: abandono,
-            premioNeto: premioNeto
+            leaderboard: leaderboard
         });
         this.stopLoop();
 
@@ -889,10 +765,6 @@ class GameRoom {
         this.airdropTimer = 0;
         this.hazardTimer = 0;
         this.obstacles = this.generateObstacles();
-        this.walls = this.generateWalls();
-        this.waitingTimer = null;
-        this.lastPlayerCount = 0;
-        this.soloTimer = null;
         this.ending = false;
         this.initEnergy();
     }
@@ -927,65 +799,11 @@ class GameRoom {
 
             if (moveX !== 0 && moveY !== 0) { moveX *= 0.7071; moveY *= 0.7071; }
 
-            // Turbos: pisar un pad activa ×1.9 por ~1.4 s (cooldown ~2.5 s)
-            if (p.turboCooldown > 0) p.turboCooldown--;
-            if (p.turboTimer > 0) {
-                p.turboTimer--;
-            } else if (p.turboCooldown <= 0) {
-                const sobrePad = this.speedPads.some(pad =>
-                    Math.abs(p.x - (pad.x + pad.w / 2)) < pad.w / 2 + 20 &&
-                    Math.abs(p.y - (pad.y + pad.h / 2)) < pad.h / 2 + 20);
-                if (sobrePad) {
-                    p.turboTimer = 84;     // ~1.4 s
-                    p.turboCooldown = 150; // ~2.5 s
-                    io.sockets.sockets.get(p.id)?.emit('playSound', 'turbo');
-                }
-            }
-
             let speed = p.speed;
             if (p.isDashing) speed *= 3;
-            if (p.turboTimer > 0) speed *= 1.9;
 
             p.x = Math.max(p.radius, Math.min(MAP_SIZE - p.radius, p.x + moveX * speed));
             p.y = Math.max(p.radius, Math.min(MAP_SIZE - p.radius, p.y + moveY * speed));
-
-            // Colisión jugador↔muro (incluye dash) y jugador↔obstáculo:
-            // se resuelve empujando al orbe fuera del rectángulo.
-            for (const s of this.walls) {
-                if (s.hp <= 0) continue;
-                const nx = Math.max(s.x, Math.min(p.x, s.x + s.w));
-                const ny = Math.max(s.y, Math.min(p.y, s.y + s.h));
-                const dx = p.x - nx, dy = p.y - ny;
-                const distSq = dx * dx + dy * dy;
-                if (distSq < p.radius * p.radius) {
-                    if (distSq > 0.0001) {
-                        const d = Math.sqrt(distSq);
-                        p.x = nx + (dx / d) * p.radius;
-                        p.y = ny + (dy / d) * p.radius;
-                    } else {
-                        // Centro dentro del rect: empujar por el borde más cercano
-                        const izq = p.x - s.x, der = s.x + s.w - p.x;
-                        const arriba = p.y - s.y, abajo = s.y + s.h - p.y;
-                        const min = Math.min(izq, der, arriba, abajo);
-                        if (min === izq) p.x = s.x - p.radius;
-                        else if (min === der) p.x = s.x + s.w + p.radius;
-                        else if (min === arriba) p.y = s.y - p.radius;
-                        else p.y = s.y + s.h + p.radius;
-                    }
-                }
-            }
-            for (const s of this.obstacles) {
-                if (s.hp <= 0) continue;
-                const nx = Math.max(s.x, Math.min(p.x, s.x + s.w));
-                const ny = Math.max(s.y, Math.min(p.y, s.y + s.h));
-                const dx = p.x - nx, dy = p.y - ny;
-                const distSq = dx * dx + dy * dy;
-                if (distSq < p.radius * p.radius && distSq > 0.0001) {
-                    const d = Math.sqrt(distSq);
-                    p.x = nx + (dx / d) * p.radius;
-                    p.y = ny + (dy / d) * p.radius;
-                }
-            }
 
             p.isExtracting = Math.hypot(p.x - this.bankZone.x, p.y - this.bankZone.y) < this.bankZone.radius;
             if (p.isExtracting && p.charge > 0) {
@@ -1036,30 +854,6 @@ class GameRoom {
         });
         this.hazardZones = this.hazardZones.filter(hz => hz.life-- > 0);
 
-        // Ciclo de vida de airdrops: caída (~4 s) → aterrizaje; si nadie lo
-        // destruye a disparos en ~20 s, la caja se desvanece.
-        this.airdrops = this.airdrops.filter(ad => {
-            if (!ad.landed) {
-                ad.landTimer--;
-                if (ad.landTimer <= 0) {
-                    ad.landed = true;
-                    io.to(this.id).emit('playSound', 'explosion');
-                    io.to(this.id).emit('announcement', '📦 ¡AIRDROP ATERRIZADO! Dispárale para abrirlo.');
-                }
-                return true;
-            }
-            ad.age++;
-            return ad.age < 1200; // ~20 s en el suelo
-        });
-
-        // Caducidad de orbes sueltos (solo los que tienen vida definida, ej. airdrop)
-        for (let i = this.droppedEnergy.length - 1; i >= 0; i--) {
-            const g = this.droppedEnergy[i];
-            if (g.life !== undefined && (g.life = g.life - 1) <= 0) {
-                this.droppedEnergy.splice(i, 1);
-            }
-        }
-
         for (let i = this.droppedHealthKits.length - 1; i >= 0; i--) {
             this.droppedHealthKits[i].life = (this.droppedHealthKits[i].life || 600) - 1;
             if (this.droppedHealthKits[i].life <= 0) {
@@ -1092,32 +886,6 @@ class GameRoom {
                     }
                 }
             });
-
-            // Bala ↔ airdrop aterrizado: 6 de daño por bala; al llegar a 0 HP se abre
-            if (!hit) {
-                for (const ad of this.airdrops) {
-                    if (!ad.landed) continue;
-                    if (Math.abs(b.x - ad.x) < ad.radius + 8 && Math.abs(b.y - ad.y) < ad.radius + 8) {
-                        hit = true;
-                        ad.hp -= 6;
-                        if (ad.hp <= 0) this.openAirdrop(ad);
-                        break;
-                    }
-                }
-            }
-
-            // Bala ↔ muro: 6 de daño por bala; se destruyen al llegar a 0 HP
-            if (!hit) {
-                for (let wi = this.walls.length - 1; wi >= 0; wi--) {
-                    const wl = this.walls[wi];
-                    if (b.x > wl.x && b.x < wl.x + wl.w && b.y > wl.y && b.y < wl.y + wl.h) {
-                        hit = true;
-                        wl.hp -= 6;
-                        if (wl.hp <= 0) this.walls.splice(wi, 1);
-                        break;
-                    }
-                }
-            }
 
             if (hit) {
                 this.bullets.splice(i, 1);
@@ -1252,9 +1020,6 @@ class GameRoom {
             speedPads: this.speedPads,
             airdrops: this.airdrops,
             obstacles: this.obstacles,
-            walls: this.walls,
-            waitingTimer: this.waitingTimer,
-            soloTimer: this.soloTimer,
             bombs: this.bombs,
             explosions: this.explosions,
             lobbyActive: this.lobbyActive,

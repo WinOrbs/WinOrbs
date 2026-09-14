@@ -354,8 +354,7 @@
         /* ============ Banners y Anuncios ============ */
         .extract-banner,
         .zone-warning,
-        .announcement-banner,
-        .solo-banner {
+        .announcement-banner {
             position: absolute;
             top: 88px;
             left: 50%;
@@ -398,22 +397,6 @@
             box-shadow: 0 8px 30px -8px rgba(245, 179, 1, 0.4);
         }
 
-        .solo-banner {
-            top: 88px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(168, 85, 247, 0.16);
-            border-color: rgba(168, 85, 247, 0.65);
-            color: #d8b4fe;
-            font-size: 15px;
-            font-weight: 700;
-            letter-spacing: 1px;
-            text-transform: uppercase;
-            font-family: var(--font-display);
-            box-shadow: 0 8px 30px -8px rgba(168, 85, 247, 0.45);
-            animation: pulse 1.1s ease-in-out infinite;
-        }
-
         @keyframes pulse {
 
             0%,
@@ -429,7 +412,7 @@
         /* ============ Leaderboard & Minimap ============ */
         .leaderboard {
             position: absolute;
-            top: 64px;
+            top: 14px;
             right: 14px;
             background: var(--surface);
             backdrop-filter: blur(16px) saturate(120%);
@@ -726,19 +709,10 @@
             cursor: not-allowed;
         }
 
-        /* Cluster de acciones arriba-derecha: nunca roza el HUD ni el marcador */
-        #top-actions {
-            position: absolute;
-            top: 14px;
-            right: 14px;
-            display: flex;
-            gap: 8px;
-            z-index: 12;
-        }
-
         /* Botones flotantes de barra superior */
         .top-btn {
-            position: static;
+            position: absolute;
+            top: 14px;
             z-index: 12;
             height: 38px;
             border-radius: 10px;
@@ -765,6 +739,8 @@
         }
 
         .btn-exit {
+            left: 50%;
+            transform: translateX(-50%);
             padding: 0 18px;
         }
 
@@ -780,6 +756,7 @@
         }
 
         #btn-fullscreen {
+            left: calc(50% + 82px);
             width: 42px;
             justify-content: center;
             display: none;
@@ -799,39 +776,6 @@
             position: static;
             transform: none;
             margin: 18px auto 0;
-        }
-
-        /* Tarjeta de lobby: scroll interno y modo compacto en pantallas bajas */
-        #lobby-overlay {
-            overflow-y: auto;
-            padding: 16px;
-        }
-
-        #lobby-overlay .death-card {
-            max-height: 92vh;
-            overflow-y: auto;
-        }
-
-        @media (max-height: 560px) {
-            #lobby-overlay .death-card {
-                padding: 12px;
-            }
-
-            #lobby-overlay .brand-badge {
-                margin-bottom: 6px !important;
-            }
-
-            #lobby-overlay .ov-title {
-                font-size: 18px !important;
-            }
-
-            #lobby-overlay .ov-text {
-                font-size: 12px;
-            }
-
-            #lobby-overlay .dot-loader {
-                display: none;
-            }
         }
 
         /* ============ Marca WinOrbs ============ */
@@ -1785,7 +1729,6 @@
     <div class="extract-banner" id="extract-banner">⚡ DEPOSITANDO ENERGÍA · MANTENTE EN EL BANCO ⚡</div>
     <div class="zone-warning" id="zone-warning">COLAPSO EXTREMO DE LA ZONA · MUÉVETE AL CENTRO</div>
     <div class="announcement-banner" id="announcement-banner">AIRDROP INMINENTE</div>
-    <div class="solo-banner" id="solo-banner" style="display:none;">⏳ SOLO EN LA SALA · VICTORIA EN 10s</div>
 
     <div class="ability-hud">
         <div class="ability-icon">
@@ -1881,8 +1824,6 @@
                 <b id="lobby-pot"
                     style="color: var(--gold); font-family: var(--font-display); font-size: 17px; margin-left: 4px; text-shadow: 0 0 18px rgba(245,179,1,0.28);">$8.00
                     USD</b>
-                <div id="lobby-pot-detail" style="margin-top: 3px; font-size: 11.5px; opacity: 0.85;">0 × $0.00 → bote
-                    · máximo $0.00</div>
             </div>
             <div class="dot-loader" id="lobby-loader">
                 <i></i><i></i><i></i>
@@ -1913,26 +1854,24 @@
         </div>
     </div>
 
-    <div id="top-actions">
-        <button class="top-btn btn-exit" onclick="salirAlLobby(event)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                stroke-linejoin="round">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-                <polyline points="16 17 21 12 16 7"></polyline>
-                <line x1="21" y1="12" x2="9" y2="12"></line>
-            </svg>
-            Salir
-        </button>
-        <button id="btn-fullscreen" class="top-btn" onclick="toggleFullscreen()" title="Pantalla completa">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                stroke-linejoin="round">
-                <path d="M8 3H5a2 2 0 0 0-2 2v3"></path>
-                <path d="M21 8V5a2 2 0 0 0-2-2h-3"></path>
-                <path d="M3 16v3a2 2 0 0 0 2 2h3"></path>
-                <path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>
-            </svg>
-        </button>
-    </div>
+    <button class="top-btn btn-exit" onclick="salirAlLobby(event)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+        </svg>
+        Salir
+    </button>
+    <button id="btn-fullscreen" class="top-btn" onclick="toggleFullscreen()" title="Pantalla completa">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3"></path>
+            <path d="M21 8V5a2 2 0 0 0-2-2h-3"></path>
+            <path d="M3 16v3a2 2 0 0 0 2 2h3"></path>
+            <path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>
+        </svg>
+    </button>
     <div id="conn-status">Conectando con el servidor...</div>
     <!-- Barra de estado: fotos de skins aún cargando -->
     <div id="skins-carga">
@@ -2413,13 +2352,6 @@
                 gain.gain.setValueAtTime(0.4, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
                 osc.connect(gain); gain.connect(audioCtx.destination);
                 osc.start(now); osc.stop(now + 0.4);
-            } else if (type === 'turbo') {
-                let osc = audioCtx.createOscillator(); let gain = audioCtx.createGain();
-                osc.type = 'triangle'; osc.frequency.setValueAtTime(220, now);
-                osc.frequency.exponentialRampToValueAtTime(990, now + 0.25);
-                gain.gain.setValueAtTime(0.18, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
-                osc.connect(gain); gain.connect(audioCtx.destination);
-                osc.start(now); osc.stop(now + 0.3);
             }
         }
 
@@ -2537,17 +2469,6 @@
         });
 
         socket.on('playSound', (type) => playSound(type));
-        // Banner de victoria por abandono (null = ocultar)
-        socket.on('soloWarning', (data) => {
-            const el = document.getElementById("solo-banner");
-            if (!el) return;
-            if (data && typeof data.segundos === 'number' && !isGameOver) {
-                el.style.display = "block";
-                el.innerText = `⏳ SOLO EN LA SALA · VICTORIA EN ${data.segundos}s`;
-            } else if (!data) {
-                el.style.display = "none";
-            }
-        });
         socket.on('shake', (amt) => { triggerShake(amt); if (navigator.vibrate) navigator.vibrate(40); });
 
         socket.on('gameState', (state) => {
@@ -2563,10 +2484,9 @@
 
         socket.on('gameOver', (data) => {
             isGameOver = true;
-            document.getElementById("solo-banner").style.display = "none";
             // Compat: payload nuevo {gameId, entryFee, leaderboard} o array antiguo
             const ranking = Array.isArray(data) ? data : ((data && data.leaderboard) || []);
-            finalizarJuego(ranking, Array.isArray(data) ? null : data);
+            finalizarJuego(ranking);
             // Premio: 80% del pozo al 1er lugar, 20% comisión de la casa
             if (!Array.isArray(data) && data && data.gameId) pagarPremio(data);
             // El servidor expulsa a todos en ~10s: cuenta regresiva de salida
@@ -2753,45 +2673,14 @@
                 ocultarPlazas();
             } else {
                 lobbyOverlay.style.display = "flex";
-                const nJugadores = Object.keys(gameState.players || {}).length;
-                const fee = Number(gameState.entryFee) || 0;
-                const pot = (nJugadores * fee).toFixed(2);
-                const waiting = typeof gameState.waitingTimer === 'number' && gameState.waitingTimer >= 0;
                 lobbyTitle.innerText = "ESPERANDO JUGADORES";
-                lobbyCountdown.style.display = waiting ? "block" : "none";
-                if (waiting) lobbyCountdown.innerText = gameState.waitingTimer;
-                lobbyText.innerText = waiting
-                    ? "La partida inicia cuando el contador llegue a 0. ¡Cada inscripción lo reinicia a 30s!"
-                    : "Necesitamos 2 jugadores para comenzar. La partida iniciará automáticamente.";
+                lobbyCountdown.style.display = "none";
+                lobbyText.innerText = "Necesitamos 2 jugadores para comenzar. La partida iniciará automáticamente.";
                 lobbyPotWrap.style.display = "block";
-                const total = gameState.maxPlayers || 10;
-                document.getElementById("lobby-pot").innerText = `$${pot} USD`;
-                const detailEl = document.getElementById("lobby-pot-detail");
-                if (detailEl) detailEl.innerText =
-                    `${nJugadores} × $${fee.toFixed(2)} → bote $${pot} · máximo $${(total * fee).toFixed(2)}`;
                 // Plazas ocupadas y libres en vivo (ej. 2/10)
-                const ocupadas = nJugadores;
+                const total = gameState.maxPlayers || 10;
+                const ocupadas = Object.keys(gameState.players || {}).length;
                 mostrarPlazas(ocupadas, total);
-            }
-
-            // ── Banner "SOLO EN LA SALA · VICTORIA EN Xs" ──
-            const soloEl = document.getElementById("solo-banner");
-            if (soloEl) {
-                const st = gameState.soloTimer;
-                if (gameState.gameStarted && !isGameOver && typeof st === 'number' && st >= 0) {
-                    soloEl.style.display = "block";
-                    soloEl.innerText = `⏳ SOLO EN LA SALA · VICTORIA EN ${st}s`;
-                } else {
-                    soloEl.style.display = "none";
-                }
-            }
-
-            // ── Bote en vivo también durante la partida ──
-            const potEl = document.getElementById("hud-pot");
-            if (potEl) {
-                const nJug = Object.keys(gameState.players || {}).length;
-                const feeHud = Number(gameState.entryFee) || 0;
-                potEl.innerText = `$${(nJug * feeHud).toFixed(2)} USD`;
             }
 
             if (isDead && !isGameOver) {
@@ -2926,37 +2815,10 @@
                 ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2; ctx.stroke();
             });
 
-            // Speed Pads (turbo) con chevrones animados
+            // Speed Pads
             (gameState.speedPads || []).forEach(pad => {
-                ctx.fillStyle = 'rgba(250, 204, 21, 0.16)';
-                ctx.fillRect(pad.x, pad.y, pad.w, pad.h);
-                ctx.strokeStyle = '#facc15'; ctx.lineWidth = 2; ctx.strokeRect(pad.x, pad.y, pad.w, pad.h);
-                const fase = (Date.now() / 280) % 3;
-                ctx.strokeStyle = 'rgba(253, 224, 71, 0.9)'; ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
-                for (let i = 0; i < 3; i++) {
-                    const off = ((i - fase + 3) % 3) / 3;
-                    const cxp = pad.x + pad.w * (0.2 + off * 0.6);
-                    ctx.beginPath();
-                    ctx.moveTo(cxp - 6, pad.y + 4);
-                    ctx.lineTo(cxp + 6, pad.y + pad.h / 2);
-                    ctx.lineTo(cxp - 6, pad.y + pad.h - 4);
-                    ctx.stroke();
-                }
-            });
-
-            // Muros destructibles (daño con balas)
-            (gameState.walls || []).forEach(wl => {
-                if (wl.hp <= 0) return;
-                ctx.fillStyle = '#475569';
-                ctx.fillRect(wl.x, wl.y, wl.w, wl.h);
-                ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 2; ctx.strokeRect(wl.x, wl.y, wl.w, wl.h);
-                const pctW = (wl.hp || 0) / (wl.maxHp || 30);
-                if (pctW < 1) {
-                    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-                    ctx.fillRect(wl.x, wl.y - 10, wl.w, 6);
-                    ctx.fillStyle = pctW > 0.5 ? '#22c55e' : pctW > 0.25 ? '#f59e0b' : '#ef4444';
-                    ctx.fillRect(wl.x, wl.y - 10, wl.w * pctW, 6);
-                }
+                ctx.fillStyle = 'rgba(56, 189, 248, 0.25)'; ctx.fillRect(pad.x, pad.y, pad.w, pad.h);
+                ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2; ctx.strokeRect(pad.x, pad.y, pad.w, pad.h);
             });
 
             // Tiendas
@@ -2989,50 +2851,10 @@
                 ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 3; ctx.stroke();
             }
 
-            // Airdrops: caída con objetivo marcado (~4 s) → caja en el suelo
-            // con vida; hay que dispararle para abrir el botín.
+            // Airdrops
             (gameState.airdrops || []).forEach(ad => {
-                const r = ad.radius || 40;
-                if (!ad.landed) {
-                    // Objetivo marcado en el suelo (punteado, con pulso)
-                    const pulso = 1 + 0.08 * Math.sin(Date.now() / 150);
-                    ctx.strokeStyle = 'rgba(250, 204, 21, 0.85)';
-                    ctx.lineWidth = 3;
-                    ctx.setLineDash([14, 10]);
-                    ctx.beginPath(); ctx.arc(ad.x, ad.y, (r + 12) * pulso, 0, Math.PI * 2); ctx.stroke();
-                    ctx.setLineDash([]);
-                    // Caja cayendo
-                    const prog = Math.max(0, Math.min(1, 1 - (ad.landTimer || 0) / 240));
-                    const drop = (1 - prog) * 1500;
-                    const size = r * (0.55 + 0.45 * prog);
-                    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-                    ctx.beginPath(); ctx.ellipse(ad.x, ad.y, r * 0.8 * prog, r * 0.3 * prog, 0, 0, Math.PI * 2); ctx.fill();
-                    ctx.fillStyle = '#facc15';
-                    ctx.fillRect(ad.x - size, ad.y - drop - size, size * 2, size * 2);
-                    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3;
-                    ctx.strokeRect(ad.x - size, ad.y - drop - size, size * 2, size * 2);
-                    return;
-                }
-                // Caja aterrizada (parpadea cuando está por caducar)
-                const porCaducar = (ad.age || 0) > 950;
-                ctx.fillStyle = '#facc15';
-                ctx.fillRect(ad.x - r, ad.y - r, r * 2, r * 2);
-                ctx.strokeStyle = porCaducar
-                    ? `rgba(239, 68, 68, ${0.5 + 0.5 * Math.sin(Date.now() / 120)})`
-                    : '#ffffff';
-                ctx.lineWidth = 3;
-                ctx.strokeRect(ad.x - r, ad.y - r, r * 2, r * 2);
-                // Barra de vida de la caja
-                const wBar = r * 2;
-                const pctA = Math.max(0, (ad.hp || 0) / (ad.maxHp || 60));
-                ctx.fillStyle = 'rgba(0,0,0,0.6)';
-                ctx.fillRect(ad.x - wBar / 2, ad.y - r - 16, wBar, 8);
-                ctx.fillStyle = pctA > 0.5 ? '#22c55e' : pctA > 0.25 ? '#f59e0b' : '#ef4444';
-                ctx.fillRect(ad.x - wBar / 2, ad.y - r - 16, wBar * pctA, 8);
-                ctx.fillStyle = '#fcd34d';
-                ctx.font = 'bold 14px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillText('DISPÁRALE PARA ABRIR', ad.x, ad.y - r - 26);
+                ctx.fillStyle = '#facc15'; ctx.fillRect(ad.x - ad.radius, ad.y - ad.radius, ad.radius * 2, ad.radius * 2);
+                ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.strokeRect(ad.x - ad.radius, ad.y - ad.radius, ad.radius * 2, ad.radius * 2);
             });
 
             // Obstáculos
@@ -3150,16 +2972,6 @@
                     ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2; ctx.stroke();
                     ctx.shadowBlur = 0;
                 }
-                // Aura dorada del turbo
-                if (p.turboTimer > 0) {
-                    ctx.shadowBlur = 24;
-                    ctx.shadowColor = '#facc15';
-                    ctx.beginPath(); ctx.arc(p.x, p.y, p.radius + 6, 0, Math.PI * 2);
-                    ctx.strokeStyle = 'rgba(250, 204, 21, 0.9)'; ctx.lineWidth = 3; ctx.stroke();
-                    ctx.shadowBlur = 0;
-                    ctx.beginPath(); ctx.arc(p.x, p.y, p.radius + 12 + 3 * Math.sin(Date.now() / 90), 0, Math.PI * 2);
-                    ctx.strokeStyle = 'rgba(253, 224, 71, 0.35)'; ctx.lineWidth = 2; ctx.stroke();
-                }
 
                 ctx.beginPath(); ctx.moveTo(p.x, p.y);
                 ctx.lineTo(p.x + Math.cos(p.angle) * (p.radius + 12), p.y + Math.sin(p.angle) * (p.radius + 12));
@@ -3209,7 +3021,7 @@
             });
         }
 
-        function finalizarJuego(ranking, data) {
+        function finalizarJuego(ranking) {
             const posicionJugador = ranking.findIndex(e => e.id === myPlayerId) + 1;
             const primerLugar = ranking[0];
 
@@ -3217,21 +3029,10 @@
             const subtextEl = document.getElementById("death-subtext");
             const cardEl = document.getElementById("death-card-container");
 
-            // Premio neto real: 80% del pozo (comisión del 20% ya descontada)
-            const entryFee = Number((data && data.entryFee) || (gameState && gameState.entryFee) || 0);
-            const neto = Number((data && data.premioNeto) !== undefined && data.premioNeto !== null
-                ? data.premioNeto
-                : +(ranking.length * entryFee * 0.8).toFixed(2));
-
-            if (data && data.abandono && posicionJugador === 1) {
-                titleEl.innerText = "¡VICTORIA POR ABANDONO! 🏆";
-                titleEl.style.color = "#22c55e";
-                subtextEl.innerText = `Los demás mercenarios abandonaron la sala. Reclamas el bote neto de $${neto.toFixed(2)} USD (comisión del 20% ya descontada) con ${primerLugar.bankedScore} pts asegurados.`;
-                cardEl.className = "death-card win-card";
-            } else if (posicionJugador === 1) {
+            if (posicionJugador === 1) {
                 titleEl.innerText = "¡VICTORIA TÁCTICA! 🎉";
                 titleEl.style.color = "#22c55e";
-                subtextEl.innerText = `¡Dominaste la partida! Quedaste en 1.° Lugar asegurando ${primerLugar.bankedScore} pts en el Banco y reclamas el premio neto de $${neto.toFixed(2)} USD (80% del bote, comisión ya descontada).`;
+                subtextEl.innerText = `¡Dominaste la partida! Quedaste en 1.° Lugar asegurando ${primerLugar.bankedScore} pts en el Banco y reclamas el bote de $${roomPot} USD.`;
                 cardEl.className = "death-card win-card";
             } else {
                 titleEl.innerText = "PARTIDA FINALIZADA - DERROTA ❌";

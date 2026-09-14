@@ -300,6 +300,12 @@
         .badge-tipo.es-privada { background: rgba(245, 158, 11, .1); color: var(--amber); border-color: rgba(245, 158, 11, .35); }
 
         .sala-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        .sala-pozo-detalle {
+            margin-top: 8px;
+            font-size: 11px;
+            color: #94a3b8;
+            letter-spacing: .3px;
+        }
         .stat {
             background: rgba(2, 6, 17, .55);
             border: 1px solid rgba(148, 163, 184, .12);
@@ -591,6 +597,7 @@
                             <span class="stat-value">$${escapeHTML(parseFloat(sala.pozoActual || 0).toFixed(2))}</span>
                         </div>
                     </div>
+                    <div class="sala-pozo-detalle">${escapeHTML(sala.jugadoresConectados || 0)} × $${escapeHTML(parseFloat(sala.precioEntrada || 0).toFixed(2))} → bote $${escapeHTML(parseFloat(sala.pozoActual || 0).toFixed(2))} · máximo $${escapeHTML(parseFloat(((sala.maxJugadores || 0) * (sala.precioEntrada || 0))).toFixed(2))}</div>
                     <button class="btn-unirse"
                         data-sala="${escapeHTML(sala.id)}"
                         data-privada="${sala.esPrivada ? '1' : '0'}"
