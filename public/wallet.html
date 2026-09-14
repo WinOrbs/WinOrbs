@@ -511,38 +511,77 @@
       $("btn-retiro").disabled = false;
     });
 
-    // ── HISTORIAL (solo mis solicitudes) ──
-    onAuthStateChanged(auth, (user) => {
-      if (!user) return;
-      onSnapshot(query(collection(db, "pagos"), where("usuarioId", "==", user.uid)), (snapshot) => {
-        const items = [];
-        snapshot.forEach((d) => items.push(d.data()));
-        items.sort((a, b) => ((b.fecha && b.fecha.seconds) || 0) - ((a.fecha && a.fecha.seconds) || 0));
+    // ── HISTORIAL: últimos 10 movimientos de la cuenta ──
+    // Unifica: movimientos escritos por el SERVIDOR (premio/entrada/reembolso/skin)
+    // + solicitudes propias de pagos (depósito/retiro). Solo se muestran los
+    // últimos 10, así el jugador ve si su saldo fue acreditado, cobrado, etc.
+    let economyWallet = false;
+    socket.on('serverConfig', (cfg) => { economyWallet = !!(cfg && cfg.economy); });
 
-        const lista = $("lista-historial");
-        lista.innerHTML = "";
-        if (items.length === 0) {
-          $("hist-vacio").textContent = "Aún no tienes solicitudes.";
-          return;
+    const LABELS_MOV = {
+        premio: { t: '🏆 Premio', cls: 'dep' },
+        recarga: { t: '↑ Recarga', cls: 'dep' },
+        reembolso: { t: '↩ Reembolso', cls: 'dep' },
+        entrada: { t: '↓ Entrada a sala', cls: 'ret' },
+        retiro: { t: '↓ Retiro', cls: 'ret' },
+        skin: { t: '↓ Skin', cls: 'ret' },
+        deposito: { t: '↑ Depósito', cls: 'dep' }
+    };
+
+    onAuthStateChanged(auth, (user) => {
+        if (!user) return;
+
+        let movs = [];   // movimientos del servidor (modo economía)
+        let sols = [];   // solicitudes propias de pagos
+        function renderHistorial() {
+            let items = economyWallet
+                ? movs.concat(sols.filter(p => p.estado !== 'aprobado' && p.estado !== 'pagado'))
+                : sols;
+            items = items.sort((a, b) => ((b.fecha && b.fecha.seconds) || 0) - ((a.fecha && a.fecha.seconds) || 0)).slice(0, 10);
+
+            const lista = $("lista-historial");
+            lista.innerHTML = "";
+            if (items.length === 0) {
+                $("hist-vacio").textContent = "Aún no tienes movimientos.";
+                return;
+            }
+            $("hist-vacio").textContent = "";
+            items.forEach((p) => {
+                const li = document.createElement("li");
+                const fecha = p.fecha && p.fecha.seconds
+                    ? new Date(p.fecha.seconds * 1000).toLocaleString("es-VE", { dateStyle: "short", timeStyle: "short" })
+                    : "—";
+                const lbl = LABELS_MOV[p.tipo] || { t: p.tipo, cls: p.monto >= 0 ? 'dep' : 'ret' };
+                const esSolicitud = p.tipo === 'deposito' || ((p.tipo === 'retiro' || p.tipo === 'premio') && p.estado);
+                const monto = Number(p.monto || 0);
+                const montoTxt = (esSolicitud ? '' : (monto >= 0 ? '+' : '−')) + '$' + Math.abs(monto).toFixed(2);
+                li.innerHTML =
+                    '<span class="tipo ' + lbl.cls + '">' + lbl.t + ' ' + montoTxt +
+                    (p.tipo === 'retiro' && p.neto ? ' <small>· neto $' + Number(p.neto).toFixed(2) + "</small>" : "") +
+                    "</span>" +
+                    "<small>" + (p.detalle || p.metodo || "") + " · " + fecha + (p.comprobanteUrl ? " · 📎" : "") + "</small>" +
+                    '<span class="estado ' + (p.estado || "aprobado") + '">' + (p.estado || "acreditado") + "</span>";
+                lista.appendChild(li);
+            });
         }
-        $("hist-vacio").textContent = "";
-        items.slice(0, 15).forEach((p) => {
-          const li = document.createElement("li");
-          const fecha = p.fecha && p.fecha.seconds
-            ? new Date(p.fecha.seconds * 1000).toLocaleString("es-VE", { dateStyle: "short", timeStyle: "short" })
-            : "—";
-          li.innerHTML =
-            '<span class="tipo ' + (p.tipo === "retiro" ? "ret" : "dep") + '">' +
-            (p.tipo === "retiro" ? "Retiro" : "Depósito") + " $" + Number(p.monto || 0).toFixed(2) +
-            (p.tipo === "retiro" && p.neto ? ' <small>· neto $' + Number(p.neto).toFixed(2) + "</small>" : "") +
-            "</span>" +
-            "<small>" + (p.metodo || "") + " · " + fecha + (p.comprobanteUrl ? " · 📎" : "") + "</small>" +
-            '<span class="estado ' + (p.estado || "pendiente") + '">' + (p.estado || "pendiente") + "</span>";
-          lista.appendChild(li);
+
+        // Modo economía: escucha movimientos del servidor
+        onSnapshot(query(collection(db, "movimientos"), where("usuarioId", "==", user.uid)), (snapshot) => {
+            movs = [];
+            snapshot.forEach((d) => movs.push(d.data()));
+            renderHistorial();
+        }, (e) => {
+            console.warn("movimientos sin permiso (¿reglas publicadas?):", e.code);
         });
-      }, (e) => {
-        $("hist-vacio").textContent = "Sin permiso para el historial. ¿Reglas publicadas? (" + (e.code || "") + ")";
-      });
+
+        // Solicitudes propias (pagos): visibles siempre; en economía solo las NO aprobadas
+        onSnapshot(query(collection(db, "pagos"), where("usuarioId", "==", user.uid)), (snapshot) => {
+            sols = [];
+            snapshot.forEach((d) => sols.push(d.data()));
+            renderHistorial();
+        }, (e) => {
+            $("hist-vacio").textContent = "Sin permiso para el historial. ¿Reglas publicadas? (" + (e.code || "") + ")";
+        });
     });
   </script>
 </body>

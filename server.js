@@ -173,6 +173,13 @@ async function servidorComprarSkin(uid, skinId) {
                 skins_compradas: firebaseAdmin.firestore.FieldValue.arrayUnion(skinId),
                 skin_equipada: skinId
             });
+            // Historial: compra de skin
+            t.set(FIREBASE_DB.collection('movimientos').doc(), {
+                usuarioId: uid, tipo: 'skin', monto: -precio,
+                detalle: 'Compra de skin: ' + String(ss.data().nombre || skinId).slice(0, 40),
+                refId: skinId,
+                fecha: firebaseAdmin.firestore.FieldValue.serverTimestamp()
+            });
             return { ok: true, saldo: nuevoSaldo, skin: { id: skinId, ...ss.data() } };
         });
     } catch (e) {
@@ -184,32 +191,31 @@ async function servidorComprarSkin(uid, skinId) {
 async function servidorCobrarEntrada(uid, salaId, monto) {
     if (!FIREBASE_ECONOMY || !FIREBASE_DB || !uid || !(monto > 0)) return { ok: false, error: 'ECONOMY_OFF' };
     try {
-        // Idempotencia: si ya pagaste entrada cobrada en esta sala recientemente, no recobrar
-        const qs = await FIREBASE_DB.collection('entradas')
-            .where('usuarioId', '==', uid)
-            .where('salaId', '==', salaId)
-            .where('estado', '==', 'cobrada')
-            .limit(5).get();
-        if (!qs.empty) {
-            for (const doc of qs.docs) {
-                const f = doc.data().fecha;
-                const ts = f && f.toMillis ? f.toMillis() : 0;
-                if (Date.now() - ts < 10 * 60 * 1000) {
-                    return { ok: true, entradasId: doc.id, yaExistia: true };
-                }
-            }
-        }
+        // Idempotencia ATÓMICA: documento con ID determinista por (uid, sala).
+        // Dos joins concurrentes ejecutan la MISMA transacción → un solo cobro.
         return await FIREBASE_DB.runTransaction(async (t) => {
             const refP = FIREBASE_DB.collection('usuarios').doc(uid);
-            const snap = await t.get(refP);
+            const refEnt = FIREBASE_DB.collection('entradas').doc('ent_' + uid + '_' + salaId);
+            const [snap, snapE] = await Promise.all([t.get(refP), t.get(refEnt)]);
+
+            // Ya cobrada → reutilizar (sin doble cobro)
+            if (snapE.exists && snapE.data().estado === 'cobrada') {
+                return { ok: true, entradasId: refEnt.id, yaExistia: true };
+            }
             if (!snap.exists) return { ok: false, error: 'NO_PROFILE' };
             const saldo = Number(snap.data().saldo || 0);
             if (saldo < monto) return { ok: false, error: 'SALDO_INSUFICIENTE' };
+
             t.update(refP, { saldo: +(saldo - monto).toFixed(2) });
-            const refEnt = FIREBASE_DB.collection('entradas').doc();
             t.set(refEnt, {
                 usuarioId: uid, salaId: salaId, monto: monto,
                 estado: 'cobrada', fecha: firebaseAdmin.firestore.FieldValue.serverTimestamp()
+            });
+            // Historial de movimientos (últimos 10 en la wallet), atómico con el cobro
+            t.set(FIREBASE_DB.collection('movimientos').doc(), {
+                usuarioId: uid, tipo: 'entrada', monto: -monto,
+                detalle: 'Entrada a la sala ' + salaId, refId: refEnt.id,
+                fecha: firebaseAdmin.firestore.FieldValue.serverTimestamp()
             });
             return { ok: true, entradasId: refEnt.id };
         });
@@ -235,6 +241,13 @@ async function servidorReembolsar(uid, entradasId, monto) {
             if (sU.exists) {
                 const saldo = Number(sU.data().saldo || 0);
                 t.update(refU, { saldo: +(saldo + Number(monto || 0)).toFixed(2) });
+                // Historial: reembolso acreditado
+                t.set(FIREBASE_DB.collection('movimientos').doc(), {
+                    usuarioId: uid, tipo: 'reembolso', monto: +Number(monto || 0).toFixed(2),
+                    detalle: 'Reembolso de entrada · sala ' + (sE.data().salaId || '—'),
+                    refId: entradasId,
+                    fecha: firebaseAdmin.firestore.FieldValue.serverTimestamp()
+                });
             }
         });
     } catch (e) {
@@ -277,6 +290,13 @@ async function servidorPagarPremio(room, gameId, abandono = false) {
                 if (sU.exists) {
                     const saldo = Number(sU.data().saldo || 0);
                     t.update(refU, { saldo: +(saldo + neto).toFixed(2) });
+                    // Historial: premio acreditado al disponible del ganador
+                    t.set(FIREBASE_DB.collection('movimientos').doc(), {
+                        usuarioId: ganadorUid, tipo: 'premio', monto: neto,
+                        detalle: 'Premio de la partida ' + gameId + ' · sala ' + room.id,
+                        refId: gameId,
+                        fecha: firebaseAdmin.firestore.FieldValue.serverTimestamp()
+                    });
                 }
             }
         });
@@ -1272,6 +1292,7 @@ class GameRoom {
             lobbyActive: this.lobbyActive,
             countdown: this.countdown,
             gameStarted: this.gameStarted,
+            pozoTotal: this.pozoTotal,
             maxPlayers: this.maxPlayers,
             entryFee: this.entryFee
         };

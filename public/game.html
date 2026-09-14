@@ -2823,12 +2823,17 @@
                 }
             }
 
-            // ── Bote en vivo también durante la partida ──
+            // ── Bote: ESTÁTICO durante la partida/lobby (no baja con abandonos);
+            // en vivo (inscritos × entrada) solo mientras se inscriben. ──
             const potEl = document.getElementById("hud-pot");
             if (potEl) {
                 const nJug = Object.keys(gameState.players || {}).length;
                 const feeHud = Number(gameState.entryFee) || 0;
-                potEl.innerText = `$${(nJug * feeHud).toFixed(2)} USD`;
+                const enJuego = gameState.gameStarted || gameState.lobbyActive;
+                const pozo = enJuego && Number(gameState.pozoTotal) > 0
+                    ? Number(gameState.pozoTotal)
+                    : +(nJug * feeHud).toFixed(2);
+                potEl.innerText = `$${Number(pozo).toFixed(2)} USD`;
             }
 
             if (isDead && !isGameOver) {

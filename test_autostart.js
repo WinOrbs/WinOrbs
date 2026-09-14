@@ -78,6 +78,11 @@ async function run() {
     log(`Banner "SOLO EN LA SALA" visible (soloWarning=${JSON.stringify(solo1)})`,
         soloWarningVisto && s1 && s1.gameStarted);
 
+    // Bote ESTÁTICO visible en partida: no baja aunque quede un solo jugador
+    const feeSala = (gameOverData && gameOverData.entryFee) || 2;
+    log(`Bote estático en gameState (pozoTotal=${s1 && s1.pozoTotal})`,
+        s1 && s1.gameStarted && Math.abs((s1.pozoTotal || 0) - 3 * 2) < 0.005);
+
     const t0 = Date.now();
     while (!gameOverData && Date.now() - t0 < 16000) await wait(300);
     log(`gameOver por abandono (abandono=${gameOverData && gameOverData.abandono}, lb=${gameOverData && gameOverData.leaderboard && gameOverData.leaderboard.length})`,

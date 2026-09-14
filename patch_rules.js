@@ -134,6 +134,23 @@ service cloud.firestore {
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }
+
+    // ── Historial de movimientos de saldo (últimos 10 en la wallet) ──
+    // Escrito por el SERVIDOR (Admin SDK, bypasa reglas) y por el ADMIN al
+    // aprobar recargas/retiros. El jugador solo LEE los suyos: es informativo
+    // y NUNCA mueve saldo por sí mismo.
+    match /movimientos/{id} {
+      allow read: if request.auth != null && (isAdmin() || resource.data.usuarioId == request.auth.uid);
+      allow create: if isAdmin()
+                    && request.resource.data.usuarioId is string
+                    && request.resource.data.usuarioId != ''
+                    && request.resource.data.tipo in ['premio', 'recarga', 'reembolso', 'entrada', 'retiro', 'skin']
+                    && request.resource.data.monto is number
+                    && request.resource.data.monto != 0
+                    && request.resource.data.monto >= -10000
+                    && request.resource.data.monto <= 10000;
+      allow update, delete: if isAdmin();
+    }
   }
 }
 `;
