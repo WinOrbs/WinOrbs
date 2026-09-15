@@ -156,6 +156,12 @@
         ];
 
         const socket = io(window.SERVIDOR_URL || undefined);
+        // El servidor anuncia su modo al conectar: true = cobra entradas y paga
+        // premios vía Admin SDK (sin esto, __economyMode queda indefinido y la
+        // tienda bloquearía TODAS las compras aunque el modo economía esté activo).
+        socket.on('serverConfig', (cfg) => {
+            window.__economyMode = !!(cfg && cfg.economy);
+        });
         window.__saldo = 0;
         window.__inventario = [];
         window.__skinsTienda = [];
