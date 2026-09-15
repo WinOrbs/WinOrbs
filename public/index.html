@@ -237,7 +237,9 @@
             margin: 0 auto 9px auto;
             box-shadow: 0 6px 16px rgba(0, 0, 0, .5), inset 0 -5px 12px rgba(0, 0, 0, .28);
             animation: skinFloat 3.4s ease-in-out infinite;
+            position: relative; overflow: hidden;
         }
+        .skin-preview img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
         .skin-card:nth-child(2) .skin-preview { animation-delay: .35s; }
         .skin-card:nth-child(3) .skin-preview { animation-delay: .7s; }
         .skin-card:nth-child(4) .skin-preview { animation-delay: 1.05s; }
@@ -545,27 +547,30 @@
                 <label>Elige tu Skin (Aspecto)</label>
                 <div class="skins-grid">
                     <div class="skin-card selected"
+                        data-bas="cielo"
                         onclick="seleccionarSkin('cielo', '#38bdf8', '#0284c7', '#bae6fd', this)">
                         <div class="skin-preview" style="background: radial-gradient(circle at 30% 30%, #38bdf8, #0284c7);">
                         </div>
                         <div class="skin-name">Cielo</div>
                     </div>
-                    <div class="skin-card" onclick="seleccionarSkin('fuego', '#f97316', '#c2410c', '#ffedd5', this)">
+                    <div class="skin-card" data-bas="fuego" onclick="seleccionarSkin('fuego', '#f97316', '#c2410c', '#ffedd5', this)">
                         <div class="skin-preview" style="background: radial-gradient(circle at 30% 30%, #f97316, #c2410c);">
                         </div>
                         <div class="skin-name">Fuego</div>
                     </div>
-                    <div class="skin-card" onclick="seleccionarSkin('neon', '#a855f7', '#6b21a8', '#f3e8ff', this)">
+                    <div class="skin-card" data-bas="neon" onclick="seleccionarSkin('neon', '#a855f7', '#6b21a8', '#f3e8ff', this)">
                         <div class="skin-preview" style="background: radial-gradient(circle at 30% 30%, #a855f7, #6b21a8);">
                         </div>
                         <div class="skin-name">Neón</div>
                     </div>
-                    <div class="skin-card" onclick="seleccionarSkin('esmeralda', '#22c55e', '#15803d', '#dcfce7', this)">
+                    <div class="skin-card" data-bas="esmeralda" onclick="seleccionarSkin('esmeralda', '#22c55e', '#15803d', '#dcfce7', this)">
                         <div class="skin-preview" style="background: radial-gradient(circle at 30% 30%, #22c55e, #15803d);">
                         </div>
                         <div class="skin-name">Esmeralda</div>
                     </div>
                 </div>
+                <!-- Skins compradas en la Tienda (se rellenan en vivo desde Firestore) -->
+                <div class="skins-grid" id="skins-compradas" style="display:none; margin-top:10px;"></div>
             </div>
 
             <p class="config-foot">Tu apodo y tu skin viajan contigo a la arena.</p>
@@ -658,10 +663,90 @@
             if (eq && eq.c1) window.skinSeleccionada = eq;
         } catch (e) { }
 
-        window.seleccionarSkin = function (nombre, c1, c2, border, el) {
+        // Skins básicas del lobby (idénticas al servidor; se eligen por nombre normalizado)
+        const SKINS_LOBBY_BASICAS = {
+            cielo: { nombre: 'cielo', c1: '#38bdf8', c2: '#0284c7', border: '#bae6fd' },
+            fuego: { nombre: 'fuego', c1: '#f97316', c2: '#c2410c', border: '#ffedd5' },
+            neon: { nombre: 'neon', c1: '#a855f7', c2: '#6b21a8', border: '#f3e8ff' },
+            esmeralda: { nombre: 'esmeralda', c1: '#22c55e', c2: '#15803d', border: '#dcfce7' }
+        };
+
+        // Aplica una skin (básica o comprada), marca su tarjeta y persiste en localStorage
+        window.__aplicarSkin = function (skin, cardEl) {
             document.querySelectorAll('.skin-card').forEach(c => c.classList.remove('selected'));
-            el.classList.add('selected');
-            window.skinSeleccionada = { nombre, c1, c2, border };
+            if (cardEl) cardEl.classList.add('selected');
+            window.skinSeleccionada = skin;
+            try { localStorage.setItem("mi_skin_equipada", JSON.stringify(skin)); } catch (e) { }
+        };
+
+        window.seleccionarSkin = function (nombre, c1, c2, border, el) {
+            window.__aplicarSkin({ nombre, c1, c2, border }, el);
+        };
+
+        // Pinta las skins COMPRADAS del jugador (catálogo Firestore + perfil en vivo)
+        window.renderSkinsCompradas = function () {
+            const cont = document.getElementById("skins-compradas");
+            if (!cont) return;
+            const perfil = window.__perfilLobby || null;
+            const compradas = (perfil && Array.isArray(perfil.skins_compradas)) ? perfil.skins_compradas : [];
+            const mias = (window.__catalogoSkins || []).filter(s => compradas.includes(s.id));
+            cont.innerHTML = "";
+            window.__cardsCompradas = {};
+            if (!mias.length) { cont.style.display = "none"; return; }
+            const hex = (v, f) => (/^#[0-9a-fA-F]{3,8}$/.test(String(v || '')) ? v : f);
+            mias.forEach((sk) => {
+                const card = document.createElement("div");
+                card.className = "skin-card" +
+                    (window.skinSeleccionada && window.skinSeleccionada.id === sk.id ? " selected" : "");
+                const prev = document.createElement("div");
+                prev.className = "skin-preview";
+                prev.style.background = "radial-gradient(circle at 30% 30%, " + hex(sk.c1, '#38bdf8') + ", " + hex(sk.c2, '#0284c7') + ")";
+                if (sk.imagenUrl) {
+                    const img = document.createElement("img");
+                    img.src = sk.imagenUrl;
+                    img.alt = "";
+                    img.onerror = () => img.remove(); // fallback: círculo de colores
+                    prev.appendChild(img);
+                }
+                const nom = document.createElement("div");
+                nom.className = "skin-name";
+                nom.textContent = sk.nombre;
+                card.appendChild(prev);
+                card.appendChild(nom);
+                card.addEventListener("click", () => {
+                    window.__aplicarSkin({
+                        id: sk.id, nombre: sk.nombre,
+                        c1: hex(sk.c1, '#38bdf8'), c2: hex(sk.c2, '#0284c7'),
+                        border: hex(sk.border, '#bae6fd'), imagenUrl: sk.imagenUrl || ''
+                    }, card);
+                });
+                window.__cardsCompradas[sk.id] = card;
+                cont.appendChild(card);
+            });
+            cont.style.display = "";
+        };
+
+        // Auto-selecciona la skin equipada guardada en el PERFIL (persistente entre
+        // dispositivos). El perfil manda sobre localStorage.
+        window.aplicarSkinEquipadaDePerfil = function () {
+            const perfil = window.__perfilLobby;
+            if (!perfil) return;
+            const idEq = String(perfil.skin_equipada || "");
+            if (!idEq) return;
+            const actual = window.skinSeleccionada || {};
+            if (actual.id === idEq) return; // ya está aplicada
+            const m = /^bas-(cielo|fuego|neon|esmeralda)$/.exec(idEq);
+            if (m) {
+                const clave = m[1];
+                const card = document.querySelector('.skin-card[data-bas="' + clave + '"]');
+                if (card) window.__aplicarSkin(Object.assign({}, SKINS_LOBBY_BASICAS[clave]), card);
+                return;
+            }
+            // Skin comprada: solo si está en el inventario del propio perfil
+            const compradas = Array.isArray(perfil.skins_compradas) ? perfil.skins_compradas : [];
+            if (!compradas.includes(idEq)) return;
+            const card = (window.__cardsCompradas || {})[idEq];
+            if (card) card.click();
         };
 
         // Escuchar actualización de salas en tiempo real desde server.js
@@ -978,12 +1063,40 @@
 
                 const nick = document.getElementById("player-nickname");
                 if (nick && p.apodo) nick.value = p.apodo;
+
+                // Skins compradas + skin equipada persistida en el perfil
+                // (multi-dispositivo: el perfil manda sobre localStorage)
+                window.__perfilLobby = p;
+                if (window.renderSkinsCompradas) window.renderSkinsCompradas();
+                if (window.aplicarSkinEquipadaDePerfil) window.aplicarSkinEquipadaDePerfil();
             }, (e) => {
                 if (!window.__avisoReglas) {
                     window.__avisoReglas = true;
                     alert("No se pudo leer tu saldo (" + (e.code || "") + ").\n\nPublica las reglas de firestore.rules con tu UID o email dentro de isAdmin().");
                 }
             });
+
+            // Catálogo de skins de la tienda (para pintar las compradas en el lobby)
+            onSnapshot(collection(db, "skins"), (snap) => {
+                const lista = [];
+                const hex = (v, f) => (/^#[0-9a-fA-F]{3,8}$/.test(String(v || '')) ? v : f);
+                snap.forEach((d) => {
+                    const s = d.data();
+                    if (!s.activo) return;
+                    lista.push({
+                        id: d.id,
+                        nombre: String(s.nombre || 'Skin').replace(/[<>&"']/g, '').slice(0, 32),
+                        precio: Number(s.precio || 0),
+                        c1: hex(s.c1, '#38bdf8'),
+                        c2: hex(s.c2, '#0284c7'),
+                        border: hex(s.border, '#bae6fd'),
+                        imagenUrl: /^https:\/\/[^\s'"<>]{10,500}$/i.test(String(s.imagenUrl || '')) ? String(s.imagenUrl) : ''
+                    });
+                });
+                window.__catalogoSkins = lista;
+                if (window.renderSkinsCompradas) window.renderSkinsCompradas();
+                if (window.aplicarSkinEquipadaDePerfil) window.aplicarSkinEquipadaDePerfil();
+            }, () => { /* sin permiso de lectura: el lobby solo muestra las básicas */ });
         });
 
         // Navegación: Perfil / Wallet / Salir

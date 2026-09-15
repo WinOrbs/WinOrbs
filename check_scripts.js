@@ -12,7 +12,11 @@ for (const page of pages) {
     const re = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
     let m;
     while ((m = re.exec(html)) !== null) {
-        if (/src\s*=/.test(m[0])) continue; // scripts externos
+        // scripts externos: solo cuenta si el atributo src está en la ETIQUETA de
+        // apertura (antes el filtro miraba todo el bloque y saltaba también los
+        // inline que contienen "src =" en su código, p.ej. img.src = ...)
+        const etiqueta = m[0].slice(0, m[0].indexOf('>') + 1);
+        if (/src\s*=/.test(etiqueta)) continue;
         blocks.push(m[1]);
     }
     let pageOk = true;

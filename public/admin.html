@@ -347,6 +347,12 @@
                 <div class="form-group">
                     <label>URL de Imagen (se rellena al subir, o pega un enlace directo)</label>
                     <input type="text" id="skin-url" placeholder="https://firebasestorage.googleapis.com/...">
+                    <!-- Vista previa en vivo: imagen real (con fallback al círculo de colores) -->
+                    <div id="skin-preview" style="margin-top:10px; display:flex; align-items:center; gap:12px;">
+                        <img id="skin-preview-img" alt="Vista previa de la skin" style="width:60px;height:60px;border-radius:50%;object-fit:cover;border:2px solid #334155;display:none;">
+                        <div id="skin-preview-orb" style="width:60px;height:60px;border-radius:50%;"></div>
+                        <small id="skin-preview-nota" style="color:#94a3b8;font-size:12px;">Así la verán los jugadores en la arena (y en la Tienda).</small>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>Color Principal (c1)</label>
@@ -828,7 +834,8 @@ const colorTipo = esRetiro ? '#ef4444' : esPremio ? '#f59e0b' : '#22c55e';
                     try {
                         const url = await getDownloadURL(tarea.snapshot.ref);
                         document.getElementById("skin-url").value = url;
-                        texto.innerText = "✅ Imagen subida — URL vinculada al campo de abajo";
+                        window.actualizarPreviewSkin();
+                        texto.innerText = "✅ Imagen subida y disponible para los jugadores — URL vinculada abajo";
                         fill.style.width = "100%";
                         setTimeout(() => { wrap.style.display = "none"; }, 4000);
                     } catch (e) {
@@ -837,6 +844,36 @@ const colorTipo = esRetiro ? '#ef4444' : esPremio ? '#f59e0b' : '#22c55e';
                 }
             );
         };
+
+        // Vista previa de la skin en el formulario: muestra la imagen real si la URL
+        // es válida (PNG/JPG/GIF/WEBP) y cae al círculo de colores si falla la carga.
+        window.actualizarPreviewSkin = function () {
+            const url = document.getElementById("skin-url").value.trim();
+            const c1 = document.getElementById("skin-c1").value;
+            const c2 = document.getElementById("skin-c2").value;
+            const border = document.getElementById("skin-border").value;
+            const img = document.getElementById("skin-preview-img");
+            const orb = document.getElementById("skin-preview-orb");
+            orb.style.background = `radial-gradient(circle at 30% 30%, ${c1}, ${c2})`;
+            orb.style.border = `2px solid ${border}`;
+            img.onerror = () => { img.style.display = "none"; orb.style.display = "block"; };
+            img.onload = () => { img.style.display = "block"; orb.style.display = "none"; };
+            if (/^https:\/\/[^\s'"<>]{10,500}$/i.test(url)) {
+                img.src = url;
+                img.style.display = "block";
+                orb.style.display = "none";
+            } else {
+                img.removeAttribute("src");
+                img.style.display = "none";
+                orb.style.display = "block";
+            }
+        };
+        document.getElementById("skin-url").addEventListener("input", window.actualizarPreviewSkin);
+        ["skin-c1", "skin-c2", "skin-border"].forEach((idInput) => {
+            document.getElementById(idInput).addEventListener("input", window.actualizarPreviewSkin);
+            document.getElementById(idInput).addEventListener("change", window.actualizarPreviewSkin);
+        });
+        window.actualizarPreviewSkin();
 
         // 3. MÓDULO SKINS (Firestore)
         window.crearSkin = async function() {
@@ -851,9 +888,10 @@ const colorTipo = esRetiro ? '#ef4444' : esPremio ? '#f59e0b' : '#22c55e';
 
             try {
                 await addDoc(collection(db, "skins"), { nombre, precio, imagenUrl: url, c1, c2, border, activo: true });
-                alert("Skin agregada a la tienda.");
+                alert("Skin agregada a la tienda. Ya está disponible para los jugadores.");
                 document.getElementById("skin-nombre").value = ""; 
                 document.getElementById("skin-url").value = "";
+                window.actualizarPreviewSkin();
             } catch(e) { alert("Error: " + e.message); }
         };
 
@@ -867,12 +905,20 @@ const colorTipo = esRetiro ? '#ef4444' : esPremio ? '#f59e0b' : '#22c55e';
 
             snapshot.forEach((docSnap) => {
                 const sk = docSnap.data();
-                const c1 = sk.c1 || '#38bdf8', c2 = sk.c2 || '#0284c7';
+                const c1 = escapeHTML(sk.c1 || '#38bdf8'), c2 = escapeHTML(sk.c2 || '#0284c7');
+                const borde = escapeHTML(sk.border || '#fff');
+                const nombreSkin = escapeHTML(sk.nombre || 'Skin');
+                const urlImg = /^https:\/\/[^\s'"<>]{10,500}$/i.test(String(sk.imagenUrl || '')) ? escapeHTML(String(sk.imagenUrl)) : '';
+                const orbColores = `<div style="width:32px;height:32px;border-radius:50%;background:radial-gradient(circle at 30% 30%, ${c1}, ${c2});border:2px solid ${borde}"></div>`;
+                // Miniatura real de la imagen; si falla la carga, cae al círculo de colores
+                const vista = urlImg
+                    ? `<img src="${urlImg}" alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover;border:2px solid ${borde};" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';"><div style="display:none;">${orbColores}</div>`
+                    : orbColores;
                 tabla.innerHTML += `
                     <tr>
-                        <td><div style="width:32px;height:32px;border-radius:50%;background:radial-gradient(circle at 30% 30%, ${c1}, ${c2});border:2px solid ${sk.border || '#fff'}"></div></td>
-                        <td><b>${sk.nombre}</b></td>
-                        <td>$${sk.precio} USD</td>
+                        <td>${vista}</td>
+                        <td><b>${nombreSkin}</b></td>
+                        <td>$${Number(sk.precio || 0)} USD</td>
                         <td><span class="toggle-switch ${sk.activo ? 'toggle-on' : 'toggle-off'}" onclick="toggleSkin('${docSnap.id}', ${!sk.activo})">${sk.activo ? 'ACTIVA' : 'INACTIVA'}</span></td>
                         <td><button class="btn btn-reject" onclick="eliminarSkin('${docSnap.id}')">Eliminar</button></td>
                     </tr>

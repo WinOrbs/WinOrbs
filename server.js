@@ -124,9 +124,16 @@ const SKIN_FALLBACK = { nombre: 'cielo', ...SKINS_BASICAS.cielo };
 async function validarSkinCliente(skin, uid) {
     try {
         if (!skin || typeof skin !== 'object') return SKIN_FALLBACK;
-        const nombre = String(skin.nombre || '').replace(/[<>&"'`]/g, '').trim().slice(0, 32);
+        // Nombre normalizado: sin acentos y en minúsculas ('Neón' → 'neon',
+        // 'Esmeralda' → 'esmeralda') para que las básicas coincidan siempre.
+        const nombreRaw = String(skin.nombre || '').replace(/[<>&"'`]/g, '').trim().slice(0, 32);
+        const nombre = nombreRaw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
         if (SKINS_BASICAS[nombre]) return { nombre, ...SKINS_BASICAS[nombre] }; // gratis
         const id = String(skin.id || '').replace(/[^\w-]/g, '').slice(0, 64);
+        // Skins básicas equipadas desde la Tienda viajan con id 'bas-*' (gratis y
+        // sin Firestore: funcionan incluso en modo economía degradado)
+        const basicaPorId = /^bas-(cielo|fuego|neon|esmeralda)$/.exec(id);
+        if (basicaPorId) return { id, nombre: basicaPorId[1], ...SKINS_BASICAS[basicaPorId[1]] };
         if (!id || !FIREBASE_ECONOMY || !FIREBASE_DB) return SKIN_FALLBACK;
         const refSkin = FIREBASE_DB.collection('skins').doc(id);
         const refUser = FIREBASE_DB.collection('usuarios').doc(uid || '__nulo__');

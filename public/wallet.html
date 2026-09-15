@@ -310,7 +310,11 @@
         return "Banco: " + (perfil.banco || "—") + " — CI: " + (perfil.cedula || "—");
       }
       if (metodo === "Zelle") return perfil.email ? "Email: " + perfil.email : "";
-      if (metodo === "Binance (USDT)") return "Coordina la billetera USDT con el soporte";
+      if (metodo === "Binance (USDT)") {
+        return perfil.billetera_usdt
+          ? "Billetera USDT: " + perfil.billetera_usdt
+          : "Coordina la billetera USDT con el soporte (o registra tu dirección en el Perfil)";
+      }
       return "";
     }
 
@@ -345,6 +349,9 @@
       if (perfil.email) {
         cuentas.push({ metodo: "Zelle", lineas: ["Email: " + perfil.email] });
       }
+      if (perfil.billetera_usdt) {
+        cuentas.push({ metodo: "Binance (USDT)", lineas: ["Billetera USDT: " + perfil.billetera_usdt] });
+      }
       return cuentas;
     }
 
@@ -356,7 +363,7 @@
       if (cuentas.length === 0) {
         const p = document.createElement("p");
         p.className = "vacio";
-        p.textContent = "Sin cuentas registradas. Completa tu Perfil (banco, teléfono y cédula) para poder retirar.";
+        p.textContent = "Sin cuentas registradas. Completa tu Perfil (banco, teléfono, cédula o billetera USDT) para poder retirar.";
         cont.appendChild(p);
         cobroSeleccionado = null;
         return;

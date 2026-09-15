@@ -298,6 +298,16 @@
                 window.__saldo = Number(p.saldo || 0);
                 window.__inventario = Array.isArray(p.skins_compradas) ? p.skins_compradas : [];
                 document.getElementById('chip-saldo').textContent = '$' + window.__saldo.toFixed(2) + ' USD';
+                // Sincronía multi-dispositivo: el perfil manda. Si la skin_equipada
+                // guardada en Firestore difiere de la local, se equipa la del perfil.
+                const eqPerfil = String(p.skin_equipada || '');
+                if (eqPerfil && (!window.__equipada || window.__equipada.id !== eqPerfil)) {
+                    const sk = SKINS_BASICAS.find(s => s.id === eqPerfil) || window.__skinsTienda.find(s => s.id === eqPerfil);
+                    if (sk) {
+                        window.__equipada = sk;
+                        try { localStorage.setItem('mi_skin_equipada', JSON.stringify(sk)); } catch (e) { }
+                    }
+                }
                 renderTienda();
             }, (e) => {
                 msg('No se pudo leer tu perfil (' + (e.code || '') + '). Publica las reglas de firestore.rules.', 'err');

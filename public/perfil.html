@@ -82,6 +82,8 @@
     <input type="text" id="f-telefono" maxlength="11" inputmode="numeric" placeholder="Ej: 04121234567">
     <label>Banco (para transferencias)</label>
     <input type="text" id="f-banco" maxlength="40" placeholder="Ej: Banesco">
+    <label>Dirección de billetera USDT (red TRC20 o BEP20)</label>
+    <input type="text" id="f-billetera" maxlength="42" autocomplete="off" spellcheck="false" placeholder="Ej: TQ5pR9… (TRC20) o 0x71C7… (BEP20)">
     <button class="btn" id="btn-guardar">Guardar datos</button>
 
     <h2>Cuenta</h2>
@@ -169,6 +171,7 @@
           $("f-cedula").value = soloDigitos(p.cedula).slice(0, 8);
           $("f-telefono").value = soloDigitos(p.telefono).slice(0, 11);
           $("f-banco").value = p.banco || "";
+          $("f-billetera").value = String(p.billetera_usdt || "");
           $("chip-saldo").textContent = "$" + Number(p.saldo || 0).toFixed(2);
         }
       } catch (e) {
@@ -197,6 +200,17 @@
       const apodo = limpiar($("f-apodo").value);
       const malApodo = motivoApodoInvalido(apodo);
       if (malApodo) return msg(malApodo, "err");
+      // Billetera USDT opcional: TRC20 (T + 33 base58) o BEP20 (0x + 40 hex)
+      const billeteraCruda = limpiar($("f-billetera").value);
+      let billeteraFinal = "";
+      if (billeteraCruda) {
+        const esTRC20 = /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(billeteraCruda);
+        const esBEP20 = /^0x[a-fA-F0-9]{40}$/.test(billeteraCruda);
+        if (!esTRC20 && !esBEP20) {
+          return msg("La dirección USDT no es válida: TRC20 empieza con T (34 caracteres) o BEP20 con 0x (42 caracteres).", "err");
+        }
+        billeteraFinal = billeteraCruda;
+      }
       $("btn-guardar").disabled = true;
       try {
         const refYo = doc(db, "usuarios", usuarioActual.uid);
@@ -229,6 +243,7 @@
           cedula: soloDigitos($("f-cedula").value),
           telefono: soloDigitos($("f-telefono").value),
           banco: limpiar($("f-banco").value),
+          billetera_usdt: billeteraFinal,
           actualizadoEn: serverTimestamp()
         });
 
