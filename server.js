@@ -63,6 +63,18 @@ try {
             try { sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT); }
             catch (e) { console.warn('[FIREBASE] FIREBASE_SERVICE_ACCOUNT es JSON inválido:', e.message); }
         }
+        if (!sa && process.env.FIREBASE_SERVICE_ACCOUNT) {
+            // Tolerante a comillas sobrantes añadidas por el panel del host
+            let txt = process.env.FIREBASE_SERVICE_ACCOUNT.trim();
+            if (txt.length >= 2 && txt.startsWith('"') && txt.endsWith('"')) txt = txt.slice(1, -1);
+            try {
+                const parsed = JSON.parse(txt);
+                if (parsed && typeof parsed === 'object' && parsed.client_email) {
+                    sa = parsed;
+                    console.log('[FIREBASE] Clave de servicio cargada desde FIREBASE_SERVICE_ACCOUNT (inline).');
+                }
+            } catch (e) { /* no es JSON inline; el loop de rutas ya lo habrá probado como archivo */ }
+        }
         if (!sa) {
             for (const ruta of CANDIDATOS) {
                 try {

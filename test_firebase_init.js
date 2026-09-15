@@ -74,6 +74,10 @@ function check(nombre, cond) { log((cond ? 'OK   ' : 'FAIL ') + nombre); if (!co
     r = correr({ FIREBASE_SERVICE_ACCOUNT: JSON.stringify(saValido) }, path.join(os.tmpdir(), 'noexiste'));
     check('FIREBASE_SERVICE_ACCOUNT=JSON inline → economía ON', r.eco === true);
 
+    // 3b) Env con JSON inline envuelto en comillas (como a veces lo guarda el panel)
+    r = correr({ FIREBASE_SERVICE_ACCOUNT: '"' + JSON.stringify(saValido) + '"' }, path.join(os.tmpdir(), 'noexiste'));
+    check('FIREBASE_SERVICE_ACCOUNT=JSON con comillas → economía ON', r.eco === true);
+
     // 4) Env Base64
     r = correr({ FIREBASE_SERVICE_ACCOUNT_B64: Buffer.from(JSON.stringify(saValido)).toString('base64') }, path.join(os.tmpdir(), 'noexiste'));
     check('FIREBASE_SERVICE_ACCOUNT_B64 → economía ON', r.eco === true);
