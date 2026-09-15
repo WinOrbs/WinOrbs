@@ -35,25 +35,77 @@ let FIREBASE_DB = null;
 let FIREBASE_ECONOMY = false;
 try {
     firebaseAdmin = require('firebase-admin');
+    // Busca la clave de servicio en varios sitios (local y Render):
+    //  - GOOGLE_APPLICATION_CREDENTIALS: ruta estándar de Google
+    //  - FIREBASE_SERVICE_ACCOUNT: ruta a un archivo O el contenido JSON inline
+    //  - FIREBASE_SERVICE_ACCOUNT_B64: contenido JSON en Base64 (útil en Render)
+    //  - __dirname/serviceAccountKey.json (local)
+    //  - /etc/secrets/... (Render Secret Files: se montan ahí en runtime)
     const fs = require('fs');
-    const SA_PATH = process.env.FIREBASE_SERVICE_ACCOUNT || (__dirname + '/serviceAccountKey.json');
+    const CANDIDATOS = [
+        process.env.FIREBASE_SERVICE_ACCOUNT,
+        __dirname + '/serviceAccountKey.json',
+        '/etc/secrets/serviceAccountKey.json'
+    ].filter(Boolean);
     let sa = null;
     if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
         firebaseAdmin.initializeApp({ credential: firebaseAdmin.credential.applicationDefault() });
         sa = true;
-    } else if (fs.existsSync(SA_PATH)) {
-        sa = JSON.parse(fs.readFileSync(SA_PATH, 'utf8'));
-        firebaseAdmin.initializeApp({
-            credential: firebaseAdmin.credential.cert(sa),
-            projectId: sa.project_id || undefined
-        });
+    } else {
+        if (process.env.FIREBASE_SERVICE_ACCOUNT_B64) {
+            try {
+                sa = JSON.parse(Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_B64, 'base64').toString('utf8'));
+            } catch (e) {
+                console.warn('[FIREBASE] FIREBASE_SERVICE_ACCOUNT_B64 presente pero no es Base64/JSON válido:', e.message);
+            }
+        } else if (process.env.FIREBASE_SERVICE_ACCOUNT && process.env.FIREBASE_SERVICE_ACCOUNT.trim().startsWith('{')) {
+            // Contenido JSON pegado inline como variable de entorno
+            try { sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT); }
+            catch (e) { console.warn('[FIREBASE] FIREBASE_SERVICE_ACCOUNT es JSON inválido:', e.message); }
+        }
+        if (!sa) {
+            for (const ruta of CANDIDATOS) {
+                try {
+                    if (!fs.existsSync(ruta)) continue;
+                    sa = JSON.parse(fs.readFileSync(ruta, 'utf8'));
+                    console.log('[FIREBASE] Clave de servicio cargada desde: ' + ruta);
+                    break;
+                } catch (e) {
+                    console.warn('[FIREBASE] No se pudo usar la clave en ' + ruta + ':', e.message);
+                }
+            }
+        }
+        if (!sa) {
+            // Último recurso: cualquier *.json en /etc/secrets que parezca una clave de servicio
+            try {
+                if (fs.existsSync('/etc/secrets')) {
+                    const candidatos = fs.readdirSync('/etc/secrets').filter(f => f.endsWith('.json'));
+                    for (const f of candidatos) {
+                        try {
+                            const txt = fs.readFileSync('/etc/secrets/' + f, 'utf8');
+                            if (txt.includes('"private_key"') && txt.includes('"client_email"')) {
+                                sa = JSON.parse(txt);
+                                console.log('[FIREBASE] Clave de servicio detectada en /etc/secrets/' + f);
+                                break;
+                            }
+                        } catch (e) { /* JSON ilegible/corrupto: probar el siguiente */ }
+                    }
+                }
+            } catch (e) { /* sin permiso o sin dir: ignorar */ }
+        }
+        if (sa && typeof sa === 'object') {
+            firebaseAdmin.initializeApp({
+                credential: firebaseAdmin.credential.cert(sa),
+                projectId: sa.project_id || undefined
+            });
+        }
     }
     if (sa) {
         FIREBASE_DB = firebaseAdmin.firestore();
         FIREBASE_ECONOMY = true;
         console.log('[FIREBASE] Modo economía SEGURA activado (Admin SDK). El servidor maneja entradas y premios.');
     } else {
-        console.log('[FIREBASE] Sin clave de servicio: modo DEGRADADO. Cobro/premio los gestiona el cliente (parches Fase 0).');
+        console.log('[FIREBASE] Sin clave de servicio (busqué en FIREBASE_SERVICE_ACCOUNT, /etc/secrets/ y ' + __dirname + '): modo DEGRADADO. Cobro/premio los gestiona el cliente (parches Fase 0).');
     }
 } catch (e) {
     console.warn('[FIREBASE] firebase-admin no disponible:', e.message);
