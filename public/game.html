@@ -2380,6 +2380,85 @@
         // Caché de imágenes de skins (PNG/JPG/GIF)
         const skinImages = {};
         let shakeIntensity = 0;
+
+        // ==== SPRITES DEL JUEGO (pixel art en public/assets/game/) ====
+        // Manifest: clave → { src, tile?, frames?, frameW?, frameH? }.
+        // Cada PNG se precarga al abrir la página; si falta o falla,
+        // sprites[clave] queda null y render() usa el dibujo procedural
+        // original (fallback grácil, mismo patrón que las skins sin foto).
+        const SPRITES_MANIFEST = {
+            fondo: { src: 'assets/game/bg-tile.png', tile: true },
+            orbe: { src: 'assets/game/orb-energy.png' },
+            kit: { src: 'assets/game/health-kit.png' },
+            bala: { src: 'assets/game/bullet.png' },
+            balaOrbe: { src: 'assets/game/bullet-orb.png' },
+            bomba: { src: 'assets/game/bomb.png' },
+            explosion: { src: 'assets/game/explosion.png', frameW: 64, frameH: 64, frames: 4 },
+            airdrop: { src: 'assets/game/airdrop.png' },
+            obstaculo: { src: 'assets/game/obstacle.png' },
+            muro: { src: 'assets/game/wall.png' },
+            turbo: { src: 'assets/game/speed-pad.png' },
+            tienda: { src: 'assets/game/shop.png' },
+            banco: { src: 'assets/game/bank.png' }
+        };
+        const sprites = {};
+        let spriteFondoPattern = null;
+        (function precargarSprites() {
+            let pendientes = Object.keys(SPRITES_MANIFEST).length;
+            Object.keys(SPRITES_MANIFEST).forEach(clave => {
+                const img = new Image();
+                img.onload = () => {
+                    sprites[clave] = img;
+                    if (--pendientes === 0) console.log('[WinOrbs] Sprites del mapa cargados');
+                };
+                img.onerror = () => { sprites[clave] = null; pendientes--; };
+                img.src = SPRITES_MANIFEST[clave].src;
+            });
+        })();
+
+        // Dibuja el sprite `clave` centrado en (x, y) con ancho w y alto
+        // proporcional (o alto h fijo), rotación opcional `rot` en radianes
+        // y suavizado desactivado (pixel art nítido). Devuelve true si se
+        // dibujó; false si no hay sprite (el caller aplica su fallback).
+        function drawSprite(clave, x, y, w, h, rot) {
+            const img = sprites[clave];
+            if (!img || !img.complete || !img.naturalWidth) return false;
+            const alto = h || (w * img.naturalHeight / img.naturalWidth);
+            ctx.save();
+            ctx.imageSmoothingEnabled = false;
+            ctx.translate(x, y);
+            if (rot) ctx.rotate(rot);
+            ctx.drawImage(img, -w / 2, -alto / 2, w, alto);
+            ctx.restore();
+            return true;
+        }
+
+        // Explosión: tira de 4 frames según alpha (1 → 0); fallback: círculo naranja.
+        function dibujarExplosion(exp) {
+            const img = sprites.explosion;
+            const m = SPRITES_MANIFEST.explosion;
+            if (!img || !img.complete || !img.naturalWidth) {
+                ctx.beginPath(); ctx.arc(exp.x, exp.y, exp.radius, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(249, 115, 22, ${exp.alpha})`; ctx.fill();
+                return;
+            }
+            const idx = Math.max(0, Math.min(m.frames - 1, Math.floor((1 - exp.alpha) * m.frames)));
+            const lado = exp.radius * 2.1; // el arte sobresale un poco del radio lógico
+            ctx.save();
+            ctx.imageSmoothingEnabled = false;
+            ctx.globalAlpha = Math.min(1, exp.alpha * 1.6);
+            ctx.drawImage(img, idx * m.frameW, 0, m.frameW, m.frameH, exp.x - lado / 2, exp.y - lado / 2, lado, lado);
+            ctx.restore();
+        }
+
+        // Patrón del fondo (tesela 150×150 con la rejilla incluida), cacheado.
+        function patronFondo() {
+            if (spriteFondoPattern) return spriteFondoPattern;
+            const img = sprites.fondo;
+            if (!img || !img.complete || !img.naturalWidth) return null;
+            spriteFondoPattern = ctx.createPattern(img, 'repeat');
+            return spriteFondoPattern;
+        }
         let isDead = false;
         let isGameOver = false;
 
@@ -2955,11 +3034,20 @@
             ctx.scale(viewZoom, viewZoom);
             ctx.translate(-me.x + offsetX / viewZoom, -me.y + offsetY / viewZoom);
 
-            // Rejilla del Mapa
+            // Fondo del mapa: textura teselada (la rejilla va incluida en el tile).
+            // Fallback: rejilla de líneas original si el sprite no cargó.
             const MAP_SIZE = gameState.mapSize || 5000;
-            ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1.5;
-            for (let x = 0; x <= MAP_SIZE; x += 150) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, MAP_SIZE); ctx.stroke(); }
-            for (let y = 0; y <= MAP_SIZE; y += 150) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(MAP_SIZE, y); ctx.stroke(); }
+            const patron = patronFondo();
+            if (patron) {
+                ctx.imageSmoothingEnabled = false;
+                ctx.fillStyle = patron;
+                ctx.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
+                ctx.imageSmoothingEnabled = true;
+            } else {
+                ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1.5;
+                for (let x = 0; x <= MAP_SIZE; x += 150) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, MAP_SIZE); ctx.stroke(); }
+                for (let y = 0; y <= MAP_SIZE; y += 150) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(MAP_SIZE, y); ctx.stroke(); }
+            }
 
             // Zonas Peligrosas
             (gameState.hazardZones || []).forEach(hz => {
@@ -2968,13 +3056,18 @@
                 ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2; ctx.stroke();
             });
 
-            // Speed Pads (turbo) con chevrones animados
+            // Speed Pads (turbo): sprite estático + chevrones animados encima.
+            // Fallback: rectángulo con chevrones originales si el PNG no cargó.
             (gameState.speedPads || []).forEach(pad => {
-                ctx.fillStyle = 'rgba(250, 204, 21, 0.16)';
-                ctx.fillRect(pad.x, pad.y, pad.w, pad.h);
-                ctx.strokeStyle = '#facc15'; ctx.lineWidth = 2; ctx.strokeRect(pad.x, pad.y, pad.w, pad.h);
+                const conSprite = drawSprite('turbo', pad.x + pad.w / 2, pad.y + pad.h / 2, pad.w + 16, pad.h + 6);
+                if (!conSprite) {
+                    ctx.fillStyle = 'rgba(250, 204, 21, 0.16)';
+                    ctx.fillRect(pad.x, pad.y, pad.w, pad.h);
+                    ctx.strokeStyle = '#facc15'; ctx.lineWidth = 2; ctx.strokeRect(pad.x, pad.y, pad.w, pad.h);
+                }
                 const fase = (Date.now() / 280) % 3;
-                ctx.strokeStyle = 'rgba(253, 224, 71, 0.9)'; ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
+                ctx.strokeStyle = conSprite ? 'rgba(255, 255, 255, 0.85)' : 'rgba(253, 224, 71, 0.9)';
+                ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
                 for (let i = 0; i < 3; i++) {
                     const off = ((i - fase + 3) % 3) / 3;
                     const cxp = pad.x + pad.w * (0.2 + off * 0.6);
@@ -2986,13 +3079,21 @@
                 }
             });
 
-            // Muros destructibles (daño con balas)
+            // Muros destructibles: sprite metálico escalado + tint rojizo con el
+            // daño (fallback: rectángulo original). La barra de vida sigue igual.
             (gameState.walls || []).forEach(wl => {
                 if (wl.hp <= 0) return;
-                ctx.fillStyle = '#475569';
-                ctx.fillRect(wl.x, wl.y, wl.w, wl.h);
-                ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 2; ctx.strokeRect(wl.x, wl.y, wl.w, wl.h);
                 const pctW = (wl.hp || 0) / (wl.maxHp || 30);
+                if (drawSprite('muro', wl.x + wl.w / 2, wl.y + wl.h / 2, wl.w, wl.h)) {
+                    if (pctW < 0.6) {
+                        ctx.fillStyle = `rgba(239, 68, 68, ${(0.6 - pctW) * 0.8})`;
+                        ctx.fillRect(wl.x, wl.y, wl.w, wl.h);
+                    }
+                } else {
+                    ctx.fillStyle = '#475569';
+                    ctx.fillRect(wl.x, wl.y, wl.w, wl.h);
+                    ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 2; ctx.strokeRect(wl.x, wl.y, wl.w, wl.h);
+                }
                 if (pctW < 1) {
                     ctx.fillStyle = 'rgba(0,0,0,0.55)';
                     ctx.fillRect(wl.x, wl.y - 10, wl.w, 6);
@@ -3001,11 +3102,12 @@
                 }
             });
 
-            // Tiendas
+            // Tiendas (círculo de zona + icono del sprite)
             (gameState.shopZones || []).forEach(sz => {
                 ctx.beginPath(); ctx.arc(sz.x, sz.y, sz.radius, 0, Math.PI * 2);
                 ctx.fillStyle = 'rgba(56, 189, 248, 0.12)'; ctx.fill();
                 ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2; ctx.stroke();
+                drawSprite('tienda', sz.x, sz.y, 96);
             });
 
             // Zona Roja
@@ -3023,12 +3125,13 @@
                 ctx.stroke();
             }
 
-            // Banco Central
+            // Banco Central (círculo de zona + icono del sprite)
             const bankZone = gameState.bankZone;
             if (bankZone) {
                 ctx.beginPath(); ctx.arc(bankZone.x, bankZone.y, bankZone.radius, 0, Math.PI * 2);
                 ctx.fillStyle = 'rgba(34, 197, 94, 0.15)'; ctx.fill();
                 ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 3; ctx.stroke();
+                drawSprite('banco', bankZone.x, bankZone.y, 96);
             }
 
             // Airdrops: caída con objetivo marcado (~4 s) → caja en el suelo
@@ -3043,27 +3146,34 @@
                     ctx.setLineDash([14, 10]);
                     ctx.beginPath(); ctx.arc(ad.x, ad.y, (r + 12) * pulso, 0, Math.PI * 2); ctx.stroke();
                     ctx.setLineDash([]);
-                    // Caja cayendo
+                    // Caja cayendo: sombra + sprite escalado (fallback: rect original)
                     const prog = Math.max(0, Math.min(1, 1 - (ad.landTimer || 0) / 240));
                     const drop = (1 - prog) * 1500;
-                    const size = r * (0.55 + 0.45 * prog);
+                    const size = r * (0.55 + 0.45 * prog) * 1.2;
                     ctx.fillStyle = 'rgba(0,0,0,0.35)';
                     ctx.beginPath(); ctx.ellipse(ad.x, ad.y, r * 0.8 * prog, r * 0.3 * prog, 0, 0, Math.PI * 2); ctx.fill();
-                    ctx.fillStyle = '#facc15';
-                    ctx.fillRect(ad.x - size, ad.y - drop - size, size * 2, size * 2);
-                    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3;
-                    ctx.strokeRect(ad.x - size, ad.y - drop - size, size * 2, size * 2);
+                    if (!drawSprite('airdrop', ad.x, ad.y - drop, size * 2, size * 2)) {
+                        ctx.fillStyle = '#facc15';
+                        ctx.fillRect(ad.x - size, ad.y - drop - size, size * 2, size * 2);
+                        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3;
+                        ctx.strokeRect(ad.x - size, ad.y - drop - size, size * 2, size * 2);
+                    }
                     return;
                 }
-                // Caja aterrizada (parpadea cuando está por caducar)
+                // Caja aterrizada (aviso rojo pulsante cuando está por caducar)
                 const porCaducar = (ad.age || 0) > 950;
-                ctx.fillStyle = '#facc15';
-                ctx.fillRect(ad.x - r, ad.y - r, r * 2, r * 2);
-                ctx.strokeStyle = porCaducar
-                    ? `rgba(239, 68, 68, ${0.5 + 0.5 * Math.sin(Date.now() / 120)})`
-                    : '#ffffff';
-                ctx.lineWidth = 3;
-                ctx.strokeRect(ad.x - r, ad.y - r, r * 2, r * 2);
+                if (!drawSprite('airdrop', ad.x, ad.y, r * 2.4, r * 2.4)) {
+                    ctx.fillStyle = '#facc15';
+                    ctx.fillRect(ad.x - r, ad.y - r, r * 2, r * 2);
+                    ctx.strokeStyle = porCaducar
+                        ? `rgba(239, 68, 68, ${0.5 + 0.5 * Math.sin(Date.now() / 120)})`
+                        : '#ffffff';
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(ad.x - r, ad.y - r, r * 2, r * 2);
+                } else if (porCaducar) {
+                    ctx.fillStyle = `rgba(239, 68, 68, ${0.25 + 0.25 * Math.sin(Date.now() / 120)})`;
+                    ctx.fillRect(ad.x - r, ad.y - r, r * 2, r * 2);
+                }
                 // Barra de vida de la caja
                 const wBar = r * 2;
                 const pctA = Math.max(0, (ad.hp || 0) / (ad.maxHp || 60));
@@ -3077,37 +3187,64 @@
                 ctx.fillText('DISPÁRALE PARA ABRIR', ad.x, ad.y - r - 26);
             });
 
-            // Obstáculos
+            // Obstáculos: sprite rocoso escalado, tint rojizo al dañarse
+            // (fallback: rectángulos originales)
             (gameState.obstacles || []).forEach(obs => {
                 if (obs.hp <= 0) return;
-                let hpRatio = obs.hp / obs.maxHp;
+                const hpRatio = obs.hp / obs.maxHp;
+                if (drawSprite('obstaculo', obs.x + obs.w / 2, obs.y + obs.h / 2, obs.w, obs.h)) {
+                    if (hpRatio < 0.4) {
+                        ctx.fillStyle = `rgba(239, 68, 68, ${(0.4 - hpRatio) * 1.2})`;
+                        ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+                    }
+                    return;
+                }
                 ctx.fillStyle = hpRatio > 0.5 ? '#334155' : '#475569';
                 ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
                 ctx.strokeStyle = hpRatio < 0.4 ? '#ef4444' : '#64748b';
                 ctx.lineWidth = 2; ctx.strokeRect(obs.x, obs.y, obs.w, obs.h);
             });
 
-            // Orbes y Medicinas
+            // Orbes y Medicinas: sprites con animación suave (flotación/latido);
+            // fallback: círculo y cuadrado originales
             (gameState.droppedEnergy || []).forEach(g => {
-                ctx.beginPath(); ctx.arc(g.x, g.y, 6, 0, Math.PI * 2); ctx.fillStyle = '#facc15'; ctx.fill();
+                const flotacion = Math.sin(Date.now() / 400 + g.x * 0.05) * 2;
+                if (!drawSprite('orbe', g.x, g.y + flotacion, 24)) {
+                    ctx.beginPath(); ctx.arc(g.x, g.y, 6, 0, Math.PI * 2); ctx.fillStyle = '#facc15'; ctx.fill();
+                }
             });
             (gameState.healthKits || []).forEach(h => {
-                ctx.fillStyle = '#22c55e'; ctx.fillRect(h.x - 7, h.y - 7, 14, 14);
+                const latido = 1 + 0.06 * Math.sin(Date.now() / 300 + h.x);
+                if (!drawSprite('kit', h.x, h.y, 32 * latido)) {
+                    ctx.fillStyle = '#22c55e'; ctx.fillRect(h.x - 7, h.y - 7, 14, 14);
+                }
             });
 
-            // Bombas y Explosiones
+            // Bombas (sprite con latido) y Explosiones (tira de 4 frames);
+            // fallbacks: círculos originales
             (gameState.bombs || []).forEach(bm => {
-                ctx.beginPath(); ctx.arc(bm.currentX, bm.currentY, 10, 0, Math.PI * 2); ctx.fillStyle = '#ef4444'; ctx.fill();
+                const latido = 1 + 0.08 * Math.sin(Date.now() / 120);
+                if (!drawSprite('bomba', bm.currentX, bm.currentY, 32 * latido)) {
+                    ctx.beginPath(); ctx.arc(bm.currentX, bm.currentY, 10, 0, Math.PI * 2); ctx.fillStyle = '#ef4444'; ctx.fill();
+                }
             });
-            (gameState.explosions || []).forEach(exp => {
-                ctx.beginPath(); ctx.arc(exp.x, exp.y, exp.radius, 0, Math.PI * 2);
-                ctx.fillStyle = `rgba(249, 115, 22, ${exp.alpha})`; ctx.fill();
-            });
+            (gameState.explosions || []).forEach(exp => dibujarExplosion(exp));
 
-            // Proyectiles
+            // Proyectiles: sprites orientados a su velocidad (el servidor envía
+            // vx/vy); fallback: círculos originales
             (gameState.bullets || []).forEach(b => {
-                ctx.beginPath(); ctx.arc(b.x, b.y, b.isOrbBullet ? 8 : 4, 0, Math.PI * 2);
-                ctx.fillStyle = b.isOrbBullet ? '#a855f7' : '#fbbf24'; ctx.fill();
+                if (b.isOrbBullet) {
+                    if (!drawSprite('balaOrbe', b.x, b.y, 28)) {
+                        ctx.beginPath(); ctx.arc(b.x, b.y, 8, 0, Math.PI * 2);
+                        ctx.fillStyle = '#a855f7'; ctx.fill();
+                    }
+                } else {
+                    const rot = (b.vx || b.vy) ? Math.atan2(b.vy, b.vx) : 0;
+                    if (!drawSprite('bala', b.x, b.y, 20, 0, rot)) {
+                        ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI * 2);
+                        ctx.fillStyle = '#fbbf24'; ctx.fill();
+                    }
+                }
             });
 
             // Caché de imágenes de skins (PNG/JPG/GIF) — precarga perezosa
