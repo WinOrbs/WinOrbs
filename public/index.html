@@ -251,7 +251,9 @@
             display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 14px; align-content: start;
             overflow-y: auto;
-            max-height: calc(100vh - 235px);
+            /* el alto descuenta topbar + cabecera + barra de filtros */
+            max-height: calc(100vh - 318px);
+            min-height: 260px;
             /* aire para que el glow de las tarjetas no se recorte en el scroll */
             padding: 2px 8px 8px 2px; margin: -2px -8px -8px -2px;
             scrollbar-width: thin;
@@ -350,6 +352,94 @@
         }
         .btn-unirse:disabled::after { display: none; }
 
+        /* ─ Filtros y categorías del lobby (por precio) ── */
+        .filtros {
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 12px; flex-wrap: wrap;
+            padding: 10px 12px; margin-bottom: 14px;
+            background: rgba(2, 6, 17, .45);
+            border: 1px solid rgba(148, 163, 184, .12);
+            border-radius: 12px;
+        }
+        .filtros-chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .chip-cat {
+            display: inline-flex; align-items: center; gap: 7px;
+            font-family: var(--font-display); font-weight: 600; font-size: 11.5px;
+            letter-spacing: 1px; text-transform: uppercase;
+            color: var(--muted); background: rgba(15, 23, 42, .6);
+            border: 1px solid var(--line); border-radius: 999px;
+            padding: 6px 12px; cursor: pointer;
+            transition: color .18s, border-color .18s, background .18s, box-shadow .18s, transform .18s;
+        }
+        .chip-cat:hover { color: var(--cyan); border-color: var(--line-glow); transform: translateY(-1px); }
+        .chip-cat:focus-visible { outline: 2px solid rgba(56, 189, 248, .7); outline-offset: 2px; }
+        .chip-cat .chip-cat-n {
+            font-size: 10.5px; font-weight: 700;
+            padding: 1px 6px; border-radius: 999px;
+            background: rgba(148, 163, 184, .16); color: var(--text);
+        }
+        .chip-cat.activa {
+            color: #041019; background: linear-gradient(90deg, #0ea5e9, #38bdf8);
+            border-color: transparent; box-shadow: 0 6px 18px -8px rgba(56, 189, 248, .9);
+        }
+        .chip-cat.activa .chip-cat-n { background: rgba(2, 6, 17, .28); color: #041019; }
+        .chip-cat.priv.activa { background: linear-gradient(90deg, #d97706, #f59e0b); box-shadow: 0 6px 18px -8px rgba(245, 158, 11, .9); }
+
+        .filtros-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .switch-cupo {
+            display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+            font-family: var(--font-display); font-weight: 600; font-size: 11px;
+            letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted);
+            transition: color .18s;
+        }
+        .switch-cupo:hover { color: var(--cyan); }
+        .switch-cupo input { width: auto; margin: 0; accent-color: #38bdf8; cursor: pointer; }
+        .select-orden {
+            font-family: var(--font-display); font-weight: 600; font-size: 11px;
+            letter-spacing: 1.1px; text-transform: uppercase; color: var(--text);
+            background: var(--surface-deep); border: 1px solid var(--line);
+            border-radius: 9px; padding: 7px 10px; cursor: pointer;
+        }
+        .select-orden:hover { border-color: var(--line-glow); }
+        .select-orden:focus { outline: none; border-color: var(--line-glow); box-shadow: 0 0 0 3px rgba(56, 189, 248, .12); }
+
+        .panel-head-right { display: flex; align-items: center; gap: 12px; }
+        .salas-count {
+            font-family: var(--font-display); font-weight: 600; font-size: 11.5px;
+            letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted);
+        }
+
+        /* Grupos por categoría de precio: cabecera + rejilla de 2 columnas */
+        .grupo-salas { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 12px; }
+        .grupo-head {
+            display: flex; align-items: center; justify-content: space-between; gap: 10px;
+            padding: 0 2px 8px; border-bottom: 1px dashed rgba(148, 163, 184, .18);
+        }
+        .grupo-titulo {
+            display: inline-flex; align-items: center; gap: 8px;
+            font-family: var(--font-display); font-weight: 700; font-size: 11.5px;
+            letter-spacing: 1.8px; text-transform: uppercase; color: #cbd5e1;
+        }
+        .grupo-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+        .grupo-meta { font-size: 11.5px; color: var(--muted); letter-spacing: .5px; }
+        .grupo-meta b { color: #64748b; }
+        .grupo-meta b.ok { color: #4ade80; }
+        .grupo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+
+        /* Estado vacío del lobby filtrado */
+        .lobby-vacio {
+            grid-column: 1 / -1; text-align: center;
+            padding: 34px 18px; border-radius: 14px;
+            background: rgba(2, 6, 17, .35);
+            border: 1px dashed rgba(148, 163, 184, .25);
+        }
+        .lobby-vacio h4 {
+            font-family: var(--font-display); font-weight: 700; font-size: 13.5px;
+            letter-spacing: 1.6px; text-transform: uppercase; color: var(--text); margin-bottom: 8px;
+        }
+        .lobby-vacio p { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+        .lobby-vacio .btn-unirse { display: block; max-width: 250px; margin: 0 auto; }
+
         /* ── Skeletons mientras llega roomsList ── */
         .skeleton-card {
             border: 1px solid rgba(148, 163, 184, .12);
@@ -392,12 +482,16 @@
             .arena { grid-template-columns: 1fr; padding: 18px 16px 30px; }
             .topbar { padding: 12px 16px; }
             .panel-salas { min-height: auto; }
-            .grid-salas { max-height: none; overflow: visible; }
+            .grid-salas { max-height: none; min-height: 0; overflow: visible; }
+            .filtros { align-items: flex-start; }
         }
         @media (max-width: 560px) {
             .grid-salas { grid-template-columns: 1fr; }
+            .grupo-grid { grid-template-columns: 1fr; }
             .topbar-right { width: 100%; justify-content: space-between; }
             .logo { font-size: 22px; }
+            .panel-head-right { gap: 8px; }
+            .salas-count { font-size: 10.5px; }
         }
     </style>
 </head>
@@ -442,8 +536,8 @@
             </div>
 
             <div class="form-group">
-                <label for="player-nickname">Apodo / Name</label>
-                <input type="text" id="player-nickname" placeholder="Ej: ProOrb99" value="Jugador1">
+                <label for="player-nickname">Apodo / Name (único, el de tu cuenta)</label>
+                <input type="text" id="player-nickname" placeholder="Ej: ProOrb99" value="Jugador1" readonly title="Tu apodo viene de tu cuenta y no se puede cambiar aquí. Cámbialo en Mi Perfil.">
             </div>
 
             <!-- Tienda / Selector de Skins (firmas onclick intactas: game.html consume mi_skin) -->
@@ -481,8 +575,23 @@
         <section class="panel panel-salas reveal r2">
             <div class="panel-head">
                 <span class="panel-kicker">// Salas en vivo</span>
-                <span class="live-badge"><span class="live-dot"></span>EN VIVO</span>
+                <div class="panel-head-right">
+                    <span class="salas-count" id="salas-count">— salas</span>
+                    <span class="live-badge"><span class="live-dot"></span>EN VIVO</span>
+                </div>
             </div>
+
+            <!-- Filtros/categorías por precio (las opciones las genera el JS del lobby) -->
+            <div class="filtros" id="filtros-salas">
+                <div class="filtros-chips" id="filtros-chips" role="group" aria-label="Filtrar salas por precio"></div>
+                <div class="filtros-tools">
+                    <label class="switch-cupo" title="Oculta las salas llenas o ya iniciadas">
+                        <input type="checkbox" id="filtro-cupo"> Solo con cupo
+                    </label>
+                    <select class="select-orden" id="orden-salas" aria-label="Ordenar salas"></select>
+                </div>
+            </div>
+
             <div id="lista-salas" class="grid-salas">
                 <p class="conectando">Conectando con el servidor...</p>
                 <div class="skeleton-card" aria-hidden="true">
@@ -567,19 +676,65 @@
                 .replace(/'/g, '&#39;');
         }
 
-        socket.on('roomsList', (salasList) => {
-            contenedorSalas.innerHTML = "";
+        // ── Lobby: filtros/categorías por precio ──────────────────────────
+        // El servidor empuja 20+ salas automáticas por tier; agruparlas por
+        // precio (chips + cabeceras de grupo) evita el muro de tarjetas y da
+        // un lobby navegable: Todas · $0.50 · $1 · $3 · $5 · 🔒 Privadas.
+        const barraFiltros = document.getElementById('filtros-salas');
+        const chipsFiltros = document.getElementById('filtros-chips');
+        const selectOrden = document.getElementById('orden-salas');
+        const checkCupo = document.getElementById('filtro-cupo');
+        const spanSalasCount = document.getElementById('salas-count');
 
-            if (!salasList || salasList.length === 0) {
-                contenedorSalas.innerHTML = `<p style="color: #94a3b8; font-size: 13px; grid-column: 1/-1;">No hay salas activas en este momento.</p>`;
-                return;
+        let salasCache = [];            // última lista enviada por el servidor
+        let categoriaActiva = 'todas';  // 'todas' | 'precio:1.00' | 'privadas'
+        let soloConCupo = false;
+        let ordenSalas = 'precio-asc';
+
+        const ORDENES_SALAS = [
+            { id: 'precio-asc', label: 'Precio: menor a mayor' },
+            { id: 'precio-desc', label: 'Precio: mayor a menor' },
+            { id: 'bote-desc', label: 'Bote: mayor primero' },
+            { id: 'cupo-desc', label: 'Cupo: más libres' }
+        ];
+
+        // Cada sala pertenece a UNA categoría: las privadas a 'privadas' y el
+        // resto a su precio exacto (así los tiers $0.50/$1/$3/$5 salen solos).
+        function precioDe(sala) { return Number(sala.precioEntrada || 0); }
+        function categoriaDe(sala) { return sala.esPrivada ? 'privadas' : 'precio:' + precioDe(sala).toFixed(2); }
+        function etiquetaCategoria(id) {
+            if (id === 'todas') return 'Todas';
+            if (id === 'privadas') return '🔒 Privadas';
+            const p = parseFloat(String(id).replace('precio:', ''));
+            return p > 0 ? '$' + p.toFixed(2) : 'Gratis';
+        }
+        // Orden de los grupos: precios de menor a mayor y las privadas al final.
+        function pesoCategoria(id) {
+            if (id === 'privadas') return Number.MAX_SAFE_INTEGER;
+            return parseFloat(String(id).replace('precio:', '')) || 0;
+        }
+        // Cupos libres de una sala (0 si ya arrancó: ahí no se puede entrar)
+        function lugaresLibres(sala) {
+            if (sala.iniciada) return 0;
+            return Math.max(0, Number(sala.maxJugadores || 0) - Number(sala.jugadoresConectados || 0));
+        }
+        function compararSalas(a, b) {
+            switch (ordenSalas) {
+                case 'precio-desc': return precioDe(b) - precioDe(a) || lugaresLibres(b) - lugaresLibres(a);
+                case 'bote-desc': return Number(b.pozoActual || 0) - Number(a.pozoActual || 0) || lugaresLibres(b) - lugaresLibres(a);
+                case 'cupo-desc': return lugaresLibres(b) - lugaresLibres(a) || precioDe(a) - precioDe(b);
+                default: return precioDe(a) - precioDe(b) || lugaresLibres(b) - lugaresLibres(a);
             }
+        }
 
-            salasList.forEach((sala) => {
-                const estaLlena = (sala.jugadoresConectados || 0) >= sala.maxJugadores;
-                const estaIniciada = !!sala.iniciada;
+        // Construye la tarjeta de UNA sala (mismo markup y clases de siempre).
+        // El listener sustituye al onclick inline: el id de la sala no puede
+        // inyectar código aunque lo controle el servidor.
+        function construirTarjeta(sala) {
+            const estaLlena = (sala.jugadoresConectados || 0) >= sala.maxJugadores;
+            const estaIniciada = !!sala.iniciada;
 
-                const tarjetaSala = document.createElement("div");
+            const tarjetaSala = document.createElement("div");
                 tarjetaSala.className = `tarjeta-sala ${sala.esPrivada ? 'privada' : 'publica'} ${estaIniciada ? 'iniciada' : ''}`;
 
                 tarjetaSala.innerHTML = `
@@ -626,8 +781,137 @@
                     unirseASala(this.dataset.sala, this.dataset.privada === '1');
                 });
 
-                contenedorSalas.appendChild(tarjetaSala);
+                return tarjetaSala;
+        }
+
+        // Categorías presentes en una lista, ordenadas por precio (privadas al final).
+        // 'todas' no es una categoría de sala: es el chip que las muestra todas.
+        function categoriasPresentes(salas) {
+            const vistas = new Set();
+            salas.forEach((s) => vistas.add(categoriaDe(s)));
+            return Array.from(vistas).sort((a, b) => pesoCategoria(a) - pesoCategoria(b));
+        }
+
+        // Chips de filtrado: Todas · $0.50 · $1 · $3 · $5 ·  Privadas, cada uno
+        // con el número de salas que contiene (se generan solos desde la lista).
+        function pintarChips(salas) {
+            const presentes = categoriasPresentes(salas);
+            // Si la categoría activa desapareció (se cerró ese tier de precio),
+            // se vuelve a 'todas' para no dejar el lobby vacío sin motivo.
+            if (categoriaActiva !== 'todas' && !presentes.includes(categoriaActiva)) {
+                categoriaActiva = 'todas';
+            }
+            const cuantas = (id) => id === 'todas'
+                ? salas.length
+                : salas.filter((s) => categoriaDe(s) === id).length;
+
+            chipsFiltros.innerHTML = ['todas'].concat(presentes).map((id) => {
+                const activa = id === categoriaActiva;
+                const priv = id === 'privadas' ? ' priv' : '';
+                return `<button type="button" class="chip-cat${priv}${activa ? ' activa' : ''}"`
+                    + ` data-cat="${escapeHTML(id)}" aria-pressed="${activa}">`
+                    + `${escapeHTML(etiquetaCategoria(id))}`
+                    + `<span class="chip-cat-n">${cuantas(id)}</span></button>`;
+            }).join('');
+        }
+
+        // Aplica categoría + "solo con cupo" y devuelve lo que se va a pintar.
+        function salasVisibles() {
+            return salasCache
+                .filter((s) => categoriaActiva === 'todas' || categoriaDe(s) === categoriaActiva)
+                .filter((s) => !soloConCupo || lugaresLibres(s) > 0);
+        }
+
+        // Un grupo = cabecera de categoría (con totales) + rejilla de tarjetas.
+        function construirGrupo(id, salas) {
+            const libres = salas.reduce((acc, s) => acc + lugaresLibres(s), 0);
+            const bloque = document.createElement('section');
+            bloque.className = 'grupo-salas';
+            bloque.innerHTML = `
+                <div class="grupo-head">
+                    <span class="grupo-titulo"><span class="grupo-dot"></span>${escapeHTML(etiquetaCategoria(id))}</span>
+                    <span class="grupo-meta"><b>${salas.length}</b> ${salas.length === 1 ? 'sala' : 'salas'} · <b class="${libres > 0 ? 'ok' : ''}">${libres}</b> cupos libres</span>
+                </div>
+                <div class="grupo-grid"></div>
+            `;
+            const rejilla = bloque.querySelector('.grupo-grid');
+            salas.sort(compararSalas).forEach((s) => rejilla.appendChild(construirTarjeta(s)));
+            return bloque;
+        }
+
+        // Estado vacío del lobby: distingue "no hay salas" de "los filtros no
+        // encajan" y ofrece quitar los filtros de un clic.
+        function pintarLobbyVacio() {
+            const bloque = document.createElement('div');
+            bloque.className = 'lobby-vacio';
+            bloque.innerHTML = salasCache.length > 0
+                ? `<h4>Sin salas con estos filtros</h4>
+                   <p>Hay ${salasCache.length} salas activas, pero ninguna encaja con la categoría elegida.</p>
+                   <button type="button" class="btn-unirse" id="btn-quitar-filtros">Ver todas las salas</button>`
+                : `<h4>No hay salas activas</h4>
+                   <p>Vuelve en un momento: el servidor levanta salas nuevas automáticamente.</p>`;
+            contenedorSalas.appendChild(bloque);
+
+            const btn = bloque.querySelector('#btn-quitar-filtros');
+            if (btn) btn.addEventListener('click', () => {
+                categoriaActiva = 'todas';
+                soloConCupo = false;
+                checkCupo.checked = false;
+                renderLobby();
             });
+        }
+
+        // Render completo del lobby: contador → chips → grupos por categoría.
+        // Los grupos van de menor a mayor precio (privadas al final) y el orden
+        // elegido se aplica dentro de cada grupo: el lobby se lee por tramos.
+        function renderLobby() {
+            pintarChips(salasCache);
+
+            const visibles = salasVisibles();
+            const sinFiltros = categoriaActiva === 'todas' && !soloConCupo;
+            spanSalasCount.textContent = sinFiltros
+                ? `${salasCache.length} ${salasCache.length === 1 ? 'sala' : 'salas'}`
+                : `${visibles.length} de ${salasCache.length} salas`;
+            // Sin salas no hay nada que filtrar: se oculta la barra entera.
+            barraFiltros.style.display = salasCache.length === 0 ? 'none' : '';
+
+            contenedorSalas.innerHTML = '';
+            if (visibles.length === 0) return pintarLobbyVacio();
+
+            const ids = categoriaActiva === 'todas'
+                ? categoriasPresentes(visibles)
+                : [categoriaActiva];
+            ids.forEach((id) => {
+                const grupo = visibles.filter((s) => categoriaDe(s) === id);
+                if (grupo.length) contenedorSalas.appendChild(construirGrupo(id, grupo));
+            });
+        }
+
+        // ── Controles del lobby (solo vista: no vuelven a pedir la lista) ──
+        ORDENES_SALAS.forEach((o) => {
+            const opt = document.createElement('option');
+            opt.value = o.id;
+            opt.textContent = o.label;
+            selectOrden.appendChild(opt);
+        });
+        selectOrden.value = ordenSalas;
+        selectOrden.addEventListener('change', () => { ordenSalas = selectOrden.value; renderLobby(); });
+        checkCupo.addEventListener('change', () => { soloConCupo = checkCupo.checked; renderLobby(); });
+        // Delegación: los chips se recrean en cada render, así que el listener
+        // vive en el contenedor (uno solo para todos, sin fugas de memoria).
+        chipsFiltros.addEventListener('click', (e) => {
+            const chip = e.target.closest('.chip-cat');
+            if (!chip) return;
+            categoriaActiva = chip.dataset.cat || 'todas';
+            renderLobby();
+        });
+
+        // La lista la empuja el servidor en tiempo real: se cachea y se pinta
+        // aplicando los filtros activos (sin coste de red extra ni re-render por
+        // cada cambio de filtro).
+        socket.on('roomsList', (salasList) => {
+            salasCache = Array.isArray(salasList) ? salasList : [];
+            renderLobby();
         });
 
         // Entrar a la sala seleccionada

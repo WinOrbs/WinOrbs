@@ -122,6 +122,7 @@
       doc,
       getDoc,
       updateDoc,
+      runTransaction,
       serverTimestamp
     } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
     import { firebaseConfig } from "./js/firebase-config.js";
@@ -175,24 +176,82 @@
       }
     });
 
-    // Guardar datos personales
+    // Valida el formato de un apodo. Devuelve el mensaje de error o null.
+    // Solo se bloquea lo que REALMENTE rompe la reserva apodos/{clave}: '/' no
+    // puede ir en un ID de documento, los IDs '__x__' son reservados por
+    // Firestore, y < > & " los rechazan las reglas. Letras con acento, ñ y
+    // espacios siguen permitidos (apodos antiguos siguen funcionando).
+    function motivoApodoInvalido(apodo) {
+      const s = String(apodo || "").trim();
+      if (s.length < 3) return "El nombre de usuario debe tener al menos 3 caracteres.";
+      if (s.length > 16) return "El nombre de usuario no puede superar 16 caracteres.";
+      if (s.indexOf("/") !== -1) return "El nombre de usuario no puede contener '/'.";
+      if (/^__.*__$/.test(s) || s === "." || s === "..") return "Ese nombre de usuario está reservado por el sistema. Elige otro.";
+      if (/[<>&"]/.test(s)) return "El nombre de usuario no puede contener los caracteres < > & \".";
+      return null;
+    }
+
+    // Guardar datos personales (el apodo es ÚNICO: reserva atómica en apodos/{lower})
     $("btn-guardar").addEventListener("click", async () => {
       if (!usuarioActual) return;
       const apodo = limpiar($("f-apodo").value);
-      if (apodo.length < 3) return msg("El nombre de usuario debe tener al menos 3 caracteres.", "err");
+      const malApodo = motivoApodoInvalido(apodo);
+      if (malApodo) return msg(malApodo, "err");
       $("btn-guardar").disabled = true;
       try {
-        await updateDoc(doc(db, "usuarios", usuarioActual.uid), {
+        const refYo = doc(db, "usuarios", usuarioActual.uid);
+        const snapYo = await getDoc(refYo);
+        const perfilYo = snapYo.exists() ? (snapYo.data() || {}) : {};
+        const apodoAnterior = String(perfilYo.apodo || "");
+        const claveNueva = apodo.trim().toLowerCase();
+        const claveVieja = apodoAnterior.trim().toLowerCase();
+        const apodoCambia = apodo !== apodoAnterior;          // incluye solo-mayúsculas
+        const sinReserva = !perfilYo.apodoLower;              // perfil antiguo
+
+        // 1) Reserva el apodo si cambia (aunque solo sean mayúsculas/espacios) o
+        //    si el perfil es antiguo y todavía no tenía reserva. Es idempotente
+        //    cuando la reserva ya es tuya, y falla si es de otro usuario.
+        if (apodoCambia || sinReserva) {
+          await runTransaction(db, async (t) => {
+            const refA = doc(db, "apodos", claveNueva);
+            const snapA = await t.get(refA);
+            if (snapA.exists() && snapA.data().uid !== usuarioActual.uid) {
+              throw new Error("APODO_EN_USO");
+            }
+            t.set(refA, { uid: usuarioActual.uid, apodo: apodo });
+          });
+        }
+
+        // 2) Actualiza el perfil (las reglas exigen que el apodo esté reservado)
+        await updateDoc(refYo, {
           apodo: apodo,
+          apodoLower: claveNueva,
           cedula: soloDigitos($("f-cedula").value),
           telefono: soloDigitos($("f-telefono").value),
           banco: limpiar($("f-banco").value),
           actualizadoEn: serverTimestamp()
         });
+
+        // 3) Libera la reserva del apodo viejo (best-effort, solo si cambió la clave)
+        if (claveVieja && claveVieja !== claveNueva) {
+          try {
+            await runTransaction(db, async (t) => {
+              const refV = doc(db, "apodos", claveVieja);
+              const snapV = await t.get(refV);
+              if (snapV.exists() && snapV.data().uid === usuarioActual.uid) t.delete(refV);
+            });
+          } catch (eLib) { /* best-effort */ }
+        }
         try { localStorage.setItem("ode_user", apodo); } catch (e) { }
         msg("Datos guardados correctamente.", "ok");
       } catch (e) {
-        msg("No se pudo guardar: " + (e.code || e.message), "err");
+        if (e && e.message === "APODO_EN_USO") {
+          msg("Ese nombre de usuario ya está en uso. Elige otro.", "err");
+        } else if (e && e.code === "permission-denied") {
+          msg("No se pudo guardar: revisa que firestore.rules esté publicado (colección 'apodos' incluida).", "err");
+        } else {
+          msg("No se pudo guardar: " + (e.code || e.message), "err");
+        }
       }
       $("btn-guardar").disabled = false;
     });

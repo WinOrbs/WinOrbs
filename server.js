@@ -1414,10 +1414,8 @@ class GameRoom {
     }
 }
 
-// Inicializar salas por defecto
-rooms["sala_1"] = new GameRoom("sala_1", "Arena Principiantes", 6, 1.00, false);
-rooms["sala_2"] = new GameRoom("sala_2", "Liga Pro High Roller", 4, 5.00, false);
-rooms["sala_vip"] = new GameRoom("sala_vip", "Privada VIP", 4, 10.00, true, "1234");
+// Salas iniciales: NO hay salas fijas; solo las automáticas por tier
+// (5 × $0.50, 5 × $1, 5 × $3, 5 × $5) + las que cree el admin.
 
 // ── Salas automáticas por tier: 5 × $0.50, 5 × $1, 5 × $3, 5 × $5 (10 plazas) ──
 const SALAS_AUTO = [
@@ -1723,6 +1721,41 @@ io.on('connection', (socket) => {
         // Verificar identidad (modo economía: ID token de Firebase)
         await verificarUidEnSala(socket, room, { uid, token });
 
+        // Apodo ÚNICO en juego: si el socket trae UID verificado y el apodo que
+        // escribió NO coincide con el registrado en su perfil, se usa el del
+        // perfil. Así nadie puede suplantar el apodo de otro dentro de la sala
+        // (y el ganadorNick del premio siempre es el dueño real).
+        // Además se rechaza el nick si OTRO jugador de la sala ya lo usa
+        // (comparación insensible a mayúsculas), para que no haya 2 iguales
+        // ni siquiera entre invitados sin UID.
+        let nickFinal = nick;
+        if (socket.verifiedUid && FIREBASE_DB) {
+            try {
+                const snapPerfil = await FIREBASE_DB.collection('usuarios').doc(socket.verifiedUid).get();
+                const apodoReal = snapPerfil.exists ? String((snapPerfil.data() || {}).apodo || '').trim() : '';
+                if (apodoReal) nickFinal = apodoReal;
+            } catch (e) { /* si falla la lectura, se usa el nick enviado */ }
+        }
+        const claveNick = String(nickFinal || '').trim().toLowerCase();
+        const nickOcupado = Object.values(room.players).some((p) =>
+            p.id !== socket.id && String(p.nick || '').trim().toLowerCase() === claveNick);
+        if (claveNick && nickOcupado) {
+            return socket.emit('errorMsg', 'Ese apodo ya está en uso en esta sala. Cambia tu apodo en Mi Perfil.');
+        }
+
+        // Anti-suplantación GLOBAL: un socket sin UID verificado (invitado o
+        // navegador sin token) no puede jugar con un apodo que ya pertenece a una
+        // cuenta registrada (reserva apodos/{clave}). Así nadie puede hacerse
+        // pasar por otro jugador y desviar la conciliación de su premio.
+        if (!socket.verifiedUid && FIREBASE_DB && claveNick) {
+            try {
+                const snapAp = await FIREBASE_DB.collection('apodos').doc(claveNick).get();
+                if (snapAp.exists && (snapAp.data() || {}).uid) {
+                    return socket.emit('errorMsg', 'Ese apodo pertenece a una cuenta registrada. Inicia sesión con tu cuenta o elige otro apodo.');
+                }
+            } catch (e) { /* sin colección/reglas: no se bloquea el acceso */ }
+        }
+
         // Cobro de entrada en el SERVIDOR (modo economía) — el cliente ya no decide
         if (room.entryFee > 0 && FIREBASE_ECONOMY && !socket.__entradaCobrada) {
             if (!socket.verifiedUid) {
@@ -1745,7 +1778,7 @@ io.on('connection', (socket) => {
         socket.roomId = room.id;
         // Anticheat de skins: si la skin no es básica ni está en el inventario del jugador → básica
         const skinValidada = await validarSkinCliente(skin, socket.verifiedUid || (typeof uid === 'string' ? uid.slice(0, 128) : null));
-        room.addPlayer(socket.id, nick, skinValidada, socket.verifiedUid || (typeof uid === 'string' ? uid.slice(0, 128) : null));
+        room.addPlayer(socket.id, nickFinal, skinValidada, socket.verifiedUid || (typeof uid === 'string' ? uid.slice(0, 128) : null));
         const nuevoP = room.players[socket.id];
         nuevoP.__ip = ip;
         if (socket.__entradaCobrada) nuevoP.pagoEntrada = socket.__entradaCobrada;

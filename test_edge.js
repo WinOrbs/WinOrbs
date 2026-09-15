@@ -1,4 +1,7 @@
 const { io } = require('socket.io-client');
+// El password de admin viene de .env (dotenv) y NO debe quedar fijo en los tests.
+try { require('dotenv').config(); } catch (e) { /* dotenv opcional */ }
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 
 const socket = io('http://localhost:3000', { timeout: 5000, reconnection: false, autoConnect: false });
 
@@ -19,15 +22,20 @@ async function run() {
     await wait(500);
     console.log(`[${state.roomsList.length >= 3 ? 'PASS' : 'FAIL'}] Salas cargadas: ${state.roomsList.length}`);
 
+    // Las salas automáticas son TODAS de pago: sin cuenta verificada el join
+    // debe RECHAZARSE (protección de dinero), no aceptarse en silencio.
+    // (El join correcto en sala gratuita se prueba más abajo con la VIP.)
     state.errorMsg = null;
     state.joinedSuccess = null;
-    socket.emit('joinRoom', { roomId: 'sala_1', password: '', nick: 'Edge', skin: {} });
+    const salaPago = (state.roomsList || []).find((r) => !r.esPrivada && Number(r.precioEntrada) > 0);
+    socket.emit('joinRoom', { roomId: salaPago ? salaPago.id : 'p05_1', password: '', nick: 'Edge', skin: {} });
     await wait(300);
-    console.log(`[${state.joinedSuccess ? 'PASS' : 'FAIL'}] Unido a sala_1`);
+    const rechazado = !state.joinedSuccess && /pago/i.test(state.errorMsg || '');
+    console.log(`[${rechazado ? 'PASS' : 'FAIL'}] Sala de pago rechazada sin cuenta verificada: "${state.errorMsg}"`);
 
     // Crear sala para prueba (con auth)
     state.errorMsg = null;
-    socket.emit('adminAuth', { password: 'admin123' });
+    socket.emit('adminAuth', { password: ADMIN_PASSWORD });
     await wait(300);
 
     const roomId = 'fixed_id_test';
@@ -43,13 +51,17 @@ async function run() {
 
     state.errorMsg = null;
     state.joinedSuccess = null;
-    socket.emit('joinRoom', { roomId: 'sala_vip', password: '1234', nick: 'VIP', skin: {} });
+    // Sala privada de prueba: se crea bajo demanda (ya no hay sala_vip fija)
+    const vipId = 'vip_test_' + Date.now();
+    socket.emit('adminCreateRoom', { id: vipId, nombre: 'VIP Test', maxJugadores: 4, precioEntrada: 0, esPrivada: true, password: '1234' });
+    await wait(300);
+    socket.emit('joinRoom', { roomId: vipId, password: '1234', nick: 'VIP', skin: {} });
     await wait(300);
     console.log(`[${state.joinedSuccess ? 'PASS' : 'FAIL'}] Sala privada con password correcto`);
 
     state.errorMsg = null;
     state.joinedSuccess = null;
-    socket.emit('joinRoom', { roomId: 'sala_vip', password: 'WRONG', nick: 'Hacker', skin: {} });
+    socket.emit('joinRoom', { roomId: vipId, password: 'WRONG', nick: 'Hacker', skin: {} });
     await wait(300);
     const pass = state.errorMsg && (state.errorMsg.includes('incorrecta') || state.errorMsg.includes('Contraseña'));
     console.log(`[${pass ? 'PASS' : 'FAIL'}] Password incorrecto rechazado: "${state.errorMsg}"`);
@@ -59,6 +71,10 @@ async function run() {
     await wait(300);
     const gone = !state.roomsList.find(r => r.id === roomId);
     console.log(`[${gone ? 'PASS' : 'FAIL'}] Sala destruida correctamente`);
+
+    // Limpieza de la sala privada de prueba
+    socket.emit('adminDestroyRoom', { roomId: vipId });
+    await wait(300);
 
     console.log('\n=== PRUEBAS EDGE COMPLETADAS ===');
     socket.disconnect();

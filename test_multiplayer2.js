@@ -1,4 +1,7 @@
 const { io } = require('socket.io-client');
+// El password de admin viene de .env (dotenv) y NO debe quedar fijo en los tests.
+try { require('dotenv').config(); } catch (e) { /* dotenv opcional */ }
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 
 let passed = 0;
 let failed = 0;
@@ -22,7 +25,15 @@ async function runTests() {
     socket1.connect();
     await s1_rooms;
 
-    const roomId = 'sala_1';
+    // Las salas automáticas son TODAS de pago ($0.50–$5) y exigen cuenta
+    // verificada; para probar la sincronización multijugador se crea una sala
+    // GRATIS con el admin y ambos jugadores entran en ella.
+    socket1.emit('adminAuth', { password: ADMIN_PASSWORD });
+    await new Promise(r => socket1.once('adminAuthed', r));
+    const roomId = 'mp_test_' + Date.now();
+    socket1.emit('adminCreateRoom', { id: roomId, nombre: 'MP Test', maxJugadores: 10, precioEntrada: 0, esPrivada: false });
+    const mpRooms = await new Promise(r => socket1.once('roomsList', r));
+    log(`Sala gratuita de prueba creada (${roomId})`, !!mpRooms.find(r => r.id === roomId));
 
     socket1.emit('joinRoom', { roomId, password: '', nick: 'Player1', skin: { c1: '#38bdf8' } });
     const j1 = await s1_joined;
@@ -54,9 +65,8 @@ async function runTests() {
     });
     log('Player1 recibió gameState actualizado después de input', !!state1_2);
 
-    // Autenticar como admin (requerido para adminCreateRoom/adminDestroyRoom)
-    socket1.emit('adminAuth', { password: 'admin123' });
-    await new Promise(r => socket1.once('adminAuthed', r));
+    // (La autenticación de admin ya se hizo arriba, antes de crear la sala
+    //  gratuita de la prueba multijugador.)
 
     socket1.emit('adminCreateRoom', {
         id: 'dup_test_' + Date.now(),
@@ -94,13 +104,21 @@ async function runTests() {
     const gone = destroyedRooms.find(r => r.id === 'dup_test_2');
     log('Sala destruida correctamente', !gone);
 
-    socket1.emit('joinRoom', { roomId: 'sala_vip', password: '1234', nick: 'TestVIP', skin: {} });
+    // Sala privada bajo demanda (ya no existe sala_vip fija)
+    const vipId = 'vip_test_' + Date.now();
+    socket1.emit('adminCreateRoom', { id: vipId, nombre: 'VIP Test', maxJugadores: 4, precioEntrada: 0, esPrivada: true, password: '1234' });
+    await new Promise(r => setTimeout(r, 400));
+    socket1.emit('joinRoom', { roomId: vipId, password: '1234', nick: 'TestVIP', skin: {} });
     const vipJoin = await s1_joined;
     log('Unión a sala privada con password correcto', !!vipJoin.roomId);
 
-    socket1.emit('joinRoom', { roomId: 'sala_vip', password: 'incorrecta', nick: 'TestVIP2', skin: {} });
+    socket1.emit('joinRoom', { roomId: vipId, password: 'incorrecta', nick: 'TestVIP2', skin: {} });
     const vipError = await new Promise(r => socket1.on('errorMsg', r));
     log(`Error en sala privada con password incorrecto: "${vipError}"`, vipError.includes('incorrecta') || vipError.includes('Contraseña'));
+
+    // Limpieza: destruye la sala gratuita de la prueba multijugador
+    socket1.emit('adminDestroyRoom', { roomId });
+    await new Promise(r => setTimeout(r, 400));
 
     socket1.disconnect();
     socket2.disconnect();

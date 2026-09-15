@@ -27,12 +27,22 @@ service cloud.firestore {
       );
     }
 
+    // ¿El apodo está RESERVADO a tu nombre en apodos/{apodo en minúsculas}?
+    // Garantiza que no existan dos cuentas con el mismo apodo (insensible a
+    // mayúsculas): la conciliación de premios depende de esa unicidad.
+    function apodoReservadoA(apodo) {
+      return apodo is string
+        && exists(/databases/$(database)/documents/apodos/$(apodo.lower().trim()))
+        && get(/databases/$(database)/documents/apodos/$(apodo.lower().trim())).data.uid == request.auth.uid;
+    }
+
     // ── Perfiles de usuario ──
     match /usuarios/{uid} {
       allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
 
       // Crear perfil propio al registrarse (saldo 0, sin ban, apodo seguro)
       allow create: if request.auth != null && request.auth.uid == uid
+                    && apodoReservadoA(request.resource.data.apodo)
                     && request.resource.data.saldo == 0
                     && request.resource.data.baneado == false
                     && request.resource.data.apodo is string
@@ -47,9 +57,40 @@ service cloud.firestore {
       allow update: if isAdmin()
                     || (request.auth != null && request.auth.uid == uid
                         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['baneado'])
-                        && request.resource.data.saldo <= resource.data.saldo);
+                        && request.resource.data.saldo <= resource.data.saldo
+                        // Cambiar de apodo exige tenerlo reservado a tu nombre;
+                        // si el apodo no cambia no se exige (perfiles antiguos).
+                        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['apodo'])
+                            || apodoReservadoA(request.resource.data.apodo)));
 
       allow delete: if isAdmin();
+    }
+
+    // ── Reserva global de apodos ÚNICOS (apodos/{minusculas} → { uid, apodo }) ──
+    // Garantiza que no haya dos cuentas con el mismo apodo (insensible a
+    // mayúsculas): la conciliación de premios y el reclamo dependen de eso.
+    match /apodos/{clave} {
+      // Cualquiera autenticado puede comprobar si un apodo está libre (get).
+      // El listado masivo queda solo para admin.
+      allow get: if request.auth != null;
+      allow list: if isAdmin();
+      // Crear/reservar: el doc id debe ser el apodo en minúsculas, con uid propio.
+      allow create: if request.auth != null
+                    && request.resource.data.apodo is string
+                    && clave == request.resource.data.apodo.lower().trim()
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.apodo.size() >= 3
+                    && request.resource.data.apodo.size() <= 16
+                    && !request.resource.data.apodo.matches('.*[<>&\"].*')
+                    // Los IDs '__x__' son RESERVADOS por Firestore: no pueden ser
+                    // clave de la reserva (romperían el registro con error críptico).
+                    && clave.matches('^__.*__$') == false;
+      // Reclamar/actualizar: solo si queda a tu nombre o era tuya y la liberas.
+      allow update: if request.auth != null
+                    && request.resource.data.uid == request.auth.uid
+                    && (resource.data.uid == request.auth.uid || !resource.data.keys().hasAny(['uid']));
+      allow delete: if request.auth != null
+                    && (resource.data.uid == request.auth.uid || isAdmin());
     }
 
     // ── Solicitudes de depósito / retiro / premio ──

@@ -327,6 +327,7 @@
       doc,
       getDoc,
       setDoc,
+      runTransaction,
       serverTimestamp
     } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
     import { firebaseConfig } from "./js/firebase-config.js";
@@ -369,6 +370,78 @@
       return (base.length >= 3 ? base : "Jugador") + "_" + Math.random().toString(36).slice(2, 5);
     }
 
+    // Apodos ÚNICOS: reserva atómica en apodos/{lower} → { uid }.
+    // Sin esto dos cuentas podían usar el mismo apodo y la conciliación de
+    // premios quedaba ambigua. La transacción falla si el apodo ya es de otro.
+    function claveApodo(apodo) { return String(apodo || "").trim().toLowerCase(); }
+
+    // Valida el formato de un apodo. Devuelve el mensaje de error o null.
+    // Solo se bloquea lo que REALMENTE rompe la reserva apodos/{clave}: '/' no
+    // puede ir en un ID de documento, los IDs '__x__' son reservados por
+    // Firestore, y < > & " los rechazan las reglas. Letras con acento, ñ y
+    // espacios siguen permitidos.
+    function motivoApodoInvalido(apodo) {
+      const s = String(apodo || "").trim();
+      if (s.length < 3) return "El nombre de usuario debe tener al menos 3 caracteres.";
+      if (s.length > 16) return "El nombre de usuario no puede superar 16 caracteres.";
+      if (s.indexOf("/") !== -1) return "El nombre de usuario no puede contener '/'.";
+      if (/^__.*__$/.test(s) || s === "." || s === "..") return "Ese nombre de usuario está reservado por el sistema. Elige otro.";
+      if (/[<>&"]/.test(s)) return "El nombre de usuario no puede contener los caracteres < > & \".";
+      return null;
+    }
+
+    async function reclamarApodo(uid, apodo) {
+      const clave = claveApodo(apodo);
+      // Red de seguridad: los flujos ya validan antes con motivoApodoInvalido().
+      if (motivoApodoInvalido(apodo)) throw new Error("APODO_INVALIDO");
+      try {
+        await runTransaction(db, async (t) => {
+          const refA = doc(db, "apodos", clave);
+          const snapA = await t.get(refA);
+          if (snapA.exists() && snapA.data().uid !== uid) {
+            throw new Error("APODO_EN_USO");
+          }
+          t.set(refA, { uid: uid, apodo: String(apodo).trim() });
+          // El apodoLower del perfil SOLO se marca si el perfil YA existe: si aún
+          // no existe lo crea el llamador con el documento completo (la regla
+          // 'create' de usuarios exige saldo:0 / baneado:false / apodo, y un
+          // merge previo dejaría el perfil incompleto y la creación sería denegada).
+          const refU = doc(db, "usuarios", uid);
+          const snapU = await t.get(refU);
+          if (snapU.exists()) t.set(refU, { apodoLower: clave }, { merge: true });
+        });
+        return true;
+      } catch (e) {
+        // Colisión real de apodo: se propaga para que el llamador lo informe.
+        if (e && e.message === "APODO_EN_USO") throw e;
+        // Reglas de Firestore sin publicar (colección 'apodos'): no se puede
+        // garantizar la unicidad, pero NO se bloquea el registro/login.
+        if (e && (e.code === "permission-denied" || e.code === "unauthenticated")) {
+          console.warn("WinOrbs: publica las reglas de firestore.rules (colección 'apodos') para garantizar apodos únicos.");
+          try {
+            const refU = doc(db, "usuarios", uid);
+            const snapU = await getDoc(refU);
+            if (snapU.exists()) await setDoc(refU, { apodoLower: clave }, { merge: true });
+          } catch (e2) { /* sin permisos: se sigue sin marca */ }
+          return false;
+        }
+        throw e;
+      }
+    }
+
+    async function liberarApodo(uid, apodoAnterior) {
+      const clave = claveApodo(apodoAnterior);
+      if (!clave) return;
+      try {
+        await runTransaction(db, async (t) => {
+          const refA = doc(db, "apodos", clave);
+          const snapA = await t.get(refA);
+          // Solo libera si la reserva sigue siendo tuya (no pisa a otro).
+          if (snapA.exists() && snapA.data().uid === uid) t.delete(refA);
+        });
+      } catch (e) { /* liberar es best-effort */ }
+    }
+
     function mensajeFirebase(code) {
       const mapa = {
         "auth/invalid-credential": "Email o contraseña incorrectos.",
@@ -396,12 +469,15 @@
     });
 
     // Crea el documento de perfil si no existe (cuentas sin perfil)
+    // + reclama el apodo para que nadie más pueda usarlo.
     async function asegurarPerfil(uid, apodo, email) {
       const ref = doc(db, "usuarios", uid);
       const snap = await getDoc(ref);
       if (!snap.exists()) {
+        await reclamarApodo(uid, apodo);
         await setDoc(ref, {
           apodo: apodo,
+          apodoLower: claveApodo(apodo),
           email: email || "",
           saldo: 0,
           baneado: false,
@@ -409,7 +485,12 @@
         });
         return { apodo: apodo, baneado: false };
       }
-      return snap.data();
+      const actual = snap.data() || {};
+      // Perfil viejo sin reserva: intenta reclamar su propio apodo (best-effort).
+      if (actual.apodo && !actual.apodoLower) {
+        try { await reclamarApodo(uid, actual.apodo); } catch (e) { /* otro lo tomó: se verá al cambiarlo */ }
+      }
+      return actual;
     }
 
     form.addEventListener("submit", async function (e) {
@@ -431,22 +512,53 @@
       try {
         if (modoRegistro) {
           const apodo = userInput.value.trim();
-          if (apodo.length < 3) {
+          const malApodo = motivoApodoInvalido(apodo);
+          if (malApodo) {
             btnEntrar.disabled = false;
-            return mostrarError("El nombre de usuario debe tener al menos 3 caracteres.");
+            return mostrarError(malApodo);
           }
           const cred = await createUserWithEmailAndPassword(auth, email, pass);
-          await setDoc(doc(db, "usuarios", cred.user.uid), {
-            apodo: apodo,
-            email: email,
-            saldo: 0,
-            baneado: false,
-            creadoEn: serverTimestamp()
-          });
+          try {
+            // 1) Reserva el apodo (atómico: falla si ya es de otra cuenta)
+            await reclamarApodo(cred.user.uid, apodo);
+            // 2) Crea el perfil (la regla 'create' exige la reserva previa)
+            await setDoc(doc(db, "usuarios", cred.user.uid), {
+              apodo: apodo,
+              apodoLower: claveApodo(apodo),
+              email: email,
+              saldo: 0,
+              baneado: false,
+              creadoEn: serverTimestamp()
+            });
+          } catch (errApodo) {
+            // Revierte TODO: libera la reserva y borra la cuenta Auth, para no
+            // dejar ni un apodo bloqueado ni un usuario sin perfil válido.
+            try { await liberarApodo(cred.user.uid, apodo); } catch (e0) { }
+            try { await cred.user.delete(); } catch (e2) { try { await signOut(auth); } catch (e3) { } }
+            btnEntrar.disabled = false;
+            return mostrarError(errApodo && errApodo.message === "APODO_EN_USO"
+              ? "Ese nombre de usuario ya está en uso. Elige otro."
+              : errApodo && errApodo.message === "APODO_INVALIDO"
+                ? "Ese nombre de usuario no es válido. Elige otro."
+                : "No se pudo crear la cuenta: " + ((errApodo && (errApodo.code || errApodo.message)) || "error"));
+          }
           guardarSesion(cred.user.uid, apodo);
         } else {
           const cred = await signInWithEmailAndPassword(auth, email, pass);
-          const perfil = await asegurarPerfil(cred.user.uid, apodoDesdeEmail(email), email);
+          // Si la cuenta aún no tiene perfil, se crea con apodo aleatorio;
+          // reintenta si colisiona con un apodo existente (máx. 5).
+          let perfil = null;
+          let baseApodo = apodoDesdeEmail(email);
+          for (let intento = 0; intento < 5; intento++) {
+            try {
+              perfil = await asegurarPerfil(cred.user.uid, baseApodo, email);
+              break;
+            } catch (eApodo) {
+              if (eApodo && eApodo.message === "APODO_EN_USO") { baseApodo = apodoDesdeEmail(email); continue; }
+              throw eApodo;
+            }
+          }
+          if (!perfil) throw new Error("APODO_EN_USO");
           if (perfil && perfil.baneado) {
             await signOut(auth);
             btnEntrar.disabled = false;
@@ -457,25 +569,52 @@
         window.location.href = "index.html";
       } catch (err) {
         btnEntrar.disabled = false;
-        mostrarError(mensajeFirebase(err.code));
+        if (err && err.message === "APODO_EN_USO") {
+          mostrarError("No se pudo asignar un nombre de usuario único. Inténtalo de nuevo.");
+        } else {
+          mostrarError(mensajeFirebase(err.code));
+        }
       }
     });
 
     // Entrar como invitado (cuenta anónima de Firebase con perfil propio)
+    // El apodo aleatorio también se reserva para mantener la unicidad global.
     btnGuest.addEventListener("click", async function () {
       limpiarError();
       btnGuest.disabled = true;
       try {
         const cred = await signInAnonymously(auth);
-        const apodo = "Invitado_" + Math.random().toString(36).slice(2, 7);
-        await setDoc(doc(db, "usuarios", cred.user.uid), {
-          apodo: apodo,
-          email: "",
-          saldo: 0,
-          baneado: false,
-          invitado: true,
-          creadoEn: serverTimestamp()
-        }, { merge: true });
+        let apodo = "";
+        for (let intento = 0; intento < 5; intento++) {
+          const candidato = "Invitado_" + Math.random().toString(36).slice(2, 7);
+          try {
+            await reclamarApodo(cred.user.uid, candidato);
+            apodo = candidato;
+            break;
+          } catch (eApodo) { /* colisión improbable: reintenta */ }
+        }
+        if (!apodo) {
+          try { await cred.user.delete(); } catch (e2) { }
+          btnGuest.disabled = false;
+          return mostrarError("No se pudo generar un apodo de invitado. Inténtalo de nuevo.");
+        }
+        try {
+          await setDoc(doc(db, "usuarios", cred.user.uid), {
+            apodo: apodo,
+            apodoLower: claveApodo(apodo),
+            email: "",
+            saldo: 0,
+            baneado: false,
+            invitado: true,
+            creadoEn: serverTimestamp()
+          }, { merge: true });
+        } catch (errPerfil) {
+          // Nada a medias: libera la reserva y borra la cuenta anónima
+          try { await liberarApodo(cred.user.uid, apodo); } catch (e0) { }
+          try { await cred.user.delete(); } catch (e2) { }
+          btnGuest.disabled = false;
+          return mostrarError("No se pudo crear tu perfil de invitado: " + ((errPerfil && (errPerfil.code || errPerfil.message)) || "error"));
+        }
         guardarSesion(cred.user.uid, apodo);
         window.location.href = "index.html";
       } catch (err) {
@@ -492,7 +631,25 @@
       try {
         const cred = await signInWithPopup(auth, new GoogleAuthProvider());
         const email = cred.user.email || "";
-        const perfil = await asegurarPerfil(cred.user.uid, apodoDesdeEmail(email), email);
+        let apodoBase = apodoDesdeEmail(email);
+        // Google genera apodo aleatorio: reintenta si colisiona (máx. 5).
+        let perfil = null;
+        let ultimoError = null;
+        for (let intento = 0; intento < 5; intento++) {
+          try {
+            perfil = await asegurarPerfil(cred.user.uid, apodoBase, email);
+            ultimoError = null;
+            break;
+          } catch (eApodo) {
+            ultimoError = eApodo;
+            if (eApodo && eApodo.message === "APODO_EN_USO") {
+              apodoBase = apodoDesdeEmail(email);
+              continue;
+            }
+            throw eApodo;
+          }
+        }
+        if (ultimoError) throw ultimoError;
         if (perfil && perfil.baneado) {
           await signOut(auth);
           btnGoogle.disabled = false;

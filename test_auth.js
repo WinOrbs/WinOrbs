@@ -1,4 +1,7 @@
 const { io } = require('socket.io-client');
+// El password de admin viene de .env (dotenv) y NO debe quedar fijo en los tests.
+try { require('dotenv').config(); } catch (e) { /* dotenv opcional */ }
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 
 const results = [];
 function log(msg, ok) { results.push({ msg, ok }); console.log(`[${ok ? 'PASS' : 'FAIL'}] ${msg}`); }
@@ -19,6 +22,11 @@ async function run() {
     await wait(500);
     log(`Salas cargadas: ${state.roomsList.length}`, state.roomsList.length >= 3);
 
+    // Las 3 salas FIJAS iniciales (sala_1 / sala_2 / sala_vip) ya NO existen:
+    // solo quedan las automáticas por tier + las que cree el admin.
+    const fijas = (state.roomsList || []).filter((r) => ['sala_1', 'sala_2', 'sala_3', 'sala_vip'].includes(r.id));
+    log(`Sin salas fijas iniciales (sala_1/sala_2/sala_vip): ${fijas.length === 0 ? 'OK' : fijas.map((r) => r.id).join(', ')}`, fijas.length === 0);
+
     // Test: admin sin auth
     state.errorMsg = null;
     socket.emit('adminCreateRoom', { id: 'noauth_test', nombre: 'Test', maxJugadores: 2, esPrivada: false });
@@ -26,14 +34,18 @@ async function run() {
     log(`adminCreateRoom rechazado sin auth: ${state.errorMsg || 'NINGÚN ERROR'}`, !!state.errorMsg && state.errorMsg.includes('permisos'));
 
     state.errorMsg = null;
-    socket.emit('adminDestroyRoom', { roomId: 'sala_1' });
+    // Sin las 3 salas fijas: se verifica contra una sala pública existente
+    const algunaPub = (state.roomsList || []).find((r) => !r.esPrivada);
+    socket.emit('adminDestroyRoom', { roomId: algunaPub ? algunaPub.id : 'p05_1' });
     await wait(300);
-    const sala1Exists = state.roomsList.find(r => r.id === 'sala_1');
-    log(`adminDestroyRoom rechazado sin auth (sala_1 sigue viva)`, !!sala1Exists);
+    const sigueViva = (state.roomsList || []).find((r) => r.id === (algunaPub ? algunaPub.id : 'p05_1'));
+    // Sin auth el adminDestroyRoom se rechaza… salvo que ensureRooms reponga la
+    // sala auto en <30s. Lo válido: que haya llegado errorMsg de permisos.
+    log(`adminDestroyRoom rechazado sin auth (error de permisos)`, !!state.errorMsg);
 
     // Test: auth con password correcto
     state.adminAuthed = null;
-    socket.emit('adminAuth', { password: 'admin123' });
+    socket.emit('adminAuth', { password: ADMIN_PASSWORD });
     await wait(300);
     log(`Auth con password correcto: ${state.adminAuthed}`, state.adminAuthed === true);
 
@@ -63,6 +75,10 @@ async function run() {
     await wait(300);
     log('notifyTelegram rechazado sin auth (no crash)', true);
     sock2.disconnect();
+
+    // Limpieza: destruye la sala de prueba creada (no debe quedar en la lista)
+    socket.emit('adminDestroyRoom', { roomId: newRoomId });
+    await wait(300);
 
     socket.disconnect();
     console.log(`\n=== RESUMEN ===`);
