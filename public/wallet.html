@@ -226,6 +226,11 @@
     <h2>Historial de solicitudes</h2>
     <ul class="hist" id="lista-historial"></ul>
     <p class="vacio" id="hist-vacio">Cargando historial…</p>
+
+    <h2>Premios pendientes por reclamar</h2>
+    <p class="sub" id="premios-sub">Si ganaste sin sesión vinculada, tu premio queda pendiente y se acredita solo al entrar aquí.</p>
+    <button class="btn" id="btn-reclamar" type="button">🏆 Reclamar mis premios</button>
+    <p class="vacio" id="premios-msg"></p>
   </div>
 
   <script type="module">
@@ -266,9 +271,22 @@
     const COMISION_CASA = 0.2;      // 20% que retiene la casa al pagar el retiro
 
     // Guard de sesión + saldo y datos de cobro en vivo
+    let reclamoAutoHecho = false;
     onAuthStateChanged(auth, (user) => {
       if (!user) { window.location.href = "login.html"; return; }
       uid = user.uid;
+
+      // Auto-reclamo: al entrar a la wallet se pide al servidor conciliar
+      // los premios pendientes de este UID (o de su apodo). Seguro: el
+      // servidor solo acredita al propio usuario verificado por token.
+      if (!reclamoAutoHecho) {
+        reclamoAutoHecho = true;
+        user.getIdToken().then((token) => {
+          socket.emit('reclamarPremios', { uid, token });
+        }).catch(() => {
+          socket.emit('reclamarPremios', { uid });
+        });
+      }
 
       onSnapshot(doc(db, "usuarios", uid), (snap) => {
         if (!snap.exists()) return;
@@ -582,6 +600,34 @@
         }, (e) => {
             $("hist-vacio").textContent = "Sin permiso para el historial. ¿Reglas publicadas? (" + (e.code || "") + ")";
         });
+    });
+
+    // Reclamo manual (botón) + respuesta del servidor
+    $("btn-reclamar").addEventListener("click", async () => {
+      const u = auth.currentUser;
+      if (!u) return msg("Inicia sesión primero.", "err");
+      $("premios-msg").textContent = "⏳ Buscando tus premios pendientes…";
+      try {
+        const token = await u.getIdToken();
+        socket.emit('reclamarPremios', { uid: u.uid, token });
+      } catch (e) {
+        socket.emit('reclamarPremios', { uid: u.uid });
+      }
+    });
+
+    socket.on('premiosReclamados', (r) => {
+      const el = $("premios-msg");
+      if (!r || !r.ok) {
+        el.textContent = r && r.error === 'NO_AUTH'
+          ? "No se pudo verificar tu sesión. Recarga e inténtalo de nuevo."
+          : "No se pudo reclamar: " + ((r && r.error) || "error");
+        return;
+      }
+      const n = (r.acreditados || []).length;
+      const total = (r.acreditados || []).reduce((a, p) => a + Number(p.neto || 0), 0);
+      el.textContent = n > 0
+        ? `✅ ${n} premio(s) acreditados a tu saldo (+$${total.toFixed(2)} USD).`
+        : "Sin premios pendientes a tu nombre.";
     });
   </script>
 </body>

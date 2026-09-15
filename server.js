@@ -279,6 +279,7 @@ async function servidorPagarPremio(room, gameId, abandono = false) {
                 jugadores: lb.length, precioEntrada: room.entryFee,
                 ganadorUid: ganadorUid || '', ganadorNick,
                 estado: ganadorUid ? 'pagada' : 'premio_pendiente_admin',
+                comisionContabilizada: true,
                 fecha: firebaseAdmin.firestore.FieldValue.serverTimestamp()
             });
             t.set(FIREBASE_DB.collection('metricas').doc('casa'),
@@ -310,6 +311,120 @@ async function servidorPagarPremio(room, gameId, abandono = false) {
         console.error('[FIREBASE] Error pagando premio:', e.message);
     }
 }
+
+// ── CONCILIACIÓN AUTOMÁTICA de Premios Pendientes ────────────────────────────
+// Origen: ganador sin UID → partida 'premio_pendiente_admin' con solo apodo.
+// Solo autoconcilia con UN ÚNICO match exacto de apodo. Pago transaccional
+// idempotente; la comisión NO se duplica (flag comisionContabilizada).
+async function servidorAcreditarPremioPendiente(gameId, uidDestino, opts = {}) {
+    if (!FIREBASE_ECONOMY || !FIREBASE_DB || !gameId || !uidDestino) {
+        return { ok: false, error: 'PARAMS' };
+    }
+    try {
+        const res = await FIREBASE_DB.runTransaction(async (t) => {
+            const refP = FIREBASE_DB.collection('partidas').doc(gameId);
+            const snap = await t.get(refP);
+            if (!snap.exists) return { ok: false, error: 'NO_EXISTE' };
+            const p = snap.data() || {};
+            if (p.estado === 'pagada') return { ok: false, error: 'YA_PAGADA' };
+            if (p.estado !== 'premio_pendiente_admin') return { ok: false, error: 'ESTADO_INVALIDO' };
+            const neto = Number(p.neto || 0);
+            if (!(neto > 0)) return { ok: false, error: 'MONTO_INVALIDO' };
+            const refU = FIREBASE_DB.collection('usuarios').doc(uidDestino);
+            const sU = await t.get(refU);
+            if (!sU.exists) return { ok: false, error: 'USUARIO_NO_EXISTE' };
+            if (opts.exigirMatchApodo) {
+                const apodo = String((sU.data() || {}).apodo || '').trim().toLowerCase();
+                const nick = String(p.ganadorNick || '').trim().toLowerCase();
+                if (!apodo || !nick || apodo !== nick) return { ok: false, error: 'APODO_NO_COINCIDE' };
+            }
+            const saldo = Number((sU.data() || {}).saldo || 0);
+            t.update(refU, { saldo: +(saldo + neto).toFixed(2) });
+            t.set(FIREBASE_DB.collection('movimientos').doc(), {
+                usuarioId: uidDestino, tipo: 'premio', monto: +neto.toFixed(2),
+                detalle: 'Premio conciliado (auto) · partida ' + gameId + (opts.manual ? ' · vinculado por admin' : ''),
+                refId: gameId,
+                fecha: firebaseAdmin.firestore.FieldValue.serverTimestamp()
+            });
+            // La comisión YA se contabilizó al crear la partida (servidorPagarPremio
+            // siempre la suma, con o sin UID), así que aquí NUNCA se vuelve a sumar.
+            // El flag comisionContabilizada queda como marca de auditoría.
+            t.update(refP, {
+                estado: 'pagada',
+                ganadorUid: uidDestino,
+                pagadoEn: firebaseAdmin.firestore.FieldValue.serverTimestamp(),
+                pagadoPorAdmin: !!opts.manual,
+                conciliacionAuto: !opts.manual
+            });
+            return { ok: true, neto, ganadorNick: p.ganadorNick || '—' };
+        });
+        if (res && res.ok) {
+            telegramNotify('🏆 <b>PREMIO CONCILIADO' + (opts.manual ? ' (manual UID)' : ' (auto)') + '</b>\nPartida: ' + gameId + '\nGanador: ' + res.ganadorNick + '\nNeto: $' + Number(res.neto).toFixed(2) + ' USD');
+        }
+        return res;
+    } catch (e) {
+        return { ok: false, error: e.message };
+    }
+}
+
+async function servidorBuscarUidPorApodo(nick) {
+    const nombre = String(nick || '').trim();
+    if (!nombre || !FIREBASE_DB) return { uids: [] };
+    const snap = await FIREBASE_DB.collection('usuarios').where('apodo', '==', nombre).limit(5).get();
+    return { uids: snap.docs.map((d) => d.id) };
+}
+
+async function servidorConciliarPremiosPendientes(origen) {
+    if (!FIREBASE_ECONOMY || !FIREBASE_DB) return { ok: false, error: 'ECONOMY_OFF' };
+    const resumen = { pagados: [], ambiguos: [], sinMatch: [], errores: [] };
+    try {
+        const snap = await FIREBASE_DB.collection('partidas').where('estado', '==', 'premio_pendiente_admin').limit(50).get();
+        for (const d of snap.docs) {
+            const p = d.data() || {};
+            try {
+                const found = await servidorBuscarUidPorApodo(p.ganadorNick);
+                if (found.uids.length === 1) {
+                    const r = await servidorAcreditarPremioPendiente(d.id, found.uids[0], { exigirMatchApodo: true });
+                    if (r.ok) resumen.pagados.push({ gameId: d.id, uid: found.uids[0], neto: r.neto });
+                    else if (r.error !== 'YA_PAGADA') resumen.errores.push({ gameId: d.id, error: r.error });
+                } else if (found.uids.length === 0) {
+                    resumen.sinMatch.push({ gameId: d.id, nick: p.ganadorNick || '—' });
+                } else {
+                    resumen.ambiguos.push({ gameId: d.id, nick: p.ganadorNick || '—', n: found.uids.length });
+                }
+            } catch (e) { resumen.errores.push({ gameId: d.id, error: e.message }); }
+        }
+        if (resumen.pagados.length > 0) console.log('[PREMIOS] Conciliacion (' + (origen || 'auto') + '): ' + resumen.pagados.length + ' pagados.');
+        return Object.assign({ ok: true }, resumen);
+    } catch (e) {
+        return Object.assign({ ok: false, error: e.message }, resumen);
+    }
+}
+
+async function servidorReclamarPremiosDeUsuario(uid) {
+    if (!FIREBASE_ECONOMY || !FIREBASE_DB || !uid) return { ok: false, error: 'PARAMS' };
+    try {
+        const sU = await FIREBASE_DB.collection('usuarios').doc(uid).get();
+        if (!sU.exists) return { ok: false, error: 'USUARIO_NO_EXISTE' };
+        const apodo = String((sU.data() || {}).apodo || '').trim().toLowerCase();
+        const snap = await FIREBASE_DB.collection('partidas').where('estado', '==', 'premio_pendiente_admin').limit(50).get();
+        const acreditados = [];
+        for (const d of snap.docs) {
+            const p = d.data() || {};
+            const porUid = String(p.ganadorUid || '') === uid;
+            const porApodo = !!apodo && String(p.ganadorNick || '').trim().toLowerCase() === apodo;
+            if (!porUid && !porApodo) continue;
+            const r = await servidorAcreditarPremioPendiente(d.id, uid, { exigirMatchApodo: !porUid });
+            if (r.ok) acreditados.push({ gameId: d.id, neto: r.neto });
+        }
+        return { ok: true, acreditados };
+    } catch (e) {
+        return { ok: false, error: e.message };
+    }
+}
+
+const CONCILIAR_CADA_MS = Math.max(60000, Number(process.env.PREMIOS_AUTO_MS || 2 * 60 * 1000));
+setInterval(() => { servidorConciliarPremiosPendientes('worker').catch(() => {}); }, CONCILIAR_CADA_MS);
 
 function randID() {
     return Math.random().toString(36).substr(2, 9);
@@ -1432,6 +1547,37 @@ io.on('connection', (socket) => {
         if (ahora - (socket.__tgUltimo || 0) < 5000) return; // máx. 1 cada 5 s por conexión
         socket.__tgUltimo = ahora;
         telegramNotify('[WINORBS] ' + texto);
+    });
+
+    // Auto-reclamo: el ganador logueado pide conciliar sus pendientes (por UID o apodo)
+    socket.on('reclamarPremios', async (payload) => {
+        try {
+            await verificarUidEnSala(socket, null, payload || {});
+            const uid = socket.verifiedUid;
+            if (!uid) return socket.emit('premiosReclamados', { ok: false, error: 'NO_AUTH' });
+            const r = await servidorReclamarPremiosDeUsuario(uid);
+            socket.emit('premiosReclamados', r);
+        } catch (e) {
+            socket.emit('premiosReclamados', { ok: false, error: 'ERROR' });
+        }
+    });
+
+    // Admin: vincular un pendiente a un UID concreto (respaldo manual)
+    socket.on('adminVincularPremio', async (payload) => {
+        if (!socket.isAdmin) return socket.emit('premioVinculado', { ok: false, error: 'NO_ADMIN' });
+        const p = (payload && typeof payload === 'object') ? payload : {};
+        if (!p.gameId || !p.uid) return socket.emit('premioVinculado', { ok: false, error: 'PARAMS' });
+        const r = await servidorAcreditarPremioPendiente(String(p.gameId), String(p.uid), { manual: true, exigirMatchApodo: false });
+        socket.emit('premioVinculado', Object.assign({ gameId: p.gameId }, r));
+        if (r.ok) io.emit('premiosActualizados', { gameId: p.gameId });
+    });
+
+    // Admin: forzar pasada de conciliación automática bajo demanda
+    socket.on('adminConciliarPremios', async () => {
+        if (!socket.isAdmin) return socket.emit('premiosConciliados', { ok: false, error: 'NO_ADMIN' });
+        const r = await servidorConciliarPremiosPendientes('manual-admin');
+        socket.emit('premiosConciliados', r);
+        if (r.ok && (r.pagados || []).length > 0) io.emit('premiosActualizados', { n: r.pagados.length });
     });
 
     socket.on('adminCreateRoom', (roomData) => {
