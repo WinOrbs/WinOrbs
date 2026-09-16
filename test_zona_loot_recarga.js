@@ -2,10 +2,15 @@
 // test_zona_loot_recarga.js — Verificación de:
 //   1. Recarga manual (tecla R / botón móvil): ~2.5 s, SIN auto-recarga,
 //      disparo bloqueado mientras recarga, ignora cargador lleno.
+//      Cargador de la Pistola Base = 15 balas (PISTOLA_MAX_AMMO).
 //   2. Zona segura progresiva: radio inicial 3600, cierre toda la partida,
-//      fases + DPS expuestos en gameState.
-//   3. Botiquines: siembra inicial (3) y tope de 6 en mapa.
-//   4. Botín de airdrop + recarga del Lanza-Orbes: contrato del código fuente
+//      fases + DPS expuestos, centro MÓVIL (zoneCx/zoneCy) y zona final marcada
+//      en el mapa (zoneNext) a falta de 40 s.
+//   3. Tiendas itinerantes: 3 casetas con cuenta atrás que se reubican al agotar
+//      su vida (~15 s) dentro de la zona segura.
+//   4. Obstáculos tipados: rocas + coches/motos/barriles explosivos y muros finos.
+//   5. Botiquines: siembra inicial (3) y tope de 6 en mapa.
+//   6. Botín de airdrop + recarga del Lanza-Orbes: contrato del código fuente
 //      (el botín real depende de posición/tiempo, no es determinista por red).
 //
 // Uso: 1) node server.js   2) node test_zona_loot_recarga.js
@@ -96,9 +101,43 @@ async function run() {
     log(`zoneShrinking=true durante el cierre`, s1.zoneShrinking === true);
     log(`Fase y daño de zona expuestos (fase=${s1.zoneFase}, dps=${s1.zoneDps})`, s1.zoneFase === 0 && s1.zoneDps === 4);
 
+    // ── 3. ZONA MÓVIL: el círculo se cierra en un lugar ALEATORIO ──
+    log(`gameState expone el centro móvil (zoneCx=${Math.round(s1.zoneCx)}, zoneCy=${Math.round(s1.zoneCy)})`,
+        Number.isFinite(s1.zoneCx) && Number.isFinite(s1.zoneCy));
+    log('El centro de la zona cae dentro del mapa con margen (nunca pegado al borde)',
+        s1.zoneCx >= 400 && s1.zoneCx <= 4600 && s1.zoneCy >= 400 && s1.zoneCy <= 4600);
+    log('Sin zona final marcada todavía (zoneNext se revela a falta de 40 s)',
+        s1.zoneNext === null || s1.zoneNext === undefined);
+
+    // ── 4. TIENDAS ITINERANTES: 3 casetas con cuenta atrás que se reubican ──
+    const tiendas0 = (s1.shopZones || []).map(s => ({ x: s.x, y: s.y, life: s.life, maxLife: s.maxLife }));
+    log(`Tiendas itinerantes: ${tiendas0.length} casetas con cuenta atrás (antes 6 fijas)`, tiendas0.length === 3);
+    log('Cada tienda lleva su vida y su tope (life/maxLife)',
+        tiendas0.every(t => Number.isFinite(t.life) && Number.isFinite(t.maxLife)) &&
+        tiendas0.some(t => t.life < t.maxLife));
+    // La caseta con desfase 300 salta a los ~5 s; se sondea hasta 25 s (bajo carga
+    // el bucle de 60 fps puede tardar más en consumir 300 ticks).
+    let salto = false;
+    for (let i = 0; i < 125 && !salto; i++) {
+        await wait(200);
+        salto = (s1.shopZones || []).some((s, j) =>
+            tiendas0[j] && Math.hypot(s.x - tiendas0[j].x, s.y - tiendas0[j].y) > 50);
+    }
+    log('Una tienda SE REUBICA al agotar su vida (~15 s, desfases escalonados)', salto);
+
+    // ── 5. CAMPO DE OBSTÁCULOS: rocas + explosivos tipados ──
+    const tipos = {};
+    (s1.obstacles || []).forEach(o => {
+        const t = o.tipo || 'sin-tipo';
+        tipos[t] = (tipos[t] || 0) + 1;
+    });
+    log(`Obstáculos por tipo (${JSON.stringify(tipos)})`,
+        tipos.roca > 0 && tipos.coche > 0 && tipos.moto > 0 && tipos.barril > 0);
+    log('Los obstáculos conservan el contrato de colisión (x, y, w, h, hp, maxHp)',
+        (s1.obstacles || []).every(o => ['x', 'y', 'w', 'h', 'hp', 'maxHp'].every(k => Number.isFinite(o[k]))));
+
     // ── FIN PARTE 1 ──
     await parte2(p1, admin, m);
-
     // Limpieza
     admin.emit('adminDestroyRoom', { roomId: ROOM });
     await wait(300);
@@ -110,10 +149,12 @@ async function run() {
 }
 
 async function parte2(p1, admin, m) {
-    // ── 3. RECARGA: disparar hasta vaciar el cargador (cadencia 120 ms) ──
-    for (let i = 0; i < 8; i++) { p1.emit('playerShoot', { angle: 0 }); await wait(150); }
+    // ── 6. RECARGA: vaciar el cargador de la Pistola Base (15 balas, cadencia 120 ms).
+    // Se dispara 16 veces: las 15 primeras gastan el cargador y la última confirma
+    // que con el cargador vacío no se dispara.
+    for (let i = 0; i < 16; i++) { p1.emit('playerShoot', { angle: 0 }); await wait(150); }
     const ammoVacio = m().ammo;
-    log(`Cargador agotado tras disparar (ammo=${ammoVacio})`, ammoVacio === 0);
+    log(`Cargador de 15 balas agotado tras disparar (ammo=${ammoVacio})`, ammoVacio === 0);
 
     // SIN auto-recarga: 1.2 s después el cargador sigue a 0 y no recarga solo
     await wait(1200);
@@ -133,10 +174,10 @@ async function parte2(p1, admin, m) {
     let completada = false;
     for (let i = 0; i < 50 && !completada; i++) {
         await wait(200);
-        completada = m().ammo === 7 && m().isReloading === false;
+        completada = m().ammo === 15 && m().isReloading === false;
     }
-    log(`Recarga completada: ammo=${m().ammo}/7 e isReloading=${m().isReloading}`,
-        m().ammo === 7 && m().isReloading === false);
+    log(`Recarga completada: ammo=${m().ammo}/15 e isReloading=${m().isReloading}`,
+        m().ammo === 15 && m().isReloading === false);
 
     // Con el cargador lleno, R no arranca otra recarga
     p1.emit('playerReload');
@@ -176,6 +217,57 @@ async function parte2(p1, admin, m) {
         /generateHealthKit\(\)[\s\S]{0,300}this\.spawnPoint\(\)/.test(src));
     log('Daño de zona por fase en HP/s (no 1 HP/tick)',
         /p\.hp -= \(this\.zoneDps \|\| ZONA_DPS\[0\]\) \/ 60;/.test(src));
+
+    // ── 11. Contratos de la zona móvil, tiendas itinerantes y obstáculos ──
+    // (los cierres a los 40 s y las cadenas de barriles no son esperables en un
+    // test corto: se validan por contrato del código fuente + partida manual).
+    log('Cargador de la Pistola Base = 15 balas (constante única)',
+        src.includes('const PISTOLA_MAX_AMMO = 15;') &&
+        /ammo: PISTOLA_MAX_AMMO, maxAmmo: PISTOLA_MAX_AMMO,/.test(src));
+    log('La zona se cierra en lugares ALEATORIOS (cadena de centros por fase)',
+        /generarCentrosZona\(\)/.test(src) && src.includes('ZONA_CENTRO_PX_S = 60') &&
+        src.includes('ZONA_MARGEN_CENTRO = 400') && src.includes('(rPrev - fase.r) * 0.7'));
+    log('Alerta de la reducción final a los 40 s con la zona final marcada (zoneNext)',
+        src.includes('ZONA_ALERTA_FINAL_T = 40') &&
+        src.includes('this.gameTime === ZONA_ALERTA_FINAL_T') &&
+        src.includes('REDUCCIÓN FINAL · NUEVA ZONA MARCADA EN EL MAPA') &&
+        /zoneNext = \{ x: fin\.x, y: fin\.y, radius: ZONA_FASES\[ZONA_FASES\.length - 1\]\.r \}/.test(src));
+    log('El daño fuera de zona usa el centro MÓVIL (no MAP_SIZE/2)',
+        src.includes('Math.hypot(p.x - this.zoneCx, p.y - this.zoneCy)') &&
+        !src.includes('Math.hypot(p.x - MAP_SIZE / 2, p.y - MAP_SIZE / 2)'));
+    log('getState expone zoneCx / zoneCy / zoneNext',
+        src.includes('zoneCx: this.zoneCx') && src.includes('zoneCy: this.zoneCy') &&
+        src.includes('zoneNext: this.zoneNext'));
+    log('Tiendas itinerantes: 3 casetas con vida (~15 s) que se reubican al agotarse',
+        src.includes('const TIENDA_NUM = 3') && src.includes('TIENDA_VIDA_TICKS = 900') &&
+        src.includes('TIENDA_DESFASES = [900, 600, 300]') &&
+        /moverTienda\(i\) \{/.test(src) && /if \(t\.life <= 0\) this\.moverTienda\(i\);/.test(src));
+    log('Las tiendas se sortean dentro de la zona segura (y resetForLobby las regenera)',
+        /this\.shopZones = this\.generarTiendas\(\);/.test(src) &&
+        src.includes('zona - TIENDA_RADIO - 60'));
+    log('Obstáculos tipados con hp por tipo (roca/coche/moto/barril)',
+        src.includes("{ tipo: 'coche',  n: 6,  ancho: [70, 70],  alto: [44, 44] }") &&
+        src.includes("coche:  { radio: 150, dano: 45, hp: 36 }") &&
+        src.includes("barril: { radio: 130, dano: 40, hp: 12 }"));
+    log('Balas: dañan coche/moto/barril (−6) pero atraviesan las rocas',
+        /obs\.hp <= 0 \|\| !obs\.tipo \|\| obs\.tipo === 'roca'\) continue;/.test(src) &&
+        src.includes('this.explotarObstaculo(obs, b.ownerId)'));
+    log('Barriles con reacción en cadena por cola (sin recursión)',
+        src.includes('this.explosionChain = []') &&
+        /this\.explosionChain\.push\(\{ obs: o, ownerId, ticks: BARRIL_CADENA_TICKS \}\)/.test(src) &&
+        /explosionChain\.splice\(i, 1\);\s*\n\s*this\.explotarObstaculo\(e\.obs, e\.ownerId\);/.test(src));
+    log('Coche suelta 2 orbes ×10 y la moto da turbo al que la revienta',
+        src.includes('COCHE_ORBES = 2') && src.includes('COCHE_ORBE_VAL = 10') &&
+        src.includes('MOTO_TURBO_TICKS = 120') && src.includes('p.turboTimer = MOTO_TURBO_TICKS'));
+    log('explodeBomb hace estallar los explosivos alcanzados (rocas siguen en silencio)',
+        /if \(obs\.tipo && obs\.tipo !== 'roca'\) destruidos\.push\(obs\);/.test(src));
+    log('Muros finos de 3 balas (14 px, hp 15) con esquema simétrico',
+        /hp: 15, maxHp: 15, tipo: 'fino'/.test(src) && src.includes("const vertical = Math.random() < 0.5;"));
+    log('Cliente: obstáculos por tipo, anillo de tienda y marcador de zona final',
+        fs.readFileSync(path.join(__dirname, 'public', 'game.html'), 'utf8')
+            .match(/coche: \{ src: 'assets\/game\/car\.png' \}/) !== null &&
+        fs.readFileSync(path.join(__dirname, 'public', 'game.html'), 'utf8').includes('ZONA FINAL') &&
+        fs.readFileSync(path.join(__dirname, 'public', 'game.html'), 'utf8').includes('sz.life / sz.maxLife'));
 }
 
 run().catch(e => { console.error(e); process.exit(1); });

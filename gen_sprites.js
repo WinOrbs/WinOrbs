@@ -465,8 +465,70 @@ function spOrbGun(cv) {
     contorno(cv, '#3b0764');
 }
 
-/* ===================== 5. Generación y verificación ===================== */
+// Coche (cobertura destructible): visto desde arriba y en horizontal. Al
+// destruirse explota (radio 150, 45 de daño) y suelta 2 orbes ×10.
+function spCoche(cv) {
+    // neumáticos (asoman por los cuatro costados)
+    [[13, 5], [60, 5], [13, 37], [60, 37]].forEach(([x, y]) => rect(cv, x, y, 12, 6, '#0b1120'));
+    // carrocería
+    rect(cv, 4, 7, 71, 34, P.rojo);
+    rect(cv, 4, 7, 71, 4, P.rojoClaro);        // brillo superior
+    rect(cv, 4, 37, 71, 4, P.rojoOsc);         // sombra inferior
+    // cristales (parabrisas delantero y luneta)
+    rect(cv, 20, 11, 12, 26, P.cieloClaro);
+    rect(cv, 48, 11, 12, 26, '#7dd3fc');
+    // techo
+    rect(cv, 34, 10, 12, 28, '#b91c1c');
+    rect(cv, 34, 10, 12, 3, '#dc2626');
+    // faros y pilotos
+    rect(cv, 73, 11, 3, 7, P.amarClaro);
+    rect(cv, 73, 30, 3, 7, P.amarClaro);
+    rect(cv, 3, 11, 3, 7, P.rojoClaro);
+    rect(cv, 3, 30, 3, 7, P.rojoClaro);
+    contorno(cv, '#450a0a');
+}
 
+// Moto (frágil): al reventarla regala un turbo ×1.9 (~2 s) a quien la destruye.
+function spMoto(cv) {
+    // ruedas
+    rect(cv, 6, 6, 7, 16, '#0b1120');
+    rect(cv, 34, 6, 7, 16, '#0b1120');
+    px(cv, 9, 13, P.s400); px(cv, 37, 13, P.s400);
+    // chasis
+    rect(cv, 12, 9, 25, 10, P.purpOsc);
+    rect(cv, 12, 9, 25, 3, P.purp);
+    // depósito (brillante) y asiento
+    rect(cv, 18, 10, 12, 8, P.purpClaro);
+    rect(cv, 30, 11, 8, 6, '#0f172a');
+    // manillar
+    rect(cv, 39, 8, 5, 12, P.s700);
+    rect(cv, 40, 7, 3, 2, P.s300);
+    // tubo de escape
+    rect(cv, 14, 19, 10, 3, P.s400);
+    contorno(cv, '#2e1065');
+}
+
+// Barril explosivo: rojo con franjas de peligro. Reacción en cadena con los
+// explosivos (barriles y vehículos) que tenga cerca.
+function spBarril(cv) {
+    rect(cv, 6, 2, 20, 28, P.rojo);
+    rect(cv, 6, 2, 20, 3, P.rojoClaro);        // tapa
+    rect(cv, 6, 27, 20, 3, P.rojoOsc);         // base
+    // aros metálicos
+    rect(cv, 6, 9, 20, 2, P.s600);
+    rect(cv, 6, 21, 20, 2, P.s600);
+    // franja de peligro con marcas inclinadas
+    rect(cv, 8, 14, 16, 5, P.amar);
+    rect(cv, 8, 14, 16, 1, P.amarClaro);
+    px(cv, 11, 16, P.s900); px(cv, 13, 17, P.s900);
+    px(cv, 17, 16, P.s900); px(cv, 19, 17, P.s900);
+    px(cv, 22, 16, P.s900); px(cv, 24, 17, P.s900);
+    // brillo lateral
+    rect(cv, 8, 3, 2, 26, P.rojoClaro);
+    contorno(cv, '#450a0a');
+}
+
+/* ===================== 5. Generación y verificación ===================== */
 const SPRITES = [
     ['bg-tile.png', 150, 150, spFondo],
     ['orb-energy.png', 24, 24, spOrbe],
@@ -481,7 +543,10 @@ const SPRITES = [
     ['speed-pad.png', 96, 36, spTurbo],
     ['shop.png', 96, 96, spTienda],
     ['bank.png', 96, 96, spBanco],
-    ['orb-gun.png', 32, 32, spOrbGun]
+    ['orb-gun.png', 32, 32, spOrbGun],
+    ['car.png', 80, 48, spCoche],
+    ['moto.png', 48, 28, spMoto],
+    ['barrel.png', 32, 32, spBarril]
 ];
 
 function main() {

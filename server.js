@@ -135,6 +135,7 @@ const ITEM_COSTOS = { medkit: 30, shield: 50, bomb: 40, orbGun: 100 };
 const RELOAD_TICKS = 150;           // ~2.5 s a 60 fps
 const RECARGA_ORBES_COSTE = 25;     // gemas NO aseguradas por recargar el Lanza-Orbes
 const ORBGUN_MAX_AMMO = 3;          // orbes por cargador del Lanza-Orbes
+const PISTOLA_MAX_AMMO = 15;        // balas por cargador de la Pistola Base
 
 // ── ZONA SEGURA (battle royale) ──────────────────────────────────────────────
 // Radio inicial 3600 → cubre la esquina del mapa (5000/2·√2 ≈ 3535), así nadie
@@ -151,6 +152,45 @@ const ZONA_FASES = [
 ];
 const ZONA_DPS = [4, 6, 9, 14, 20]; // HP/s fuera de la zona, por fase
 const ZONA_CIERRE_PX_S = 40;        // velocidad máxima de cierre (px/s)
+// La zona cierra en LUGARES ALEATORIOS: cada fase elige un centro nuevo dentro
+// del círculo anterior, de modo que la partida termina en un sitio distinto cada
+// vez (antes era siempre el centro del mapa). El centro deriva además hacia su
+// objetivo con un tope, para que el círculo se "desplace" y no dé saltos.
+const ZONA_CENTRO_PX_S = 60;        // velocidad máxima de deriva del centro (px/s)
+const ZONA_ALERTA_FINAL_T = 40;     // s restantes cuando se marca la zona final
+const ZONA_MARGEN_CENTRO = 400;     // el centro nunca a menos de 400 px del borde
+                                    // (≥ radio final 280: la zona final cae en el mapa)
+
+// ── TIENDAS ITINERANTES ─────────────────────────────────────────────────────
+// Antes eran 6 casetas fijas en esquinas y bordes: nadie las disputaba y el
+// camping era trivial. Ahora son 3 casetas en puntos aleatorios DENTRO de la
+// zona segura, que se reubican al agotar su vida (~15 s), con vidas iniciales
+// desfasadas para que nunca salten todas a la vez.
+const TIENDA_NUM = 3;
+const TIENDA_RADIO = 80;
+const TIENDA_VIDA_TICKS = 900;          // ~15 s a 60 fps
+const TIENDA_DESFASES = [900, 600, 300]; // vida inicial por caseta (escalonada)
+const TIENDA_MIN_BANCO = 400;           // distancia mínima al banco
+const TIENDA_MIN_ENTRE = 500;           // separación mínima entre tiendas
+const TIENDA_MARGEN_SOLIDO = 80;        // holgura frente a muros/obstáculos
+const TIENDA_MARGEN_BORDE = 120;        // margen al borde del mapa
+const TIENDA_MIN_JUGADOR = 250;         // no reubicar encima de un jugador vivo
+
+// ── OBSTÁCULOS DESTRUCTIBLES ────────────────────────────────────────────────
+// roca: solo las bombas la dañan y las balas la atraviesan (igual que antes).
+// coche / moto / barril: bloquean balas (−6) y EXPLOTAN al destruirse; el barril
+// prende en cadena a los que tenga cerca (cola con retardo, sin recursión).
+const OBSTACULOS_TIPOS = {
+    roca:   { radio: 0,   dano: 0,  hp: 30 },
+    coche:  { radio: 150, dano: 45, hp: 36 },
+    moto:   { radio: 100, dano: 25, hp: 18 },
+    barril: { radio: 130, dano: 40, hp: 12 }
+};
+const BARRIL_CADENA_TICKS = 6;      // retardo de la reacción en cadena (~0,1 s)
+const BARRIL_CADENA_RADIO = 40;     // margen extra de encendido entre explosivos
+const COCHE_ORBES = 2;              // orbes que suelta un coche destruido
+const COCHE_ORBE_VAL = 10;
+const MOTO_TURBO_TICKS = 120;       // ~2 s de turbo ×1.9 al reventar una moto
 
 // ─ BOTIQUINES Y BOTÍN DE AIRDROP ────────────────────────────────────────────
 const KIT_VAL = 40;             // HP que cura un botiquín
@@ -564,14 +604,21 @@ class GameRoom {
         this.zoneShrinking = false;
         this.zoneFase = 0;
         this.zoneDps = ZONA_DPS[0];
+        // Zona móvil: centro actual (arranca en el centro del mapa) y cadena de
+        // centros aleatorios de las fases, elegida de nuevo en cada partida.
+        this.zoneCx = MAP_SIZE / 2;
+        this.zoneCy = MAP_SIZE / 2;
+        this.zoneNext = null;                     // círculo final marcado en el mapa
+        this.zoneChain = this.generarCentrosZona();
         this.kitTimer = 0;
 
-        this.shopZones = this.generateShopZones();
         this.hazardZones = [];
         this.speedPads = this.generateSpeedPads();
         this.airdrops = [];
         this.obstacles = this.generateObstacles();
+        this.shopZones = this.generarTiendas();   // tras obstáculos y antes de muros
         this.walls = this.generateWalls();
+        this.explosionChain = [];                 // barriles encendidos (cola)
 
         this.airdropTimer = 0;
         this.hazardTimer = 0;
@@ -589,20 +636,105 @@ class GameRoom {
         this.startLoop();
     }
 
-    generateShopZones() {
-        const zones = [];
-        const positions = [
-            { x: 400, y: 400 },
-            { x: MAP_SIZE - 400, y: 400 },
-            { x: 400, y: MAP_SIZE - 400 },
-            { x: MAP_SIZE - 400, y: MAP_SIZE - 400 },
-            { x: MAP_SIZE / 2, y: 400 },
-            { x: MAP_SIZE / 2, y: MAP_SIZE - 400 },
-        ];
-        positions.forEach(pos => {
-            zones.push({ x: pos.x, y: pos.y, radius: 80 });
+    // Cadena de centros de las fases de la zona: cada fase puede cerrarse en
+    // cualquier punto del mapa, pero cada círculo nuevo SIEMPRE queda contenido
+    // en el anterior: el desplazamiento se limita a 0.7·(rPrev − rNext) y el
+    // centro se proyecta a [ZONA_MARGEN_CENTRO, MAP_SIZE − ZONA_MARGEN_CENTRO]
+    // (proyección sobre una caja convexa = no expansiva → conserva la contención).
+    // Como el margen (400) es mayor que el radio final (280), la última zona
+    // siempre cae completamente dentro del mapa.
+    generarCentrosZona() {
+        const centros = [];
+        const clamp = (v) => Math.max(ZONA_MARGEN_CENTRO, Math.min(MAP_SIZE - ZONA_MARGEN_CENTRO, v));
+        let cx = MAP_SIZE / 2, cy = MAP_SIZE / 2;
+        ZONA_FASES.forEach((fase, i) => {
+            if (i > 0) {
+                const rPrev = ZONA_FASES[i - 1].r;
+                const derivaMax = Math.max(0, (rPrev - fase.r) * 0.7);
+                const ang = Math.random() * Math.PI * 2;
+                const dist = Math.sqrt(Math.random()) * derivaMax; // uniforme en el disco
+                cx = clamp(cx + Math.cos(ang) * dist);
+                cy = clamp(cy + Math.sin(ang) * dist);
+            }
+            centros.push({ x: cx, y: cy });
         });
-        return zones;
+        return centros;
+    }
+
+    // Centro objetivo de la zona: se interpola con el MISMO progreso que usa
+    // zonaObjetivo() para el radio, así el círculo deriva mientras se cierra en
+    // lugar de saltar de golpe al cambiar de fase.
+    centroObjetivo() {
+        if (!this.zoneChain || !this.zoneChain.length) return { x: MAP_SIZE / 2, y: MAP_SIZE / 2 };
+        if (this.gameTime >= ZONA_FASES[0].t) return { ...this.zoneChain[0] };
+        for (let i = 0; i < ZONA_FASES.length - 1; i++) {
+            const alta = ZONA_FASES[i], baja = ZONA_FASES[i + 1];
+            if (this.gameTime <= alta.t && this.gameTime > baja.t) {
+                const tramo = (alta.t - baja.t) || 1;
+                const progreso = (alta.t - this.gameTime) / tramo;
+                const a = this.zoneChain[i], b = this.zoneChain[i + 1];
+                return { x: a.x + (b.x - a.x) * progreso, y: a.y + (b.y - a.y) * progreso };
+            }
+        }
+        return { ...this.zoneChain[this.zoneChain.length - 1] };
+    }
+
+    // Tiendas itinerantes: puntos aleatorios DENTRO de la zona segura actual (lejos
+    // del banco, entre sí y de muros/obstáculos/turbos) con vida escalonada para
+    // que se reubiquen de una en una. El cliente pinta gameState.shopZones y la
+    // compra sigue siendo por proximidad → el flujo de compra no cambia.
+    generarTiendas() {
+        const tiendas = [];
+        for (let i = 0; i < TIENDA_NUM; i++) {
+            const punto = this.puntoLibreTienda(tiendas);
+            tiendas.push({
+                x: punto.x,
+                y: punto.y,
+                radius: TIENDA_RADIO,
+                life: TIENDA_DESFASES[i % TIENDA_DESFASES.length],
+                maxLife: TIENDA_VIDA_TICKS
+            });
+        }
+        return tiendas;
+    }
+
+    // Punto válido para una caseta (reintentos acotados; si no encuentra uno
+    // perfecto devuelve el último candidato evaluado para no dejar huecos).
+    puntoLibreTienda(otras) {
+        const zona = this.zoneRadius || ZONA_RADIO_INICIAL;
+        const cx = this.zoneCx || MAP_SIZE / 2;
+        const cy = this.zoneCy || MAP_SIZE / 2;
+        const solido = [...(this.walls || []), ...(this.obstacles || [])];
+        let candidato = { x: MAP_SIZE / 2, y: MAP_SIZE / 2 };
+        for (let intento = 0; intento < 60; intento++) {
+            const x = TIENDA_MARGEN_BORDE + Math.random() * (MAP_SIZE - TIENDA_MARGEN_BORDE * 2);
+            const y = TIENDA_MARGEN_BORDE + Math.random() * (MAP_SIZE - TIENDA_MARGEN_BORDE * 2);
+            candidato = { x, y };
+            // Dentro de la zona segura, con holgura para que la caseta quepa entera
+            if (Math.hypot(x - cx, y - cy) > Math.max(0, zona - TIENDA_RADIO - 60)) continue;
+            if (Math.hypot(x - this.bankZone.x, y - this.bankZone.y) < this.bankZone.radius + TIENDA_MIN_BANCO) continue;
+            if ((otras || []).some(t => Math.hypot(x - t.x, y - t.y) < TIENDA_MIN_ENTRE)) continue;
+            if (solido.some(s => x > s.x - TIENDA_RADIO - TIENDA_MARGEN_SOLIDO && x < s.x + s.w + TIENDA_RADIO + TIENDA_MARGEN_SOLIDO &&
+                y > s.y - TIENDA_RADIO - TIENDA_MARGEN_SOLIDO && y < s.y + s.h + TIENDA_RADIO + TIENDA_MARGEN_SOLIDO)) continue;
+            if ((this.speedPads || []).some(pd => x > pd.x - TIENDA_RADIO - 40 && x < pd.x + pd.w + TIENDA_RADIO + 40 &&
+                y > pd.y - TIENDA_RADIO - 40 && y < pd.y + pd.h + TIENDA_RADIO + 40)) continue;
+            if (Object.values(this.players || {}).some(p => !p.isDead && Math.hypot(x - p.x, y - p.y) < TIENDA_MIN_JUGADOR)) continue;
+            return { x, y };
+        }
+        return candidato;
+    }
+
+    // Reubica una caseta agotada: nuevo punto libre dentro de la zona segura y
+    // vida reiniciada (mantiene su ciclo de ~15 s).
+    moverTienda(i) {
+        const t = this.shopZones[i];
+        if (!t) return;
+        const otras = this.shopZones.filter((_, j) => j !== i);
+        const punto = this.puntoLibreTienda(otras);
+        t.x = punto.x;
+        t.y = punto.y;
+        t.life = TIENDA_VIDA_TICKS;
+        t.maxLife = TIENDA_VIDA_TICKS;
     }
 
     generateSpeedPads() {
@@ -619,17 +751,38 @@ class GameRoom {
         return pads;
     }
 
-    generateObstacles(count = 20) {
+    // Obstáculos tipados: rocas (daño solo de bombas, las balas las atraviesan),
+    // coches y motos (cobertura destructible que EXPLOTA) y barriles reactivos.
+    // Todos viven en this.obstacles → la colisión de jugador, spawnPoint() y el
+    // daño de bomba se reutilizan sin tocar nada.
+    generateObstacles() {
+        const defs = [
+            { tipo: 'roca',   n: 14, ancho: [60, 120], alto: [60, 120] },
+            { tipo: 'coche',  n: 6,  ancho: [70, 70],  alto: [44, 44] },
+            { tipo: 'moto',   n: 6,  ancho: [46, 46],  alto: [26, 26] },
+            { tipo: 'barril', n: 8,  ancho: [30, 30],  alto: [30, 30] }
+        ];
         const obs = [];
-        for (let i = 0; i < count; i++) {
-            obs.push({
-                x: Math.random() * (MAP_SIZE - 300) + 150,
-                y: Math.random() * (MAP_SIZE - 300) + 150,
-                w: 60 + Math.random() * 60,
-                h: 60 + Math.random() * 60,
-                hp: 30,
-                maxHp: 30
-            });
+        const entreSi = 60;   // separación mínima entre obstáculos (evita racimos)
+        for (const d of defs) {
+            const hp = (OBSTACULOS_TIPOS[d.tipo] || {}).hp || 30;
+            for (let i = 0; i < d.n; i++) {
+                for (let intento = 0; intento < 40; intento++) {
+                    const w = d.ancho[0] + Math.random() * (d.ancho[1] - d.ancho[0]);
+                    const h = d.alto[0] + Math.random() * (d.alto[1] - d.alto[0]);
+                    const x = 150 + Math.random() * Math.max(1, MAP_SIZE - 300 - w);
+                    const y = 150 + Math.random() * Math.max(1, MAP_SIZE - 300 - h);
+                    if (x + w > MAP_SIZE || y + h > MAP_SIZE) continue;
+                    // Fuera del banco (antes podían caer encima) y de los turbos
+                    if (Math.hypot(x + w / 2 - this.bankZone.x, y + h / 2 - this.bankZone.y) < this.bankZone.radius + 90) continue;
+                    if ((this.speedPads || []).some(pd => x < pd.x + pd.w + 40 && x + w > pd.x - 40 &&
+                        y < pd.y + pd.h + 40 && y + h > pd.y - 40)) continue;
+                    if (obs.some(o => x < o.x + o.w + entreSi && x + w + entreSi > o.x &&
+                        y < o.y + o.h + entreSi && y + h + entreSi > o.y)) continue;
+                    obs.push({ x, y, w, h, hp, maxHp: hp, tipo: d.tipo });
+                    break;
+                }
+            }
         }
         return obs;
     }
@@ -660,6 +813,10 @@ class GameRoom {
         const overlapsPad = (r) => this.speedPads.some(pd =>
             r.x - 40 < pd.x + pd.w && r.x + r.w + 40 > pd.x &&
             r.y - 40 < pd.y + pd.h && r.y + r.h + 40 > pd.y);
+        // Los muros tampoco se levantan encima de un obstáculo (coches/rocas)
+        const overlapsObstaculo = (r) => (this.obstacles || []).some(o =>
+            r.x - 40 < o.x + o.w && r.x + r.w + 40 > o.x &&
+            r.y - 40 < o.y + o.h && r.y + r.h + 40 > o.y);
         const maxGrupo = 5;
         for (let i = 0; i < 60 && walls.length < maxGrupo * 4; i++) {
             const w = 80 + Math.random() * 110;
@@ -674,8 +831,31 @@ class GameRoom {
             ];
             if (variantes.some(v => v.x < margin || v.y < margin ||
                 v.x + v.w > MAP_SIZE - margin || v.y + v.h > MAP_SIZE - margin ||
-                overlapsBlocked(v) || overlapsWall(v) || overlapsPad(v))) continue;
-            variantes.forEach(v => walls.push({ ...v, hp: 30, maxHp: 30 }));
+                overlapsBlocked(v) || overlapsWall(v) || overlapsPad(v) || overlapsObstaculo(v))) continue;
+            variantes.forEach(v => walls.push({ ...v, hp: 30, maxHp: 30, tipo: 'muro' }));
+        }
+
+        // Muros finos: tiras de 14 px que aguantan 3 balas (hp 15). Sirven de
+        // cobertura ligera y rompen líneas de tiro sin bloquear pasillos.
+        let gruposFinos = 0;
+        for (let i = 0; i < 60 && gruposFinos < 2; i++) {
+            const vertical = Math.random() < 0.5;
+            const largo = 140 + Math.random() * 80;      // 140-220 px
+            const w = vertical ? 14 : largo;
+            const h = vertical ? largo : 14;
+            const x = margin + Math.random() * Math.max(1, MAP_SIZE / 2 - margin - minGap - w);
+            const y = margin + Math.random() * Math.max(1, MAP_SIZE / 2 - margin - minGap - h);
+            const variantes = [
+                { x, y, w, h },
+                { x: MAP_SIZE - x - w, y, w, h },
+                { x, y: MAP_SIZE - y - h, w, h },
+                { x: MAP_SIZE - x - w, y: MAP_SIZE - y - h, w, h }
+            ];
+            if (variantes.some(v => v.x < margin || v.y < margin ||
+                v.x + v.w > MAP_SIZE - margin || v.y + v.h > MAP_SIZE - margin ||
+                overlapsBlocked(v) || overlapsWall(v) || overlapsPad(v) || overlapsObstaculo(v))) continue;
+            gruposFinos++;
+            variantes.forEach(v => walls.push({ ...v, hp: 15, maxHp: 15, tipo: 'fino' }));
         }
         return walls;
     }
@@ -742,7 +922,7 @@ class GameRoom {
             respawnTimer: 0,
             canRespawn: false,
             currentWeapon: 1,
-            ammo: 7, maxAmmo: 7,
+            ammo: PISTOLA_MAX_AMMO, maxAmmo: PISTOLA_MAX_AMMO,
             bombs: 0,
             hasOrbGun: false,
             ammo2: ORBGUN_MAX_AMMO, maxAmmo2: ORBGUN_MAX_AMMO, // cargador del Lanza-Orbes
@@ -1187,6 +1367,30 @@ class GameRoom {
         if (this.zoneRadius > objetivo) {
             this.zoneRadius = Math.max(objetivo, this.zoneRadius - ZONA_CIERRE_PX_S);
         }
+
+        // Deriva del centro: la zona se CIERRA DONDE LA SUERTE DIGA (ya no siempre
+        // en el centro del mapa). El centro se acerca al de la fase en curso con un
+        // tope de ZONA_CENTRO_PX_S por tick, así el desplazamiento se ve venir.
+        const cObj = this.centroObjetivo();
+        const dx = cObj.x - this.zoneCx, dy = cObj.y - this.zoneCy;
+        const dist = Math.hypot(dx, dy);
+        if (dist > 0.5) {
+            const paso = Math.min(dist, ZONA_CENTRO_PX_S);
+            this.zoneCx += (dx / dist) * paso;
+            this.zoneCy += (dy / dist) * paso;
+        }
+
+        // Alerta de la reducción final: se marca en el mapa el círculo definitivo
+        // (centro final real de la cadena + radio 280) para que dé tiempo a girar.
+        if (this.gameTime === ZONA_ALERTA_FINAL_T) {
+            const fin = this.zoneChain[this.zoneChain.length - 1];
+            this.zoneNext = { x: fin.x, y: fin.y, radius: ZONA_FASES[ZONA_FASES.length - 1].r };
+            io.to(this.id).emit('announcement', 'REDUCCIÓN FINAL · NUEVA ZONA MARCADA EN EL MAPA');
+            io.to(this.id).emit('playSound', 'explosion');
+        }
+        // El marcador se limpia cuando el radio ya alcanzó la zona final
+        if (this.zoneNext && this.zoneRadius <= this.zoneNext.radius + 1) this.zoneNext = null;
+
         // "Cerrándose" = ya salió de su tamaño inicial → el anillo se pinta activo
         this.zoneShrinking = this.zoneRadius < ZONA_RADIO_INICIAL - 1;
 
@@ -1271,6 +1475,11 @@ class GameRoom {
         this.zoneShrinking = false;
         this.zoneFase = 0;
         this.zoneDps = ZONA_DPS[0];
+        // Zona móvil: cada partida sortea de nuevo dónde se cierra la zona
+        this.zoneCx = MAP_SIZE / 2;
+        this.zoneCy = MAP_SIZE / 2;
+        this.zoneNext = null;
+        this.zoneChain = this.generarCentrosZona();
         this.kitTimer = 0;
         this.bullets = [];
         this.bombs = [];
@@ -1282,8 +1491,11 @@ class GameRoom {
         this.hazardZones = [];
         this.airdropTimer = 0;
         this.hazardTimer = 0;
+        this.walls = [];                          // evita que las tiendas esquiven muros viejos
         this.obstacles = this.generateObstacles();
+        this.shopZones = this.generarTiendas();   // obstáculos → tiendas → muros
         this.walls = this.generateWalls();
+        this.explosionChain = [];
         this.waitingTimer = null;
         this.lastPlayerCount = 0;
         this.soloTimer = null;
@@ -1293,6 +1505,17 @@ class GameRoom {
     }
 
     update() {
+        // Tiendas itinerantes: cada caseta tiene su propia cuenta atrás y, al
+        // agotarla, se reubica en otro punto libre de la zona segura (solo en
+        // partida; en el lobby se quedan quietas).
+        if (this.gameStarted) {
+            for (let i = this.shopZones.length - 1; i >= 0; i--) {
+                const t = this.shopZones[i];
+                t.life = (t.life || 0) - 1;
+                if (t.life <= 0) this.moverTienda(i);
+            }
+        }
+
         Object.values(this.players).forEach(p => {
             if (p.isDead) {
                 p.respawnTimer++;
@@ -1455,7 +1678,7 @@ class GameRoom {
             // Daño fuera de la zona: HP/s según la fase (antes era 1 HP por tick
             // de 60 fps = 60 HP/s, y solo se aplicaba en el último minuto).
             if (this.gameStarted) {
-                const distToCenter = Math.hypot(p.x - MAP_SIZE / 2, p.y - MAP_SIZE / 2);
+                const distToCenter = Math.hypot(p.x - this.zoneCx, p.y - this.zoneCy);
                 if (distToCenter > this.zoneRadius + p.radius && p.isDead === false) {
                     p.hp -= (this.zoneDps || ZONA_DPS[0]) / 60;
                     if (p.hp <= 0) {
@@ -1569,9 +1792,35 @@ class GameRoom {
                 }
             }
 
+            // Bala ↔ obstáculo explosivo (coche/moto/barril): 6 de daño por bala y
+            // la bala se consume. Las rocas siguen dejando pasar las balas, así el
+            // combate actual no cambia.
+            if (!hit) {
+                for (let oi = this.obstacles.length - 1; oi >= 0; oi--) {
+                    const obs = this.obstacles[oi];
+                    if (obs.hp <= 0 || !obs.tipo || obs.tipo === 'roca') continue;
+                    if (b.x > obs.x && b.x < obs.x + obs.w && b.y > obs.y && b.y < obs.y + obs.h) {
+                        hit = true;
+                        obs.hp -= 6;
+                        if (obs.hp <= 0) this.explotarObstaculo(obs, b.ownerId);
+                        break;
+                    }
+                }
+            }
+
             if (hit) {
                 this.bullets.splice(i, 1);
             }
+        }
+
+        // Reacción en cadena de los barriles: los explosivos encendidos estallan
+        // con un pequeño retardo (cascada visible, sin recursión).
+        for (let i = this.explosionChain.length - 1; i >= 0; i--) {
+            const e = this.explosionChain[i];
+            e.ticks--;
+            if (e.ticks > 0) continue;
+            this.explosionChain.splice(i, 1);
+            this.explotarObstaculo(e.obs, e.ownerId);
         }
 
         for (let i = this.bombs.length - 1; i >= 0; i--) {
@@ -1666,14 +1915,70 @@ class GameRoom {
             }
         });
 
-        this.obstacles = this.obstacles.filter(obs => {
+        // Los obstáculos explosivos destruidos por la bomba estallan también (antes
+        // las rocas morían en silencio y los vehículos no existían). Las rocas
+        // siguen rompiéndose sin explosión, igual que hoy.
+        const destruidos = [];
+        for (let i = this.obstacles.length - 1; i >= 0; i--) {
+            const obs = this.obstacles[i];
             const dist = Math.hypot(obs.x - bomb.currentX, obs.y - bomb.currentY);
-            if (dist < 150) {
-                obs.hp -= 50;
-                return obs.hp > 0;
-            }
-            return true;
+            if (dist >= 150) continue;
+            obs.hp -= 50;
+            if (obs.hp > 0) continue;
+            this.obstacles.splice(i, 1);
+            if (obs.tipo && obs.tipo !== 'roca') destruidos.push(obs);
+        }
+        destruidos.forEach(obs => this.explotarObstaculo(obs, bomb.ownerId));
+    }
+
+    // Explosión de un obstáculo destructible (coche, moto o barril) con crédito de
+    // baja para quien lo reviente. Las cadenas de barriles NO usan recursión: se
+    // encolan en this.explosionChain y se consumen en update() con retardo.
+    explotarObstaculo(obs, ownerId) {
+        if (!obs || obs.explotado) return;
+        obs.explotado = true;
+        obs.hp = 0;
+        const idx = this.obstacles.indexOf(obs);
+        if (idx >= 0) this.obstacles.splice(idx, 1);
+
+        const def = OBSTACULOS_TIPOS[obs.tipo] || OBSTACULOS_TIPOS.roca;
+        const cx = obs.x + obs.w / 2, cy = obs.y + obs.h / 2;
+        this.explosions.push({ x: cx, y: cy, radius: def.radio, alpha: 1 });
+        io.to(this.id).emit('playSound', 'explosion');
+
+        // Daño a jugadores en el radio (con crédito de baja para el disparador)
+        Object.values(this.players).forEach(p => {
+            if (p.isDead) return;
+            if (Math.hypot(p.x - cx, p.y - cy) < def.radio) this.damagePlayer(p, ownerId, def.dano);
         });
+
+        if (obs.tipo === 'coche') {
+            // El coche reventado suelta 2 orbes ×10 en el sitio del siniestro
+            for (let i = 0; i < COCHE_ORBES; i++) {
+                this.droppedEnergy.push({
+                    id: 'e_' + randID(),
+                    x: cx + (Math.random() - 0.5) * obs.w,
+                    y: cy + (Math.random() - 0.5) * obs.h,
+                    val: COCHE_ORBE_VAL
+                });
+            }
+        } else if (obs.tipo === 'moto') {
+            // Impulso de turbo ×1.9 (~2 s) para quien la reviente
+            const p = this.players[ownerId];
+            if (p && !p.isDead) {
+                p.turboTimer = MOTO_TURBO_TICKS;
+                p.turboCooldown = 150;
+                io.sockets.sockets.get(p.id)?.emit('playSound', 'turbo');
+            }
+        } else if (obs.tipo === 'barril') {
+            // Reacción en cadena: prende barriles y vehículos cercanos con retardo
+            this.obstacles.forEach(o => {
+                if (o.explotado || !o.tipo || o.tipo === 'roca') return;
+                if (Math.hypot(o.x + o.w / 2 - cx, o.y + o.h / 2 - cy) < def.radio + BARRIL_CADENA_RADIO) {
+                    this.explosionChain.push({ obs: o, ownerId, ticks: BARRIL_CADENA_TICKS });
+                }
+            });
+        }
     }
 
     getSummary() {
@@ -1709,6 +2014,9 @@ class GameRoom {
             gameTime: this.gameTime,
             zoneRadius: this.zoneRadius,
             zoneShrinking: this.zoneShrinking,
+            zoneCx: this.zoneCx,
+            zoneCy: this.zoneCy,
+            zoneNext: this.zoneNext,
             mapSize: MAP_SIZE,
             shopZones: this.shopZones,
             hazardZones: this.hazardZones,

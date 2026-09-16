@@ -1775,7 +1775,7 @@
                 </svg>
             </span>
             <span class="k">Balas</span>
-            <b><span id="ammo-count">7 / 7</span></b>
+            <b><span id="ammo-count">15 / 15</span></b>
             <small id="ammo-status" style="margin-left:auto;"><span class="kbd">R</span> Recargar</small>
         </div>
         <div class="row">
@@ -2011,7 +2011,7 @@
                 <line x1="18" y1="12" x2="22" y2="12"></line>
                 <circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none"></circle>
             </svg>
-            <span class="btn-badge" id="shoot-ammo">7</span>
+            <span class="btn-badge" id="shoot-ammo">15</span>
         </button>
         <button class="touch-btn small reload" id="btn-reload-mobile" onmousedown="mobileReload()"
             ontouchstart="mobileReload(event)" style="order: 3;" aria-label="Recargar">
@@ -2437,6 +2437,9 @@
             explosion: { src: 'assets/game/explosion.png', frameW: 64, frameH: 64, frames: 4 },
             airdrop: { src: 'assets/game/airdrop.png' },
             obstaculo: { src: 'assets/game/obstacle.png' },
+            coche: { src: 'assets/game/car.png' },
+            moto: { src: 'assets/game/moto.png' },
+            barril: { src: 'assets/game/barrel.png' },
             muro: { src: 'assets/game/wall.png' },
             turbo: { src: 'assets/game/speed-pad.png' },
             tienda: { src: 'assets/game/shop.png' },
@@ -3027,11 +3030,11 @@
                     ammoEl.style.color = "#f59e0b";
                     statusEl.innerHTML = `<span class="kbd">R</span> Recargando…`;
                 } else {
-                    ammoEl.innerText = `${me.ammo || 0} / ${me.maxAmmo || 7}`;
+                    ammoEl.innerText = `${me.ammo || 0} / ${me.maxAmmo || 15}`;
                     ammoEl.style.color = (me.ammo || 0) <= 0 ? "#ef4444" : "";
                     statusEl.innerHTML = (me.ammo || 0) <= 0
                         ? `<span style="color:#ef4444;font-weight:700;">SIN BALAS · PULSA <span class="kbd">R</span></span>`
-                        : (me.ammo >= (me.maxAmmo || 7)
+                        : (me.ammo >= (me.maxAmmo || 15)
                             ? `<span style="color:#22c55e;">Cargador lleno</span>`
                             : `<span class="kbd">R</span> Recargar`);
                 }
@@ -3109,18 +3112,26 @@
                 }
             }
 
-            // Aviso de zona: fuera del círculo (o cerrándose con el círculo ya activo)
+            // Aviso de zona: fuera del círculo (o cerrándose con el círculo ya activo).
+            // La zona se cierra en un sitio ALEATORIO, así que se usa el centro real
+            // que manda el servidor (fallback: centro del mapa, como antes).
             const zoneWarn = document.getElementById("zone-warning");
             if (zoneWarn) {
                 const mapSizeHud = gameState.mapSize || 5000;
-                const distZona = Math.hypot(me.x - mapSizeHud / 2, me.y - mapSizeHud / 2);
+                const zxHud = gameState.zoneCx ?? mapSizeHud / 2;
+                const zyHud = gameState.zoneCy ?? mapSizeHud / 2;
+                const distZona = Math.hypot(me.x - zxHud, me.y - zyHud);
                 const fuera = distZona > (gameState.zoneRadius || 0);
                 if (fuera) {
-                    zoneWarn.innerText = `☠ FUERA DE LA ZONA · ${gameState.zoneDps || 4} HP/s · ¡CORRE AL CENTRO!`;
+                    zoneWarn.innerText = `☠ FUERA DE LA ZONA · ${gameState.zoneDps || 4} HP/s · ¡CORRE AL CÍRCULO!`;
                     zoneWarn.style.display = "block";
                     zoneWarn.style.borderColor = "rgba(239, 68, 68, 0.75)";
+                } else if (gameState.zoneNext) {
+                    zoneWarn.innerText = `⭕ REDUCCIÓN FINAL · NUEVA ZONA MARCADA EN EL MINIMAPA`;
+                    zoneWarn.style.display = "block";
+                    zoneWarn.style.borderColor = "rgba(250, 204, 21, 0.6)";
                 } else if (gameState.zoneShrinking) {
-                    zoneWarn.innerText = `⭕ LA ZONA SE CIERRA · FASE ${(gameState.zoneFase || 0) + 1} · MUÉVETE AL CENTRO`;
+                    zoneWarn.innerText = `⭕ LA ZONA SE CIERRA · FASE ${(gameState.zoneFase || 0) + 1} · SIGUE EL CÍRCULO`;
                     zoneWarn.style.display = "block";
                     zoneWarn.style.borderColor = "rgba(244, 63, 94, 0.45)";
                 } else {
@@ -3213,16 +3224,22 @@
 
             // Muros destructibles: sprite metálico escalado + tint rojizo con el
             // daño (fallback: rectángulo original). La barra de vida sigue igual.
+            // Los muros FINOS (hp 15) se tiñen más oscuros para distinguirlos.
             (gameState.walls || []).forEach(wl => {
                 if (wl.hp <= 0) return;
                 const pctW = (wl.hp || 0) / (wl.maxHp || 30);
+                const fino = wl.tipo === 'fino' || (wl.maxHp || 30) < 20;
                 if (drawSprite('muro', wl.x + wl.w / 2, wl.y + wl.h / 2, wl.w, wl.h)) {
+                    if (fino) {
+                        ctx.fillStyle = 'rgba(2, 6, 23, 0.45)';
+                        ctx.fillRect(wl.x, wl.y, wl.w, wl.h);
+                    }
                     if (pctW < 0.6) {
                         ctx.fillStyle = `rgba(239, 68, 68, ${(0.6 - pctW) * 0.8})`;
                         ctx.fillRect(wl.x, wl.y, wl.w, wl.h);
                     }
                 } else {
-                    ctx.fillStyle = '#475569';
+                    ctx.fillStyle = fino ? '#1e293b' : '#475569';
                     ctx.fillRect(wl.x, wl.y, wl.w, wl.h);
                     ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 2; ctx.strokeRect(wl.x, wl.y, wl.w, wl.h);
                 }
@@ -3234,29 +3251,50 @@
                 }
             });
 
-            // Tiendas (círculo de zona + icono del sprite)
+            // Tiendas itinerantes: círculo de zona + icono del sprite + ANILLO DE
+            // CUENTA ATRÁS (cuando se agota, la caseta salta a otro punto de la
+            // zona segura). El flujo de compra sigue siendo por proximidad.
             (gameState.shopZones || []).forEach(sz => {
                 ctx.beginPath(); ctx.arc(sz.x, sz.y, sz.radius, 0, Math.PI * 2);
                 ctx.fillStyle = 'rgba(56, 189, 248, 0.12)'; ctx.fill();
                 ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2; ctx.stroke();
+                if (Number.isFinite(sz.life) && sz.maxLife) {
+                    const pct = Math.max(0, Math.min(1, sz.life / sz.maxLife));
+                    ctx.beginPath();
+                    ctx.arc(sz.x, sz.y, sz.radius + 12, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct);
+                    ctx.strokeStyle = pct > 0.5 ? 'rgba(34, 197, 94, 0.9)'
+                        : pct > 0.25 ? 'rgba(250, 204, 21, 0.95)'
+                            : 'rgba(239, 68, 68, 0.95)';
+                    ctx.lineWidth = 5;
+                    ctx.stroke();
+                    if (pct <= 0.25) {
+                        // Salto inminente: la caseta late en rojo
+                        const latido = 0.5 + 0.5 * Math.sin(Date.now() / 160);
+                        ctx.beginPath(); ctx.arc(sz.x, sz.y, sz.radius + 6, 0, Math.PI * 2);
+                        ctx.strokeStyle = `rgba(239, 68, 68, ${0.25 + 0.5 * latido})`;
+                        ctx.lineWidth = 3; ctx.stroke();
+                    }
+                }
                 drawSprite('tienda', sz.x, sz.y, 500);
             });
 
             // Zona segura: SIEMPRE visible durante la partida. Antes solo se pintaba
             // en el último minuto, así que el cierre progresivo pasaba inadvertido.
-            // El degradado exterior es más intenso si estás fuera del círculo.
+            // El círculo ya no está fijo en el centro: usa el centro móvil (zoneCx /
+            // zoneCy) que sortea el servidor cada partida.
             const zR = gameState.zoneRadius || 0;
-            const zCentro = MAP_SIZE / 2;
-            const meFueraZona = Math.hypot(me.x - zCentro, me.y - zCentro) > zR;
+            const zx = gameState.zoneCx ?? MAP_SIZE / 2;
+            const zy = gameState.zoneCy ?? MAP_SIZE / 2;
+            const meFueraZona = Math.hypot(me.x - zx, me.y - zy) > zR;
             if (zR > 0) {
                 ctx.fillStyle = meFueraZona ? 'rgba(239, 68, 68, 0.22)' : 'rgba(239, 68, 68, 0.12)';
                 ctx.beginPath();
                 ctx.rect(0, 0, MAP_SIZE, MAP_SIZE);
-                ctx.arc(zCentro, zCentro, zR, 0, Math.PI * 2, true);
+                ctx.arc(zx, zy, zR, 0, Math.PI * 2, true);
                 ctx.fill();
 
                 ctx.beginPath();
-                ctx.arc(zCentro, zCentro, zR, 0, Math.PI * 2);
+                ctx.arc(zx, zy, zR, 0, Math.PI * 2);
                 if (gameState.zoneShrinking) {
                     // Ámbar pulsante = la zona está cerrándose ahora mismo
                     const pulso = 0.6 + 0.4 * Math.sin(Date.now() / 220);
@@ -3266,6 +3304,32 @@
                 }
                 ctx.lineWidth = 8;
                 ctx.stroke();
+            }
+
+            // Marcador de la PRÓXIMA zona (aviso de los 40 s finales): círculo
+            // punteado ámbar pulsante + cruz central + etiqueta, el mismo lenguaje
+            // visual que el objetivo del airdrop.
+            const zN = gameState.zoneNext;
+            if (zN && zR > zN.radius) {
+                const pulsoN = 1 + 0.06 * Math.sin(Date.now() / 150);
+                ctx.save();
+                ctx.setLineDash([16, 12]);
+                ctx.beginPath(); ctx.arc(zN.x, zN.y, zN.radius * pulsoN, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(250, 204, 21, 0.9)';
+                ctx.lineWidth = 4;
+                ctx.stroke();
+                ctx.restore();
+
+                ctx.beginPath();
+                ctx.moveTo(zN.x - 18, zN.y); ctx.lineTo(zN.x + 18, zN.y);
+                ctx.moveTo(zN.x, zN.y - 18); ctx.lineTo(zN.x, zN.y + 18);
+                ctx.strokeStyle = 'rgba(250, 204, 21, 0.95)';
+                ctx.lineWidth = 3; ctx.stroke();
+
+                ctx.fillStyle = '#fcd34d';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('ZONA FINAL', zN.x, zN.y - zN.radius - 18);
             }
 
             // Banco Central (círculo de zona + icono del sprite)
@@ -3330,22 +3394,38 @@
                 ctx.fillText('DISPÁRALE PARA ABRIR', ad.x, ad.y - r - 26);
             });
 
-            // Obstáculos: sprite rocoso escalado, tint rojizo al dañarse
-            // (fallback: rectángulos originales)
+            // Obstáculos destructibles: sprite por TIPO (roca / coche / moto / barril)
+            // con tint rojizo al dañarse y barra de vida si están tocados (fallback:
+            // rectángulos de color; los explosivos se distinguen por su color).
+            const OBSTACULOS_FALLBACK = {
+                roca: { lleno: '#334155', roto: '#475569', borde: '#64748b' },
+                coche: { lleno: '#1d4ed8', roto: '#1e40af', borde: '#93c5fd' },
+                moto: { lleno: '#7c3aed', roto: '#5b21b6', borde: '#c4b5fd' },
+                barril: { lleno: '#b91c1c', roto: '#7f1d1d', borde: '#fca5a5' }
+            };
             (gameState.obstacles || []).forEach(obs => {
                 if (obs.hp <= 0) return;
-                const hpRatio = obs.hp / obs.maxHp;
-                if (drawSprite('obstaculo', obs.x + obs.w / 2, obs.y + obs.h / 2, obs.w, obs.h)) {
-                    if (hpRatio < 0.4) {
-                        ctx.fillStyle = `rgba(239, 68, 68, ${(0.4 - hpRatio) * 1.2})`;
-                        ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
-                    }
-                    return;
+                const tipo = OBSTACULOS_FALLBACK[obs.tipo] ? obs.tipo : 'roca'; // sin tipo = roca
+                const fb = OBSTACULOS_FALLBACK[tipo];
+                const hpRatio = (obs.hp || 0) / (obs.maxHp || 30);
+                const spriteTipo = tipo === 'roca' ? 'obstaculo' : tipo;
+                if (!drawSprite(spriteTipo, obs.x + obs.w / 2, obs.y + obs.h / 2, obs.w, obs.h)) {
+                    ctx.fillStyle = hpRatio > 0.5 ? fb.lleno : fb.roto;
+                    ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+                    ctx.strokeStyle = hpRatio < 0.4 ? '#ef4444' : fb.borde;
+                    ctx.lineWidth = 2; ctx.strokeRect(obs.x, obs.y, obs.w, obs.h);
                 }
-                ctx.fillStyle = hpRatio > 0.5 ? '#334155' : '#475569';
-                ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
-                ctx.strokeStyle = hpRatio < 0.4 ? '#ef4444' : '#64748b';
-                ctx.lineWidth = 2; ctx.strokeRect(obs.x, obs.y, obs.w, obs.h);
+                if (hpRatio < 0.4) {
+                    ctx.fillStyle = `rgba(239, 68, 68, ${(0.4 - hpRatio) * 1.2})`;
+                    ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+                }
+                // Coches/motos/barriles: barra de vida (aguantan pocas balas)
+                if (tipo !== 'roca' && hpRatio < 1) {
+                    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+                    ctx.fillRect(obs.x, obs.y - 10, obs.w, 6);
+                    ctx.fillStyle = hpRatio > 0.5 ? '#22c55e' : hpRatio > 0.25 ? '#f59e0b' : '#ef4444';
+                    ctx.fillRect(obs.x, obs.y - 10, obs.w * hpRatio, 6);
+                }
             });
 
             // Orbes y Medicinas: sprites con animación suave (flotación/latido);
@@ -3535,11 +3615,36 @@
             });
 
             if (gameState.zoneRadius > 0) {
+                // La zona se cierra en un sitio aleatorio: se usa el centro real
+                // (fallback: centro del mapa, como antes).
+                const zx = gameState.zoneCx ?? MAP_SIZE / 2;
+                const zy = gameState.zoneCy ?? MAP_SIZE / 2;
                 miniCtx.strokeStyle = gameState.zoneShrinking ? 'rgba(245, 158, 11, 0.95)' : 'rgba(148, 163, 184, 0.8)';
                 miniCtx.lineWidth = 2;
                 miniCtx.beginPath();
-                miniCtx.arc((MAP_SIZE / 2) * scale, (MAP_SIZE / 2) * scale, gameState.zoneRadius * scale, 0, Math.PI * 2);
+                miniCtx.arc(zx * scale, zy * scale, gameState.zoneRadius * scale, 0, Math.PI * 2);
                 miniCtx.stroke();
+
+                // Próxima zona (aviso de los 40 s finales): círculo punteado + cruz
+                const zN = gameState.zoneNext;
+                if (zN && gameState.zoneRadius > zN.radius) {
+                    miniCtx.save();
+                    miniCtx.setLineDash([3, 3]);
+                    miniCtx.strokeStyle = 'rgba(250, 204, 21, 0.95)';
+                    miniCtx.lineWidth = 2;
+                    miniCtx.beginPath();
+                    miniCtx.arc(zN.x * scale, zN.y * scale, Math.max(2, zN.radius * scale), 0, Math.PI * 2);
+                    miniCtx.stroke();
+                    miniCtx.restore();
+                    miniCtx.strokeStyle = 'rgba(250, 204, 21, 0.95)';
+                    miniCtx.lineWidth = 1;
+                    miniCtx.beginPath();
+                    miniCtx.moveTo(zN.x * scale - 4, zN.y * scale);
+                    miniCtx.lineTo(zN.x * scale + 4, zN.y * scale);
+                    miniCtx.moveTo(zN.x * scale, zN.y * scale - 4);
+                    miniCtx.lineTo(zN.x * scale, zN.y * scale + 4);
+                    miniCtx.stroke();
+                }
             }
 
             Object.values(gameState.players).forEach(p => {
