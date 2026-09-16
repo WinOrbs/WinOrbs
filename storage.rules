@@ -1,8 +1,18 @@
 rules_version = '2';
 
 // ─────────────────────────────────────────────────────────────
-// REGLAS DE FIREBASE STORAGE — WinOrbs (comprobantes de pago)
-// Pega este contenido en: Firebase Console → Storage → Rules
+// REGLAS DE FIREBASE STORAGE — WinOrbs (⚠️ ARCHIVO OBSOLETO / NO USAR)
+//
+// POR QUÉ QUEDÓ INACTIVO: subir archivos a Cloud Storage for Firebase exige el
+// plan Blaze (de pago) incluso para el bucket por defecto, así que en el plan
+// Spark todas las subidas fallaban y las imágenes (skins y comprobantes) se
+// guardaban SIN imagen. Por eso la subida se movió a Cloudinary:
+//   · public/js/media-config.js  → host, preset y carpeta
+//   · public/admin.html          → subirSkinImg()  (imagen de la skin)
+//   · public/wallet.html         → subirComprobante() (comprobante de depósito)
+//
+// Solo hay que volver a publicar estas reglas SI algún día se habilita Blaze y
+// se decide regresar a Firebase Storage. Contenido original (por si se retoma):
 //
 // Cada usuario sube SOLO a su propia carpeta comprobantes/{uid}/,
 // imágenes de menos de 5 MB. Cualquier usuario autenticado puede

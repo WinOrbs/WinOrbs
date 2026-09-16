@@ -158,9 +158,17 @@ function sanitizeSkin(skin) {
             let v = String(skin[k] || '').replace(/[<>&"'`]/g, '').replace(/[\x00-\x1F]/g, '').trim().slice(0, 32);
             if (v) out[k] = v;
         });
-        // URL de imagen (PNG/JPG/GIF) opcional para skins compradas
+        // URL de imagen (PNG/JPG/GIF) opcional para skins compradas.
+        // OJO: este campo viaja en gameState a TODOS los jugadores ~60 veces por
+        // segundo, así que se acota el peso REAL que ocupará en el paquete:
+        // Socket.IO aplica encodeURIComponent al payload y los caracteres no-ASCII
+        // y '%' se expanden ×3, de modo que 500 chars podían convertirse en ~1500
+        // en cada frame. Se mide el peor caso (encodeURIComponent) y se descarta
+        // la URL si excede el tope. La URL de Cloudinary (~100 chars) entra holgada.
         const url = String(skin.imagenUrl || '').trim();
-        if (/^https:\/\/[^\s'"<>]{10,500}$/i.test(url)) out.imagenUrl = url;
+        if (/^https:\/\/[^\s'"<>]{10,500}$/i.test(url) && encodeURIComponent(url).length <= 260) {
+            out.imagenUrl = url;
+        }
     }
     return Object.keys(out).length ? out : { c1: '#38bdf8', c2: '#0284c7', border: '#bae6fd' };
 }

@@ -10,6 +10,8 @@
   <!-- Cliente Socket.io para notificar solicitudes por Telegram vía server.js -->
   <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>
     <script src="/js/servidor-config.js"></script>
+  <!-- Host de imágenes (Cloudinary): Firebase Storage exige plan Blaze (pago) -->
+  <script src="/js/media-config.js"></script>
   <style>
     /* ── Neón Arena: la base (vars, atmósfera, formularios, botones, msgs) vive en /css/arena.css ── */
     body { padding: 20px; }
@@ -236,7 +238,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-    import { getStorage, ref as sRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
+    
     import {
       getFirestore,
       doc,
@@ -418,7 +420,7 @@
     $("ret-monto").addEventListener("input", renderComision);
     $("dep-referencia").addEventListener("input", (e) => { e.target.value = e.target.value.replace(/\D/g, ""); });
 
-    // ── COMPROBANTE (subida a Firebase Storage) ──
+    // ── COMPROBANTE (subida al host de imágenes Cloudinary) ──
     $("dep-comprobante").addEventListener("change", (e) => {
       comprobanteArchivo = e.target.files && e.target.files[0] ? e.target.files[0] : null;
       const wrap = $("dep-preview-wrap");
@@ -439,11 +441,24 @@
     }
     async function subirComprobante() {
       if (!comprobanteArchivo || !uid) return null;
-      const storage = getStorage(app);
-      const nombreLimpio = comprobanteArchivo.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const refArchivo = sRef(storage, "comprobantes/" + uid + "/" + Date.now() + "_" + nombreLimpio);
-      await uploadBytes(refArchivo, comprobanteArchivo, { contentType: comprobanteArchivo.type || "image/jpeg" });
-      return await getDownloadURL(refArchivo);
+      const cfg = window.MEDIA_UPLOAD || {};
+      if (!cfg.cloudName || !cfg.preset || cfg.cloudName === "TU_CLOUD_NAME") {
+        throw new Error("Falta configurar Cloudinary en public/js/media-config.js (cloudName + preset).");
+      }
+      const fd = new FormData();
+      fd.append("file", comprobanteArchivo);
+      fd.append("upload_preset", cfg.preset);
+      fd.append("folder", (cfg.carpetaComprobantes || "winorbs/comprobantes") + "/" + uid);
+      // Subida directa a Cloudinary: Firebase Storage exige plan Blaze (de pago).
+      const res = await fetch("https://api.cloudinary.com/v1_1/" + cfg.cloudName + "/image/upload", {
+        method: "POST",
+        body: fd
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.secure_url) {
+        throw new Error((data.error && data.error.message) || ("HTTP " + res.status));
+      }
+      return data.secure_url;
     }
 
     // ── DEPÓSITO (los datos de pago son los registrados en tu Perfil) ──

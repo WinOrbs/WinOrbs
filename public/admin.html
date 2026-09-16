@@ -7,6 +7,8 @@
     <!-- Cliente Socket.io para comunicación en vivo con server.js -->
     <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>
     <script src="/js/servidor-config.js"></script>
+    <!-- Host de imágenes (Cloudinary): Firebase Storage exige plan Blaze (pago) -->
+    <script src="/js/media-config.js"></script>
     <!-- Design System Neón Arena (base: vars + atmósfera; esta página conserva su layout propio) -->
     <link rel="stylesheet" href="/css/arena.css">
     <style>
@@ -333,6 +335,9 @@
                 </div>
                 <div class="form-group">
                     <label>Imagen de la Skin (PNG · JPG · GIF · máx. 5 MB)</label>
+                    <small style="display:block; color:#94a3b8; font-size:11.5px; margin:-2px 0 6px 0;">
+                        Pulsa <b>⬆️ Subir Imagen</b>: se sube al host de imágenes y la URL se rellena sola abajo. Formatos permitidos: PNG, JPG, GIF o WebP (máx. 5 MB).
+                    </small>
                     <input type="file" id="skin-archivo" accept="image/png,image/jpeg,image/gif,image/webp"
                         style="padding:8px; background:#0f172a; border:1px solid #334155; border-radius:8px; color:#e2e8f0; width:100%;">
                     <button class="btn btn-primary" onclick="subirSkinImg()" style="margin-top:8px;">⬆️ Subir Imagen</button>
@@ -346,7 +351,7 @@
                 </div>
                 <div class="form-group">
                     <label>URL de Imagen (se rellena al subir, o pega un enlace directo)</label>
-                    <input type="text" id="skin-url" placeholder="https://firebasestorage.googleapis.com/...">
+                    <input type="text" id="skin-url" placeholder="https://res.cloudinary.com/...">
                     <!-- Vista previa en vivo: imagen real (con fallback al círculo de colores) -->
                     <div id="skin-preview" style="margin-top:10px; display:flex; align-items:center; gap:12px;">
                         <img id="skin-preview-img" alt="Vista previa de la skin" style="width:60px;height:60px;border-radius:50%;object-fit:cover;border:2px solid #334155;display:none;">
@@ -441,7 +446,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { getFirestore, collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, increment, setDoc, getDoc, query, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-        import { getStorage, ref as sRef, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
+        
 
         // Configuración de Firebase (config pública, seguridad vía Firestore Rules)
         const firebaseConfig = {
@@ -458,7 +463,8 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const auth = getAuth(app);
-        const storage = getStorage(app);
+        // Las imágenes de skins NO usan Firebase Storage (requiere plan Blaze):
+        // se suben a Cloudinary con el unsigned preset de js/media-config.js
 
         // Conexión Socket.io
         const socket = io(window.SERVIDOR_URL || undefined);
@@ -801,48 +807,66 @@ const colorTipo = esRetiro ? '#ef4444' : esPremio ? '#f59e0b' : '#22c55e';
             window.location.href = "index.html";
         };
 
-        // Subida de imagen de skin a Firebase Storage con barra de progreso
+        // Subida de imagen de skin a Cloudinary con barra de progreso.
+        // Firebase Storage quedó descartado: subir archivos exige el plan Blaze
+        // (de pago), así que la subida fallaba y la skin se guardaba SIN imagen.
+        // Aquí se usa el "unsigned upload preset" de js/media-config.js: los
+        // formatos, el tamaño máximo y la carpeta los impone el preset en
+        // Cloudinary (server-side), así que el navegador no lleva ningún secreto.
         window.subirSkinImg = function() {
             const input = document.getElementById("skin-archivo");
             const wrap = document.getElementById("skin-up-wrap");
             const texto = document.getElementById("skin-up-texto");
             const fill = document.getElementById("skin-up-fill");
+            const cfg = window.MEDIA_UPLOAD || {};
             if (!input.files || !input.files[0]) return alert("Elige una imagen primero (PNG, JPG, GIF o WebP).");
             const archivo = input.files[0];
             if (!archivo.type.startsWith('image/')) return alert("El archivo no es una imagen.");
-            if (archivo.size > 5 * 1024 * 1024) return alert("La imagen supera el límite de 5 MB.");
-
-            const nombre = archivo.name.replace(/[^\w.-]/g, '_').slice(-64);
-            const ref = sRef(storage, `skins/${Date.now()}-${nombre}`);
+            const tope = Number(cfg.maxBytes) || 5 * 1024 * 1024;
+            if (archivo.size > tope) return alert("La imagen supera el límite de " + Math.round(tope / (1024 * 1024)) + " MB.");
+            if (!cfg.cloudName || !cfg.preset || cfg.cloudName === "TU_CLOUD_NAME") {
+                return alert("Falta configurar Cloudinary.\n\nAbre public/js/media-config.js y pega tu 'cloudName' y el nombre del 'preset' (las instrucciones están dentro del archivo).");
+            }
 
             wrap.style.display = "block";
             texto.innerText = "⬆️ Subiendo… 0%";
             fill.style.width = "0%";
 
-            const tarea = uploadBytesResumable(ref, archivo, { contentType: archivo.type });
-            tarea.on('state_changed',
-                (snap) => {
-                    const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-                    texto.innerText = `⬆️ Subiendo… ${pct}%`;
-                    fill.style.width = pct + "%";
-                },
-                (e) => {
-                    wrap.style.display = "none";
-                    alert("Error al subir la imagen: " + (e.code || e.message));
-                },
-                async () => {
-                    try {
-                        const url = await getDownloadURL(tarea.snapshot.ref);
-                        document.getElementById("skin-url").value = url;
-                        window.actualizarPreviewSkin();
-                        texto.innerText = "✅ Imagen subida y disponible para los jugadores — URL vinculada abajo";
-                        fill.style.width = "100%";
-                        setTimeout(() => { wrap.style.display = "none"; }, 4000);
-                    } catch (e) {
-                        texto.innerText = "⚠️ Subida completa, pero no se pudo obtener la URL: " + (e.code || e.message);
-                    }
+            const fd = new FormData();
+            fd.append("file", archivo);
+            fd.append("upload_preset", cfg.preset);
+            fd.append("folder", cfg.carpetaSkins || "winorbs/skins");
+
+            const xhr = new XMLHttpRequest();
+            xhr.open("POST", "https://api.cloudinary.com/v1_1/" + cfg.cloudName + "/image/upload");
+            xhr.upload.onprogress = (e) => {
+                if (!e.lengthComputable) return;
+                const pct = Math.round((e.loaded / e.total) * 100);
+                texto.innerText = `⬆️ Subiendo… ${pct}%`;
+                fill.style.width = pct + "%";
+            };
+            xhr.onerror = () => {
+                fill.style.width = "0%";
+                texto.innerText = "⚠️ Error de red al subir la imagen. Revisa tu conexión e inténtalo otra vez.";
+            };
+            xhr.onload = () => {
+                let data = {};
+                try { data = JSON.parse(xhr.responseText || "{}"); } catch (e) { }
+                if (xhr.status >= 200 && xhr.status < 300 && data.secure_url) {
+                    document.getElementById("skin-url").value = data.secure_url;
+                    window.actualizarPreviewSkin();
+                    texto.innerText = "✅ Imagen subida y disponible para los jugadores — URL vinculada abajo";
+                    fill.style.width = "100%";
+                    setTimeout(() => { wrap.style.display = "none"; }, 4000);
+                } else {
+                    // Motivos típicos: preset inexistente, formato no permitido o
+                    // archivo mayor que el máximo configurado en el preset.
+                    const detalle = (data.error && data.error.message) || ("HTTP " + xhr.status);
+                    fill.style.width = "0%";
+                    texto.innerText = "⚠️ No se pudo subir: " + detalle;
                 }
-            );
+            };
+            xhr.send(fd);
         };
 
         // Vista previa de la skin en el formulario: muestra la imagen real si la URL

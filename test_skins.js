@@ -102,13 +102,47 @@ function check(nombre, cond) {
         ['public/tienda.html', ['skin_equipada', 'Sincronía multi-dispositivo']],
         ['public/perfil.html', ['f-billetera', 'billetera_usdt', 'esTRC20', 'esBEP20']],
         ['public/wallet.html', ['Billetera USDT: ', 'perfil.billetera_usdt', 'Binance (USDT)']],
-        ['public/admin.html', ['actualizarPreviewSkin', 'skin-preview-img', 'Ya está disponible para los jugadores']]
+        ['public/admin.html', ['actualizarPreviewSkin', 'skin-preview-img', 'Ya está disponible para los jugadores', 'subirSkinImg', 'upload_preset', '/js/media-config.js', 'skin-up-fill']],
+        ['public/js/media-config.js', ['window.MEDIA_UPLOAD', 'cloudName', 'preset', 'maxBytes']]
     ];
     for (const [archivo, claves] of marcadores) {
         const txt = fs.readFileSync(archivo, 'utf8');
         for (const clave of claves) check(archivo + ' contiene "' + clave + '"', txt.includes(clave));
     }
 
+// ── 4. Subida de imágenes: Cloudinary (Firebase Storage exige plan Blaze) ──
+    // Regresión vigilada: si alguien vuelve a enganchar Firebase Storage, la
+    // subida del panel falla ("storage/unknown") y la skin queda SIN imagen.
+    const mediaCfg = fs.readFileSync('public/js/media-config.js', 'utf8');
+    check('media-config.js expone window.MEDIA_UPLOAD', /window\.MEDIA_UPLOAD\s*=/.test(mediaCfg));
+    check('media-config.js declara cloudName y preset', /cloudName\s*:/.test(mediaCfg) && /preset\s*:/.test(mediaCfg));
+    check('media-config.js limita a 5 MB', /maxBytes\s*:\s*5\s*\*\s*1024\s*\*\s*1024/.test(mediaCfg));
+
+    const adminHtml = fs.readFileSync('public/admin.html', 'utf8');
+    check('admin.html carga /js/media-config.js', adminHtml.includes('/js/media-config.js'));
+    check('admin.html sube con unsigned preset a Cloudinary', adminHtml.includes('api.cloudinary.com') && adminHtml.includes('upload_preset'));
+    check('admin.html rellena #skin-url con data.secure_url', adminHtml.includes('data.secure_url') && adminHtml.includes('getElementById("skin-url").value'));
+    check('admin.html NO usa Firebase Storage', !/firebase-storage|getStorage|uploadBytes|uploadBytesResumable/.test(adminHtml));
+
+    const walletHtml = fs.readFileSync('public/wallet.html', 'utf8');
+    check('wallet.html carga /js/media-config.js', walletHtml.includes('/js/media-config.js'));
+    check('wallet.html sube comprobantes con unsigned preset', walletHtml.includes('api.cloudinary.com') && walletHtml.includes('upload_preset'));
+    check('wallet.html NO usa Firebase Storage', !/firebase-storage|getStorage|uploadBytes|uploadBytesResumable/.test(walletHtml));
+
+    // El guard de server.js: la URL viaja en gameState a 60 fps a todos los
+    // jugadores, así que se descarta si su peso codificado no cabe en el paquete.
+    check('server.js acota el peso de imagenUrl en gameState', server.includes('encodeURIComponent(url).length'));
+
+    // Comportamiento real del guard con las URLs que produce el host de imágenes
+    // (Cloudinary, ~90 chars): deben entrar; una URL desmesurada, no.
+    const sanear = sandbox.sanitizeSkin;
+    const urlCloudinary = 'https://res.cloudinary.com/demo123/image/upload/v1712345678/winorbs/skins/orbe_neon.png';
+    check('sanitizeSkin conserva la URL de Cloudinary (~89 chars)',
+        sanear({ c1: '#38bdf8', imagenUrl: urlCloudinary }).imagenUrl === urlCloudinary);
+    check('sanitizeSkin descarta una URL desmesurada (400 chars)',
+        sanear({ c1: '#38bdf8', imagenUrl: 'https://example.com/' + 'a'.repeat(400) + '.png' }).imagenUrl === undefined);
+    check('sanitizeSkin sigue bloqueando javascript:',
+        sanear({ c1: '#38bdf8', imagenUrl: 'javascript:alert(1)' }).imagenUrl === undefined);
     console.log(fallos ? ('\n' + fallos + ' test(s) FALLARON') : '\nTodos los tests pasaron');
     process.exit(fallos ? 1 : 0);
 })().catch((e) => { console.error('ERROR:', e.message); process.exit(1); });
