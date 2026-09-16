@@ -3548,29 +3548,32 @@
                 const skC1 = (p.skin && p.skin.c1) ? p.skin.c1 : '#38bdf8';
                 const skC2 = (p.skin && p.skin.c2) ? p.skin.c2 : skC1;
                 const skBorder = (p.skin && p.skin.border) ? p.skin.border : '#fff';
-                const gradOrbe = ctx.createRadialGradient(p.x - p.radius * 0.35, p.y - p.radius * 0.35, p.radius * 0.15, p.x, p.y, p.radius);
-                gradOrbe.addColorStop(0, skC1);
-                gradOrbe.addColorStop(1, skC2);
-                ctx.fillStyle = gradOrbe;
-                ctx.fill();
-                // Si la skin tiene imagen (PNG/JPG/GIF), se dibuja recortada al orbe
+                // Si la skin tiene imagen LISTA (PNG/JPG/GIF), se pinta SOLO la imagen:
+                // sin fondo de color detrás, así la transparencia del PNG deja ver el
+                // mapa. El orbe de color queda solo como respaldo (sin imagen o mientras
+                // carga), para que ningún jugador quede invisible.
                 const skUrl = p.skin && p.skin.imagenUrl;
-                if (skUrl) {
-                    const img = skinImages[skUrl];
-                    if (img && img.complete && img.naturalWidth > 0) {
-                        ctx.save();
-                        ctx.beginPath();
-                        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-                        ctx.clip();
-                        const lado = p.radius * 2;
-                        // La skin gira hacia donde apunta el jugador (p.angle = dirección
-                        // del puntero/disparo). El cuadrado inscrito cubre el círculo
-                        // recortado en cualquier rotación, así que no deja huecos.
-                        ctx.translate(p.x, p.y);
-                        ctx.rotate(p.angle || 0);
-                        ctx.drawImage(img, -lado / 2, -lado / 2, lado, lado);
-                        ctx.restore();
-                    }
+                const skImg = skUrl ? skinImages[skUrl] : null;
+                const skinLista = !!(skImg && skImg.complete && skImg.naturalWidth > 0);
+                if (skinLista) {
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                    ctx.clip();
+                    const lado = p.radius * 2;
+                    // La skin gira hacia donde apunta el jugador (p.angle = dirección
+                    // del puntero/disparo). El cuadrado inscrito cubre el círculo
+                    // recortado en cualquier rotación, así que no deja huecos.
+                    ctx.translate(p.x, p.y);
+                    ctx.rotate(p.angle || 0);
+                    ctx.drawImage(skImg, -lado / 2, -lado / 2, lado, lado);
+                    ctx.restore();
+                } else {
+                    const gradOrbe = ctx.createRadialGradient(p.x - p.radius * 0.35, p.y - p.radius * 0.35, p.radius * 0.15, p.x, p.y, p.radius);
+                    gradOrbe.addColorStop(0, skC1);
+                    gradOrbe.addColorStop(1, skC2);
+                    ctx.fillStyle = gradOrbe;
+                    ctx.fill();
                 }
                 ctx.strokeStyle = p.isDashing ? '#38bdf8' : skBorder; ctx.lineWidth = p.isDashing ? 4 : 2.5; ctx.stroke();
                 if (p.isDashing) {
