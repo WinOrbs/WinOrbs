@@ -159,10 +159,14 @@
 
         /* Plazas del lobby de espera (ocupadas / libres) */
         .seat-dot {
-            width: 14px; height: 14px; border-radius: 50%;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
             border: 1px solid rgba(148, 163, 184, .45);
-            background: transparent; transition: .2s;
+            background: transparent;
+            transition: .2s;
         }
+
         .seat-dot.ocupada {
             background: var(--primary);
             border-color: transparent;
@@ -1091,16 +1095,28 @@
             gap: 10px;
             box-shadow: var(--shadow);
         }
-        #skins-carga.visible { display: inline-flex; }
-        #skins-carga-texto { font-size: 11.5px; font-weight: 500; white-space: nowrap; }
+
+        #skins-carga.visible {
+            display: inline-flex;
+        }
+
+        #skins-carga-texto {
+            font-size: 11.5px;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+
         #skins-carga-bar {
-            width: 120px; height: 5px;
+            width: 120px;
+            height: 5px;
             background: var(--border);
             border-radius: 999px;
             overflow: hidden;
         }
+
         #skins-carga-fill {
-            width: 0%; height: 100%;
+            width: 0%;
+            height: 100%;
             background: linear-gradient(90deg, var(--cyan, #38bdf8), #22c55e);
             border-radius: 999px;
             transition: width .3s ease;
@@ -1943,7 +1959,9 @@
     <!-- Barra de estado: fotos de skins aún cargando -->
     <div id="skins-carga">
         <span id="skins-carga-texto">⏳ Cargando skins…</span>
-        <div id="skins-carga-bar"><div id="skins-carga-fill"></div></div>
+        <div id="skins-carga-bar">
+            <div id="skins-carga-fill"></div>
+        </div>
     </div>
     <canvas id="gameCanvas"></canvas>
 
@@ -1956,8 +1974,8 @@
         <div class="joystick-handle" id="aim-handle"></div>
     </div>
     <div class="touch-controls" id="touch-controls">
-        <button class="touch-btn dash" id="btn-dash-mobile" onmousedown="mobileDash()" ontouchstart="mobileDash(event)" style="order: 0;"
-            aria-label="Dash">
+        <button class="touch-btn dash" id="btn-dash-mobile" onmousedown="mobileDash()" ontouchstart="mobileDash(event)"
+            style="order: 0;" aria-label="Dash">
             <svg viewBox="0 0 24 24" fill="currentColor">
                 <path d="M13 2 4.5 13H11l-1 9 8.5-11H12z"></path>
             </svg>
@@ -1995,16 +2013,16 @@
             </svg>
             <span class="btn-badge" id="shoot-ammo">7</span>
         </button>
-        <button class="touch-btn small reload" id="btn-reload-mobile" onmousedown="mobileReload()" ontouchstart="mobileReload(event)" style="order: 3;"
-            aria-label="Recargar">
+        <button class="touch-btn small reload" id="btn-reload-mobile" onmousedown="mobileReload()"
+            ontouchstart="mobileReload(event)" style="order: 3;" aria-label="Recargar">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                 stroke-linejoin="round">
                 <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
                 <path d="M21 3v6h-6"></path>
             </svg>
         </button>
-        <button class="touch-btn small bomb" onmousedown="mobileBomb()" ontouchstart="mobileBomb(event)" style="order: 4;"
-            aria-label="Lanzar bomba">
+        <button class="touch-btn small bomb" onmousedown="mobileBomb()" ontouchstart="mobileBomb(event)"
+            style="order: 4;" aria-label="Lanzar bomba">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                 stroke-linejoin="round">
                 <circle cx="12" cy="14" r="7"></circle>
@@ -2012,8 +2030,8 @@
                 <path d="M14 3h-4"></path>
             </svg>
         </button>
-        <button class="touch-btn auto" id="btn-autofire" onmousedown="toggleAutoFire()" ontouchstart="toggleAutoFire(event)"
-            style="order: 5;" aria-label="Disparo automatico">AUTO</button>
+        <button class="touch-btn auto" id="btn-autofire" onmousedown="toggleAutoFire()"
+            ontouchstart="toggleAutoFire(event)" style="order: 5;" aria-label="Disparo automatico">AUTO</button>
     </div>
 
     <!-- UID de Firebase: necesario para cobros de entrada y premios -->
@@ -3383,8 +3401,8 @@
                     }
                 } else {
                     const rot = (b.vx || b.vy) ? Math.atan2(b.vy, b.vx) : 0;
-                    if (!drawSprite('bala', b.x, b.y, 20, 0, rot)) {
-                        ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI * 2);
+                    if (!drawSprite('bala', b.x, b.y, 40, 40, rot)) {
+                        ctx.beginPath(); ctx.arc(b.x, b.y, 40, 40, Math.PI * 2);
                         ctx.fillStyle = '#fbbf24'; ctx.fill();
                     }
                 }
