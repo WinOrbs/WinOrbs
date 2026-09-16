@@ -438,6 +438,33 @@ function spBanco(cv) {
     contorno(cv, '#052e16');
 }
 
+// Lanza-Orbes (botín de airdrop): cañón morado con el orbe cargado en la boca
+function spOrbGun(cv) {
+    // aleta superior de mira
+    rect(cv, 6, 12, 3, 3, P.purp);
+    // cuerpo / culata
+    rect(cv, 4, 15, 15, 8, P.purpOsc);
+    rect(cv, 4, 15, 15, 2, P.purp);          // brillo superior
+    rect(cv, 4, 21, 15, 2, '#5b21b6');       // sombra inferior
+    // franja de energía (cargador)
+    rect(cv, 7, 18, 3, 3, P.purpClaro);
+    px(cv, 8, 19, '#f5f3ff');
+    // cañón
+    rect(cv, 19, 16, 5, 6, '#5b21b6');
+    rect(cv, 19, 16, 5, 2, P.purp);
+    rect(cv, 23, 15, 2, 8, '#3b0764');       // anillo de la boca
+    // empuñadura y guardamonte
+    rect(cv, 8, 23, 5, 7, '#3b0764');
+    rect(cv, 9, 24, 3, 5, P.purpOsc);
+    linea(cv, 14, 22, 17, 26, '#3b0764', 2);
+    // orbe cargado en la boca (halo + núcleo brillante)
+    disco(cv, 27, 19, 4.5, '#d8b4fe66');
+    disco(cv, 27, 19, 3, P.purpClaro);
+    disco(cv, 27, 19, 1.6, '#f5f3ff');
+    px(cv, 26, 18, '#ffffff');
+    contorno(cv, '#3b0764');
+}
+
 /* ===================== 5. Generación y verificación ===================== */
 
 const SPRITES = [
@@ -453,7 +480,8 @@ const SPRITES = [
     ['wall.png', 96, 96, spMuro],
     ['speed-pad.png', 96, 36, spTurbo],
     ['shop.png', 96, 96, spTienda],
-    ['bank.png', 96, 96, spBanco]
+    ['bank.png', 96, 96, spBanco],
+    ['orb-gun.png', 32, 32, spOrbGun]
 ];
 
 function main() {

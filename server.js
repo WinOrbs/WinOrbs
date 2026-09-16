@@ -128,6 +128,39 @@ const MAX_SOCKETS_PER_IP = 3;          // en salas de pago
 const INPUT_MIN_INTERVAL = 8;          // ms entre eventos playerInput
 const SHOOT_COOLDOWN = { 1: 120, 2: 400 }; // ms por arma
 const ITEM_COSTOS = { medkit: 30, shield: 50, bomb: 40, orbGun: 100 };
+
+// ── RECARGA (tecla R) ────────────────────────────────────────────────────────
+// Ya NO existe auto-recarga en el cliente: sin balas no se dispara hasta
+// recargar. La recarga tarda RELOAD_TICKS (~2.5 s) y bloquea el disparo.
+const RELOAD_TICKS = 150;           // ~2.5 s a 60 fps
+const RECARGA_ORBES_COSTE = 25;     // gemas NO aseguradas por recargar el Lanza-Orbes
+const ORBGUN_MAX_AMMO = 3;          // orbes por cargador del Lanza-Orbes
+
+// ── ZONA SEGURA (battle royale) ──────────────────────────────────────────────
+// Radio inicial 3600 → cubre la esquina del mapa (5000/2·√2 ≈ 3535), así nadie
+// recibe daño de zona al arrancar. Cada fase indica el radio objetivo cuando
+// quedan `t` segundos; entre fases el radio se interpola linealmente.
+const ZONA_RADIO_INICIAL = 3600;
+const ZONA_FASES = [
+    { t: 300, r: 3600 },
+    { t: 240, r: 2300 },
+    { t: 180, r: 1500 },
+    { t: 120, r: 900 },
+    { t: 60, r: 520 },
+    { t: 0, r: 280 }
+];
+const ZONA_DPS = [4, 6, 9, 14, 20]; // HP/s fuera de la zona, por fase
+const ZONA_CIERRE_PX_S = 40;        // velocidad máxima de cierre (px/s)
+
+// ─ BOTIQUINES Y BOTÍN DE AIRDROP ────────────────────────────────────────────
+const KIT_VAL = 40;             // HP que cura un botiquín
+const KIT_VIDA = 1800;          // ~30 s en el suelo
+const KIT_MAX_MAPA = 6;         // tope de botiquines generados en el mapa
+const KIT_INTERVALO = 12;       // s entre intentos de reposición
+const KIT_SIEMBRA = 3;          // botiquines al arrancar la partida
+const ORBGUN_VIDA = 1200;       // ~20 s para recoger el Lanza-Orbes soltado
+const KIT_LOOT_PROB = 0.65;     // probabilidad de botiquín al abrir un airdrop
+const ORBGUN_LOOT_PROB = 0.35;  // probabilidad de Lanza-Orbes al abrir un airdrop
 const adminFailuresByIP = {};          // rate-limit del panel admin
 
 if (ADMIN_PASSWORD === "admin123" && !process.env.ADMIN_PASSWORD) {
@@ -522,12 +555,16 @@ class GameRoom {
         this.bullets = [];
         this.droppedEnergy = [];
         this.droppedHealthKits = [];
+        this.droppedOrbGuns = [];   // Lanza-Orbes en el suelo (botín de airdrop)
         this.bombs = [];
         this.explosions = [];
         this.bankZone = { x: MAP_SIZE / 2, y: MAP_SIZE / 2, radius: 130 };
         this.gameTime = 300;
-        this.zoneRadius = MAP_SIZE * 0.7;
+        this.zoneRadius = ZONA_RADIO_INICIAL;
         this.zoneShrinking = false;
+        this.zoneFase = 0;
+        this.zoneDps = ZONA_DPS[0];
+        this.kitTimer = 0;
 
         this.shopZones = this.generateShopZones();
         this.hazardZones = [];
@@ -655,13 +692,24 @@ class GameRoom {
         return { x: Math.random() * (MAP_SIZE - 600) + 300, y: Math.random() * (MAP_SIZE - 600) + 300 };
     }
 
+    // Botiquín en un punto libre del mapa (spawnPoint evita muros y obstáculos).
     generateHealthKit() {
+        if (this.droppedHealthKits.length >= KIT_MAX_MAPA) return;
+        const sp = this.spawnPoint();
         this.droppedHealthKits.push({
             id: 'h_' + randID(),
-            x: Math.random() * (MAP_SIZE - 200) + 100,
-            y: Math.random() * (MAP_SIZE - 200) + 100,
-            val: 40
+            x: sp.x,
+            y: sp.y,
+            val: KIT_VAL,
+            life: KIT_VIDA
         });
+    }
+
+    // Siembra inicial de botiquines al arrancar la partida.
+    sembrarBotiquines() {
+        this.droppedHealthKits = [];
+        this.kitTimer = 0;
+        for (let i = 0; i < KIT_SIEMBRA; i++) this.generateHealthKit();
     }
 
     initEnergy() {
@@ -697,6 +745,8 @@ class GameRoom {
             ammo: 7, maxAmmo: 7,
             bombs: 0,
             hasOrbGun: false,
+            ammo2: ORBGUN_MAX_AMMO, maxAmmo2: ORBGUN_MAX_AMMO, // cargador del Lanza-Orbes
+            isReloading: false, reloadTimer: 0, reloadWeapon: 0,
             isExtracting: false,
             dashProgress: 100,
             dashCooldown: 0,
@@ -728,9 +778,20 @@ class GameRoom {
         }
     }
 
+    // Aviso de cargador vacío (rate-limit: ni el audio ni el banner se saturan)
+    avisarSinMunicion(p, texto) {
+        const ahora = Date.now();
+        if (p.avisadoEn && ahora - p.avisadoEn < 1000) return;
+        p.avisadoEn = ahora;
+        const s = io.sockets.sockets.get(p.id);
+        if (!s) return;
+        s.emit('playSound', 'empty');
+        s.emit('aviso', texto);
+    }
+
     handleShoot(socketId, shootData) {
         const p = this.players[socketId];
-        if (!p || p.isDead) return;
+        if (!p || p.isDead || p.isReloading) return;
 
         // Anticheat: cooldown mínimo entre disparos por arma (mata el spam de balas)
         const ahora = Date.now();
@@ -739,7 +800,10 @@ class GameRoom {
         p.lastShotAt = ahora;
 
         if (p.currentWeapon === 1) {
-            if (p.ammo <= 0) return;
+            if (p.ammo <= 0) {
+                this.avisarSinMunicion(p, 'Pistola sin balas · pulsa R para recargar');
+                return;
+            }
             p.ammo--;
             this.bullets.push({
                 ownerId: socketId,
@@ -752,6 +816,11 @@ class GameRoom {
             });
             io.to(this.id).emit('playSound', 'shoot');
         } else if (p.currentWeapon === 2 && p.hasOrbGun) {
+            if (p.ammo2 <= 0) {
+                this.avisarSinMunicion(p, `Lanza-Orbes vacío · pulsa R (${RECARGA_ORBES_COSTE} gemas)`);
+                return;
+            }
+            p.ammo2--;
             this.bullets.push({
                 ownerId: socketId,
                 x: p.x + Math.cos(shootData.angle) * (p.radius + 12),
@@ -776,10 +845,29 @@ class GameRoom {
         p.dashTimer = 15;
     }
 
+    // Recarga OBLIGATORIA (~2.5 s). Arma 1: gratis. Arma 2 (Lanza-Orbes): cuesta
+    // RECARGA_ORBES_COSTE en gemas NO aseguradas y solo se cobra al COMPLETAR
+    // (cambiar de arma o morir a mitad no te quita la energía).
     handleReload(socketId) {
         const p = this.players[socketId];
-        if (!p || p.isDead || p.currentWeapon !== 1) return;
-        p.ammo = p.maxAmmo;
+        if (!p || p.isDead || p.isReloading) return;
+
+        if (p.currentWeapon === 1) {
+            if (p.ammo >= p.maxAmmo) return;
+        } else if (p.currentWeapon === 2 && p.hasOrbGun) {
+            if (p.ammo2 >= p.maxAmmo2) return;
+            if (p.charge < RECARGA_ORBES_COSTE) {
+                this.avisarSinMunicion(p, `Necesitas ${RECARGA_ORBES_COSTE} gemas sin asegurar para recargar el Lanza-Orbes`);
+                return;
+            }
+        } else {
+            return;
+        }
+
+        p.isReloading = true;
+        p.reloadTimer = RELOAD_TICKS;
+        p.reloadWeapon = p.currentWeapon;
+        io.sockets.sockets.get(p.id)?.emit('playSound', 'reload');
     }
 
     handleSwitchWeapon(socketId, data) {
@@ -788,6 +876,12 @@ class GameRoom {
 
         const weaponNum = typeof data === 'number' ? data : data.weapon;
         if (weaponNum === 2 && !p.hasOrbGun) return;
+        // Cambiar de arma cancela la recarga en curso (sin cobrar nada)
+        if (p.isReloading) {
+            p.isReloading = false;
+            p.reloadTimer = 0;
+            p.reloadWeapon = 0;
+        }
         p.currentWeapon = weaponNum;
     }
 
@@ -838,6 +932,7 @@ class GameRoom {
             case 'orbGun':
                 p.hasOrbGun = true;
                 p.currentWeapon = 2;
+                p.ammo2 = p.maxAmmo2; // se entrega con el cargador lleno
                 break;
         }
     }
@@ -860,6 +955,10 @@ class GameRoom {
         p.turboCooldown = 0;
         p.currentWeapon = 1;
         p.ammo = p.maxAmmo;
+        p.ammo2 = p.maxAmmo2;
+        p.isReloading = false;
+        p.reloadTimer = 0;
+        p.reloadWeapon = 0;
         p.canRespawn = false;
         p.respawnTimer = 0;
     }
@@ -901,12 +1000,23 @@ class GameRoom {
                 } else if (this.countdown <= 0) {
                     this.gameStarted = true;
                     this.lobbyActive = false;
+                    // Botiquines iniciales repartidos por el mapa (antes solo caían
+                    // al matar a alguien, así que la salud casi no se recuperaba).
+                    this.sembrarBotiquines();
+                    io.to(this.id).emit('announcement', ` ${KIT_SIEMBRA} botiquines repartidos por el mapa`);
                     io.to(this.id).emit('playSound', 'explosion');
                 }
             }
 
             if (this.gameStarted) {
                 this.updateZone();
+
+                // Reposición de botiquines: mantiene el mapa surtido sin llenarlo
+                this.kitTimer++;
+                if (this.kitTimer >= KIT_INTERVALO) {
+                    this.kitTimer = 0;
+                    this.generateHealthKit();
+                }
 
                 if (this.gameStarted && this.gameTime <= 0) {
                     this.endGame();
@@ -993,7 +1103,7 @@ class GameRoom {
     }
 
     // Al llegar la vida de la caja a 0 por disparos, suelta el botín:
-    // 5 orbes ×25 alrededor de la caja (recogida automática al tocarlos).
+    // 5 orbes ×25 SIEMPRE + tirada de botiquín (65%) y/o Lanza-Orbes (35%).
     openAirdrop(ad) {
         const idx = this.airdrops.indexOf(ad);
         if (idx >= 0) this.airdrops.splice(idx, 1);
@@ -1008,9 +1118,33 @@ class GameRoom {
                 life: 900 // caduca a los ~15 s
             });
         }
+
+        const premios = [];
+        if (Math.random() < KIT_LOOT_PROB) {
+            this.droppedHealthKits.push({
+                id: 'h_' + randID(),
+                x: ad.x - ad.radius - 30,
+                y: ad.y + ad.radius + 30,
+                val: KIT_VAL,
+                life: KIT_VIDA
+            });
+            premios.push(`botiquín +${KIT_VAL} HP`);
+        }
+        if (Math.random() < ORBGUN_LOOT_PROB) {
+            this.droppedOrbGuns.push({
+                id: 'og_' + randID(),
+                x: ad.x + ad.radius + 30,
+                y: ad.y - ad.radius - 30,
+                val: 1,
+                life: ORBGUN_VIDA
+            });
+            premios.push('LANZA-ORBES');
+        }
+
         this.explosions.push({ x: ad.x, y: ad.y, radius: 70, alpha: 1 });
         io.to(this.id).emit('playSound', 'explosion');
-        io.to(this.id).emit('announcement', '💥 ¡CAJA ABIERTA! Recoge los 5 orbes ×25.');
+        io.to(this.id).emit('announcement',
+            `💥 ¡CAJA ABIERTA! 5 orbes ×25${premios.length ? ' + ' + premios.join(' + ') : ''}. ¡Corre a por el botín!`);
     }
 
     spawnHazard() {
@@ -1023,10 +1157,45 @@ class GameRoom {
         });
     }
 
+    // Radio objetivo de la zona según el tiempo restante (interpolado entre fases)
+    zonaObjetivo() {
+        if (this.gameTime >= ZONA_FASES[0].t) return ZONA_FASES[0].r;
+        for (let i = 0; i < ZONA_FASES.length - 1; i++) {
+            const alta = ZONA_FASES[i], baja = ZONA_FASES[i + 1];
+            if (this.gameTime <= alta.t && this.gameTime > baja.t) {
+                const tramo = (alta.t - baja.t) || 1;
+                const progreso = (alta.t - this.gameTime) / tramo;
+                return alta.r + (baja.r - alta.r) * progreso;
+            }
+        }
+        return ZONA_FASES[ZONA_FASES.length - 1].r;
+    }
+
+    // Índice de fase (0..ZONA_DPS.length-1) que escala el daño fuera de zona
+    indiceFaseZona() {
+        let idx = 0;
+        for (let i = 0; i < ZONA_FASES.length; i++) {
+            if (this.gameTime <= ZONA_FASES[i].t) idx = i;
+        }
+        return Math.min(idx, ZONA_DPS.length - 1);
+    }
+
+    // Reducción de zona: progresiva durante TODA la partida (antes solo en el
+    // último minuto y a 5 px/s, que sobre un mapa de 5000 era imperceptible).
     updateZone() {
-        if (this.gameTime <= 60 && this.zoneRadius > 150) {
-            this.zoneRadius -= 5;
-            this.zoneShrinking = true;
+        const objetivo = this.zonaObjetivo();
+        if (this.zoneRadius > objetivo) {
+            this.zoneRadius = Math.max(objetivo, this.zoneRadius - ZONA_CIERRE_PX_S);
+        }
+        // "Cerrándose" = ya salió de su tamaño inicial → el anillo se pinta activo
+        this.zoneShrinking = this.zoneRadius < ZONA_RADIO_INICIAL - 1;
+
+        const fase = this.indiceFaseZona();
+        if (fase !== this.zoneFase) {
+            this.zoneFase = fase;
+            this.zoneDps = ZONA_DPS[fase];
+            io.to(this.id).emit('announcement', `⭕ LA ZONA SE CIERRA · FASE ${fase + 1}/${ZONA_DPS.length} · ¡MUÉVETE AL CENTRO! (${this.zoneDps} HP/s fuera)`);
+            io.to(this.id).emit('playSound', 'explosion');
         }
     }
 
@@ -1098,13 +1267,17 @@ class GameRoom {
         this.countdown = 0;
         this.pendingStart = null;
         this.gameTime = 300;
-        this.zoneRadius = MAP_SIZE * 0.7;
+        this.zoneRadius = ZONA_RADIO_INICIAL;
         this.zoneShrinking = false;
+        this.zoneFase = 0;
+        this.zoneDps = ZONA_DPS[0];
+        this.kitTimer = 0;
         this.bullets = [];
         this.bombs = [];
         this.explosions = [];
         this.droppedEnergy = [];
         this.droppedHealthKits = [];
+        this.droppedOrbGuns = [];
         this.airdrops = [];
         this.hazardZones = [];
         this.airdropTimer = 0;
@@ -1127,6 +1300,31 @@ class GameRoom {
                     p.canRespawn = true;
                 }
                 return;
+            }
+
+            // Recarga temporizada (tecla R): al completar se rellena el cargador
+            // del arma que se estaba recargando. El Lanza-Orbes cobra sus gemas
+            // al completar; si a mitad murió o gastó la energía, se cancela.
+            if (p.isReloading) {
+                p.reloadTimer--;
+                if (p.reloadTimer <= 0) {
+                    const s = io.sockets.sockets.get(p.id);
+                    if (p.reloadWeapon === 2) {
+                        if (p.hasOrbGun && p.charge >= RECARGA_ORBES_COSTE) {
+                            p.charge -= RECARGA_ORBES_COSTE;
+                            p.ammo2 = p.maxAmmo2;
+                            s?.emit('playSound', 'reload-done');
+                        } else {
+                            s?.emit('playSound', 'empty');
+                        }
+                    } else {
+                        p.ammo = p.maxAmmo;
+                        s?.emit('playSound', 'reload-done');
+                    }
+                    p.isReloading = false;
+                    p.reloadTimer = 0;
+                    p.reloadWeapon = 0;
+                }
             }
 
             if (p.isDashing) {
@@ -1225,19 +1423,41 @@ class GameRoom {
                 }
             }
 
-            for (let i = this.droppedHealthKits.length - 1; i >= 0; i--) {
-                let h = this.droppedHealthKits[i];
-                if (Math.hypot(p.x - h.x, p.y - h.y) < p.radius + 10) {
-                    p.hp = Math.min(p.maxHp, p.hp + h.val);
-                    io.to(this.id).emit('playSound', 'pickup');
-                    this.droppedHealthKits.splice(i, 1);
+            // Botiquines: solo se recogen si estás herido (no se desperdician)
+            if (p.hp < p.maxHp) {
+                for (let i = this.droppedHealthKits.length - 1; i >= 0; i--) {
+                    const h = this.droppedHealthKits[i];
+                    if (Math.hypot(p.x - h.x, p.y - h.y) < p.radius + 10) {
+                        p.hp = Math.min(p.maxHp, p.hp + h.val);
+                        io.to(this.id).emit('playSound', 'pickup');
+                        this.droppedHealthKits.splice(i, 1);
+                    }
                 }
             }
 
-            if (this.gameStarted && this.zoneShrinking) {
+            // Lanza-Orbes soltado por un airdrop. Si ya lo tienes, la pieza se
+            // queda en el suelo para el resto de la sala.
+            if (!p.hasOrbGun) {
+                for (let i = this.droppedOrbGuns.length - 1; i >= 0; i--) {
+                    const g = this.droppedOrbGuns[i];
+                    if (Math.hypot(p.x - g.x, p.y - g.y) < p.radius + 14) {
+                        p.hasOrbGun = true;
+                        p.currentWeapon = 2;
+                        p.ammo2 = p.maxAmmo2;
+                        this.droppedOrbGuns.splice(i, 1);
+                        io.to(this.id).emit('playSound', 'pickup');
+                        io.to(this.id).emit('announcement', `🔫 ${p.nick} obtuvo el LANZA-ORBES`);
+                        break;
+                    }
+                }
+            }
+
+            // Daño fuera de la zona: HP/s según la fase (antes era 1 HP por tick
+            // de 60 fps = 60 HP/s, y solo se aplicaba en el último minuto).
+            if (this.gameStarted) {
                 const distToCenter = Math.hypot(p.x - MAP_SIZE / 2, p.y - MAP_SIZE / 2);
                 if (distToCenter > this.zoneRadius + p.radius && p.isDead === false) {
-                    p.hp -= 1;
+                    p.hp -= (this.zoneDps || ZONA_DPS[0]) / 60;
                     if (p.hp <= 0) {
                         this.killPlayer(p);
                         io.to(this.id).emit('playSound', 'explosion');
@@ -1283,9 +1503,17 @@ class GameRoom {
         }
 
         for (let i = this.droppedHealthKits.length - 1; i >= 0; i--) {
-            this.droppedHealthKits[i].life = (this.droppedHealthKits[i].life || 600) - 1;
+            this.droppedHealthKits[i].life = (this.droppedHealthKits[i].life || KIT_VIDA) - 1;
             if (this.droppedHealthKits[i].life <= 0) {
                 this.droppedHealthKits.splice(i, 1);
+            }
+        }
+
+        // Lanza-Orbes sin recoger: caducan para no saturar el mapa
+        for (let i = this.droppedOrbGuns.length - 1; i >= 0; i--) {
+            this.droppedOrbGuns[i].life = (this.droppedOrbGuns[i].life || ORBGUN_VIDA) - 1;
+            if (this.droppedOrbGuns[i].life <= 0) {
+                this.droppedOrbGuns.splice(i, 1);
             }
         }
 
@@ -1379,6 +1607,9 @@ class GameRoom {
         if (p.hp <= 0) {
             p.hp = 0;
             p.isDead = true;
+            p.isReloading = false;   // morir cancela la recarga (no se cobra nada)
+            p.reloadTimer = 0;
+            p.reloadWeapon = 0;
             p.respawnTimer = 0;
             p.canRespawn = false;
             if (p.charge > 0) {
@@ -1402,6 +1633,9 @@ class GameRoom {
         if (p.isDead) return;
         p.hp = 0;
         p.isDead = true;
+        p.isReloading = false;   // morir cancela la recarga (no se cobra nada)
+        p.reloadTimer = 0;
+        p.reloadWeapon = 0;
         p.respawnTimer = 0;
         p.canRespawn = false;
         if (p.charge > 0) {
@@ -1465,6 +1699,9 @@ class GameRoom {
     getState() {
         return {
             players: this.players,
+            droppedOrbGuns: this.droppedOrbGuns,
+            zoneFase: this.zoneFase,
+            zoneDps: this.zoneDps,
             bullets: this.bullets,
             droppedEnergy: this.droppedEnergy,
             healthKits: this.droppedHealthKits,

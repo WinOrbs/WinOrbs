@@ -1244,6 +1244,12 @@
             color: #7dd3fc;
         }
 
+        .touch-btn.reload.reloading {
+            border-color: rgba(56, 189, 248, 0.95);
+            color: #e0f2fe;
+            opacity: 0.75;
+        }
+
         .touch-btn.bomb {
             background: rgba(244, 63, 94, 0.2);
             border-color: rgba(244, 63, 94, 0.55);
@@ -1989,7 +1995,7 @@
             </svg>
             <span class="btn-badge" id="shoot-ammo">7</span>
         </button>
-        <button class="touch-btn small reload" onmousedown="mobileReload()" ontouchstart="mobileReload(event)" style="order: 3;"
+        <button class="touch-btn small reload" id="btn-reload-mobile" onmousedown="mobileReload()" ontouchstart="mobileReload(event)" style="order: 3;"
             aria-label="Recargar">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                 stroke-linejoin="round">
@@ -2107,7 +2113,6 @@
         let aimCenter = { x: 0, y: 0 };
         let aimAngle = 0;
         let autoFire = false;
-        let lastAutoReload = 0;
         const aimContainer = document.getElementById("aim-container");
         const aimHandle = document.getElementById("aim-handle");
 
@@ -2318,6 +2323,14 @@
 
         function fireLoopStart(fireDelayMs) {
             if (!myPlayerId || isDead || isGameOver) return;
+            // Sin auto-recarga: con el cargador vacío se avisa y no se dispara
+            // hasta pulsar R (el servidor también lo bloquea).
+            const meAhora = gameState && gameState.players ? gameState.players[myPlayerId] : null;
+            if (meAhora && (meAhora.isReloading ||
+                (meAhora.currentWeapon === 1 ? (meAhora.ammo || 0) <= 0 : (meAhora.ammo2 || 0) <= 0))) {
+                socket.emit('playerShoot', { angle: touchAngle });
+                return;
+            }
             socket.emit('playerShoot', { angle: touchAngle });
             // Mantener pulsado dispara en ráfaga mientras te mueves con el joystick.
             // El modo AUTO (stick derecho) usa una cadencia mas lenta y controlada.
@@ -2325,6 +2338,14 @@
             const step = fireDelayMs || 170;
             mobileShootTimer = setInterval(() => {
                 if (!myPlayerId || isDead || isGameOver) { mobileShootStop(); return; }
+                const meLoop = gameState && gameState.players ? gameState.players[myPlayerId] : null;
+                const sinBalas = meLoop && (meLoop.currentWeapon === 1 ? (meLoop.ammo || 0) <= 0 : (meLoop.ammo2 || 0) <= 0);
+                if (meLoop && (meLoop.isReloading || sinBalas)) {
+                    // Un único aviso (clic + banner) y se corta la ráfaga: hace falta R
+                    socket.emit('playerShoot', { angle: touchAngle });
+                    fireLoopStop();
+                    return;
+                }
                 socket.emit('playerShoot', { angle: touchAngle });
             }, step);
         }
@@ -2341,6 +2362,8 @@
         function mobileReload(e) {
             if (e && e.cancelable) e.preventDefault();
             if (!myPlayerId || isDead || isGameOver) return;
+            const meAhora = gameState && gameState.players ? gameState.players[myPlayerId] : null;
+            if (meAhora && meAhora.isReloading) return; // ya está recargando
             socket.emit('playerReload');
             if (navigator.vibrate) navigator.vibrate(10);
         }
@@ -2399,7 +2422,8 @@
             muro: { src: 'assets/game/wall.png' },
             turbo: { src: 'assets/game/speed-pad.png' },
             tienda: { src: 'assets/game/shop.png' },
-            banco: { src: 'assets/game/bank.png' }
+            banco: { src: 'assets/game/bank.png' },
+            orbGun: { src: 'assets/game/orb-gun.png' }
         };
         const sprites = {};
         let spriteFondoPattern = null;
@@ -2503,6 +2527,31 @@
                 gain.gain.setValueAtTime(0.18, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
                 osc.connect(gain); gain.connect(audioCtx.destination);
                 osc.start(now); osc.stop(now + 0.3);
+            } else if (type === 'reload') {
+                // Click-clack: dos golpes cortos graves al iniciar la recarga
+                [0, 0.18].forEach((t, i) => {
+                    let osc = audioCtx.createOscillator(); let gain = audioCtx.createGain();
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(i === 0 ? 190 : 140, now + t);
+                    gain.gain.setValueAtTime(0.14, now + t);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + t + 0.07);
+                    osc.connect(gain); gain.connect(audioCtx.destination);
+                    osc.start(now + t); osc.stop(now + t + 0.07);
+                });
+            } else if (type === 'reload-done') {
+                let osc = audioCtx.createOscillator(); let gain = audioCtx.createGain();
+                osc.type = 'triangle'; osc.frequency.setValueAtTime(700, now);
+                osc.frequency.exponentialRampToValueAtTime(1100, now + 0.09);
+                gain.gain.setValueAtTime(0.16, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.start(now); osc.stop(now + 0.12);
+            } else if (type === 'empty') {
+                // Clic seco: cargador vacío / recarga imposible
+                let osc = audioCtx.createOscillator(); let gain = audioCtx.createGain();
+                osc.type = 'square'; osc.frequency.setValueAtTime(120, now);
+                gain.gain.setValueAtTime(0.1, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.start(now); osc.stop(now + 0.05);
             }
         }
 
@@ -2517,7 +2566,11 @@
             if (e.key === ' ' || e.key === 'Spacebar') { keys.space = true; e.preventDefault(); socket.emit('playerDash'); }
 
             if (k === 'e' && !isDead && !isGameOver) intentarAbrirTienda();
-            if (k === 'r') socket.emit('playerReload');
+            if (k === 'r') {
+                // Recarga manual: ignora la repetición al mantener pulsada la tecla
+                e.preventDefault();
+                if (!e.repeat && !isDead && !isGameOver) socket.emit('playerReload');
+            }
             if (k === 'q') socket.emit('playerBomb');
             if (k === '1') socket.emit('switchWeapon', 1);
             if (k === '2') socket.emit('switchWeapon', 2);
@@ -2542,6 +2595,8 @@
             initAudio();
             if (e.target !== canvas) return;
             if (!myPlayerId || !gameState.players[myPlayerId] || gameState.players[myPlayerId].isDead) return;
+            const meShoot = gameState.players[myPlayerId];
+            if (meShoot.isReloading) return; // recargando: no dispara
             if (e.button === 0) socket.emit('playerShoot', { angle: keys.angle });
             if (e.button === 2) { e.preventDefault(); socket.emit('playerDash'); }
         });
@@ -2940,14 +2995,49 @@
             document.getElementById("hud-charge").innerText = `${me.charge || 0} pts`;
             document.getElementById("hud-bank").innerText = `${me.bankedScore || 0} pts`;
 
-            // Armas
+            // Armas · munición y estado de recarga
             const nameEl = document.getElementById("weapon-name");
+            const ammoEl = document.getElementById("ammo-count");
+            const statusEl = document.getElementById("ammo-status");
+            const recargando = !!me.isReloading;
             if (me.currentWeapon === 1) {
-                nameEl.innerText = "Pistola Base"; nameEl.style.color = "#38bdf8";
-                document.getElementById("ammo-count").innerText = `${me.ammo || 0} / ${me.maxAmmo || 7}`;
+                nameEl.innerText = "Pistola Base";
+                nameEl.style.color = recargando ? "#f59e0b" : "#38bdf8";
+                if (recargando) {
+                    const pct = Math.max(0, Math.min(100, 100 - ((me.reloadTimer || 0) / 150 * 100)));
+                    ammoEl.innerText = `RECARGANDO… ${Math.round(pct)}%`;
+                    ammoEl.style.color = "#f59e0b";
+                    statusEl.innerHTML = `<span class="kbd">R</span> Recargando…`;
+                } else {
+                    ammoEl.innerText = `${me.ammo || 0} / ${me.maxAmmo || 7}`;
+                    ammoEl.style.color = (me.ammo || 0) <= 0 ? "#ef4444" : "";
+                    statusEl.innerHTML = (me.ammo || 0) <= 0
+                        ? `<span style="color:#ef4444;font-weight:700;">SIN BALAS · PULSA <span class="kbd">R</span></span>`
+                        : (me.ammo >= (me.maxAmmo || 7)
+                            ? `<span style="color:#22c55e;">Cargador lleno</span>`
+                            : `<span class="kbd">R</span> Recargar`);
+                }
             } else {
-                nameEl.innerText = "Lanza-Orbes (Especial)"; nameEl.style.color = "#a855f7";
-                document.getElementById("ammo-count").innerText = `∞ (Orbes)`;
+                nameEl.innerText = "Lanza-Orbes (Especial)";
+                nameEl.style.color = recargando ? "#f59e0b" : "#a855f7";
+                if (recargando) {
+                    const pct = Math.max(0, Math.min(100, 100 - ((me.reloadTimer || 0) / 150 * 100)));
+                    ammoEl.innerText = `RECARGANDO… ${Math.round(pct)}%`;
+                    ammoEl.style.color = "#f59e0b";
+                    statusEl.innerHTML = `<span class="kbd">R</span> Cargando orbes…`;
+                } else {
+                    ammoEl.innerText = `${me.ammo2 || 0} / ${me.maxAmmo2 || 3}`;
+                    ammoEl.style.color = (me.ammo2 || 0) <= 0 ? "#ef4444" : "";
+                    if ((me.ammo2 || 0) <= 0) {
+                        statusEl.innerHTML = (me.charge || 0) >= 25
+                            ? `<span style="color:#ef4444;font-weight:700;">SIN ORBES · <span class="kbd">R</span> (⚡25)</span>`
+                            : `<span style="color:#f59e0b;font-weight:700;">⚡ 25 sin asegurar para recargar</span>`;
+                    } else if ((me.ammo2 || 0) >= (me.maxAmmo2 || 3)) {
+                        statusEl.innerHTML = `<span style="color:#22c55e;">Cargador lleno · <span class="kbd">R</span> cuesta ⚡25</span>`;
+                    } else {
+                        statusEl.innerHTML = `<span class="kbd">R</span> Recargar (⚡ 25 sin asegurar)`;
+                    }
+                }
             }
 
             document.getElementById("bomb-count").innerText = me.bombs || 0;
@@ -2983,16 +3073,40 @@
             // Municion visible en el boton de disparo (movil)
             const shootAmmo = document.getElementById('shoot-ammo');
             if (shootAmmo) {
-                shootAmmo.innerText = me.currentWeapon === 1 ? (me.ammo || 0) : "\u221E";
-                shootAmmo.classList.toggle('low', me.currentWeapon === 1 && (me.ammo || 0) <= 2);
+                const balas = me.currentWeapon === 1 ? (me.ammo || 0) : (me.ammo2 || 0);
+                shootAmmo.innerText = me.isReloading ? 'R…' : balas;
+                shootAmmo.classList.toggle('low', balas <= 2);
             }
 
-            // Recarga automatica al quedarse sin balas (QoL en todos los dispositivos)
-            if (!me.isDead && me.currentWeapon === 1 && (me.ammo || 0) <= 0) {
-                const nowTs = Date.now();
-                if (nowTs - lastAutoReload > 600) {
-                    lastAutoReload = nowTs;
-                    socket.emit('playerReload');
+            // Anillo de progreso de recarga en el boton tactil (patron del dash)
+            const reloadBtn = document.getElementById('btn-reload-mobile');
+            if (reloadBtn) {
+                if (me.isReloading) {
+                    const pct = Math.max(0, Math.min(100, 100 - ((me.reloadTimer || 0) / 150 * 100)));
+                    reloadBtn.style.background = `conic-gradient(rgba(56, 189, 248, 0.65) ${pct}%, rgba(56, 189, 248, 0.12) ${pct}%)`;
+                    reloadBtn.classList.add('reloading');
+                } else {
+                    reloadBtn.style.background = '';
+                    reloadBtn.classList.remove('reloading');
+                }
+            }
+
+            // Aviso de zona: fuera del círculo (o cerrándose con el círculo ya activo)
+            const zoneWarn = document.getElementById("zone-warning");
+            if (zoneWarn) {
+                const mapSizeHud = gameState.mapSize || 5000;
+                const distZona = Math.hypot(me.x - mapSizeHud / 2, me.y - mapSizeHud / 2);
+                const fuera = distZona > (gameState.zoneRadius || 0);
+                if (fuera) {
+                    zoneWarn.innerText = `☠ FUERA DE LA ZONA · ${gameState.zoneDps || 4} HP/s · ¡CORRE AL CENTRO!`;
+                    zoneWarn.style.display = "block";
+                    zoneWarn.style.borderColor = "rgba(239, 68, 68, 0.75)";
+                } else if (gameState.zoneShrinking) {
+                    zoneWarn.innerText = `⭕ LA ZONA SE CIERRA · FASE ${(gameState.zoneFase || 0) + 1} · MUÉVETE AL CENTRO`;
+                    zoneWarn.style.display = "block";
+                    zoneWarn.style.borderColor = "rgba(244, 63, 94, 0.45)";
+                } else {
+                    zoneWarn.style.display = "none";
                 }
             }
 
@@ -3110,17 +3224,28 @@
                 drawSprite('tienda', sz.x, sz.y, 96);
             });
 
-            // Zona Roja
-            if (gameState.zoneShrinking || gameState.gameTime <= 60) {
-                ctx.fillStyle = 'rgba(239, 68, 68, 0.15)';
+            // Zona segura: SIEMPRE visible durante la partida. Antes solo se pintaba
+            // en el último minuto, así que el cierre progresivo pasaba inadvertido.
+            // El degradado exterior es más intenso si estás fuera del círculo.
+            const zR = gameState.zoneRadius || 0;
+            const zCentro = MAP_SIZE / 2;
+            const meFueraZona = Math.hypot(me.x - zCentro, me.y - zCentro) > zR;
+            if (zR > 0) {
+                ctx.fillStyle = meFueraZona ? 'rgba(239, 68, 68, 0.22)' : 'rgba(239, 68, 68, 0.12)';
                 ctx.beginPath();
                 ctx.rect(0, 0, MAP_SIZE, MAP_SIZE);
-                ctx.arc(MAP_SIZE / 2, MAP_SIZE / 2, gameState.zoneRadius, 0, Math.PI * 2, true);
+                ctx.arc(zCentro, zCentro, zR, 0, Math.PI * 2, true);
                 ctx.fill();
 
                 ctx.beginPath();
-                ctx.arc(MAP_SIZE / 2, MAP_SIZE / 2, gameState.zoneRadius, 0, Math.PI * 2);
-                ctx.strokeStyle = '#ef4444';
+                ctx.arc(zCentro, zCentro, zR, 0, Math.PI * 2);
+                if (gameState.zoneShrinking) {
+                    // Ámbar pulsante = la zona está cerrándose ahora mismo
+                    const pulso = 0.6 + 0.4 * Math.sin(Date.now() / 220);
+                    ctx.strokeStyle = `rgba(245, 158, 11, ${0.55 + 0.35 * pulso})`;
+                } else {
+                    ctx.strokeStyle = 'rgba(148, 163, 184, 0.8)';
+                }
                 ctx.lineWidth = 8;
                 ctx.stroke();
             }
@@ -3217,6 +3342,24 @@
                 const latido = 1 + 0.06 * Math.sin(Date.now() / 300 + h.x);
                 if (!drawSprite('kit', h.x, h.y, 32 * latido)) {
                     ctx.fillStyle = '#22c55e'; ctx.fillRect(h.x - 7, h.y - 7, 14, 14);
+                }
+            });
+
+            // Lanza-Orbes en el suelo (botín de airdrop): rombo violeta giratorio
+            // si el sprite no está disponible.
+            (gameState.droppedOrbGuns || []).forEach(g => {
+                const flotacion = Math.sin(Date.now() / 350 + g.x * 0.03) * 3;
+                const latido = 1 + 0.08 * Math.sin(Date.now() / 260 + g.y);
+                if (!drawSprite('orbGun', g.x, g.y + flotacion, 38 * latido)) {
+                    const lado = 13 * latido;
+                    ctx.save();
+                    ctx.translate(g.x, g.y + flotacion);
+                    ctx.rotate(Math.PI / 4);
+                    ctx.fillStyle = 'rgba(168, 85, 247, 0.85)';
+                    ctx.fillRect(-lado / 2, -lado / 2, lado, lado);
+                    ctx.strokeStyle = '#f0abfc'; ctx.lineWidth = 2;
+                    ctx.strokeRect(-lado / 2, -lado / 2, lado, lado);
+                    ctx.restore();
                 }
             });
 
@@ -3373,8 +3516,8 @@
                 miniCtx.beginPath(); miniCtx.arc(ad.x * scale, ad.y * scale, 4, 0, Math.PI * 2); miniCtx.fill();
             });
 
-            if (gameState.zoneShrinking || gameState.gameTime <= 60) {
-                miniCtx.strokeStyle = 'rgba(239, 68, 68, 0.9)';
+            if (gameState.zoneRadius > 0) {
+                miniCtx.strokeStyle = gameState.zoneShrinking ? 'rgba(245, 158, 11, 0.95)' : 'rgba(148, 163, 184, 0.8)';
                 miniCtx.lineWidth = 2;
                 miniCtx.beginPath();
                 miniCtx.arc((MAP_SIZE / 2) * scale, (MAP_SIZE / 2) * scale, gameState.zoneRadius * scale, 0, Math.PI * 2);
