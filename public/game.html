@@ -2873,7 +2873,11 @@
             const me = gameState.players[myPlayerId];
             if (!me || me.isDead) return;
             const rect = canvas.getBoundingClientRect();
-            keys.angle = Math.atan2(mouseY - (rect.top + rect.height / 2), mouseX - (rect.left + rect.width / 2));
+            // En táctil el apuntado lo marca el stick (touchAngle); en escritorio, el
+            // puntero del ratón respecto al centro del canvas (= posición del orbe).
+            keys.angle = isTouchDevice
+                ? touchAngle
+                : Math.atan2(mouseY - (rect.top + rect.height / 2), mouseX - (rect.left + rect.width / 2));
             socket.emit('playerInput', keys);
         }, 1000 / 60);
 
@@ -3126,14 +3130,15 @@
                     zoneWarn.innerText = `☠ FUERA DE LA ZONA · ${gameState.zoneDps || 4} HP/s · ¡CORRE AL CÍRCULO!`;
                     zoneWarn.style.display = "block";
                     zoneWarn.style.borderColor = "rgba(239, 68, 68, 0.75)";
-                } else if (gameState.zoneNext) {
-                    zoneWarn.innerText = `⭕ REDUCCIÓN FINAL · NUEVA ZONA MARCADA EN EL MINIMAPA`;
-                    zoneWarn.style.display = "block";
-                    zoneWarn.style.borderColor = "rgba(250, 204, 21, 0.6)";
                 } else if (gameState.zoneShrinking) {
-                    zoneWarn.innerText = `⭕ LA ZONA SE CIERRA · FASE ${(gameState.zoneFase || 0) + 1} · SIGUE EL CÍRCULO`;
+                    zoneWarn.innerText = `⭕ LA ZONA SE CIERRA · FASE ${(gameState.zoneFase || 0) + 1} · ${gameState.zoneDps || 4} HP/s fuera`;
                     zoneWarn.style.display = "block";
                     zoneWarn.style.borderColor = "rgba(244, 63, 94, 0.45)";
+                } else if (gameState.zoneNext) {
+                    const faltan = Math.max(0, Math.ceil(gameState.gameTime || 0));
+                    zoneWarn.innerText = `⭕ ZONA MARCADA EN EL MAPA · CIERRA EN ${faltan}s · ¡ROTA YA!`;
+                    zoneWarn.style.display = "block";
+                    zoneWarn.style.borderColor = "rgba(250, 204, 21, 0.6)";
                 } else {
                     zoneWarn.style.display = "none";
                 }
@@ -3558,7 +3563,12 @@
                         ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
                         ctx.clip();
                         const lado = p.radius * 2;
-                        ctx.drawImage(img, p.x - p.radius, p.y - p.radius, lado, lado);
+                        // La skin gira hacia donde apunta el jugador (p.angle = dirección
+                        // del puntero/disparo). El cuadrado inscrito cubre el círculo
+                        // recortado en cualquier rotación, así que no deja huecos.
+                        ctx.translate(p.x, p.y);
+                        ctx.rotate(p.angle || 0);
+                        ctx.drawImage(img, -lado / 2, -lado / 2, lado, lado);
                         ctx.restore();
                     }
                 }
@@ -3581,9 +3591,8 @@
                     ctx.strokeStyle = 'rgba(253, 224, 71, 0.35)'; ctx.lineWidth = 2; ctx.stroke();
                 }
 
-                ctx.beginPath(); ctx.moveTo(p.x, p.y);
-                ctx.lineTo(p.x + Math.cos(p.angle) * (p.radius + 12), p.y + Math.sin(p.angle) * (p.radius + 12));
-                ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4; ctx.stroke();
+                // La dirección la comunica la propia skin girando (p.angle): ya no se
+                // dibuja la línea blanca sobre el personaje.
                 ctx.restore();
             });
 

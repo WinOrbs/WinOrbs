@@ -138,26 +138,31 @@ const ORBGUN_MAX_AMMO = 3;          // orbes por cargador del Lanza-Orbes
 const PISTOLA_MAX_AMMO = 15;        // balas por cargador de la Pistola Base
 
 // ── ZONA SEGURA (battle royale) ──────────────────────────────────────────────
-// Radio inicial 3600 → cubre la esquina del mapa (5000/2·√2 ≈ 3535), así nadie
+// El mapa ENTERO es zona segura durante casi toda la partida: el círculo sólo se
+// cierra en los ZONA_CIERRE_T segundos finales. ZONA_AVISO_T segundos antes de
+// que arranque el cierre se MARCA en el mapa dónde caerá la zona final
+// (zoneNext), para que dé tiempo a rotar como en cualquier battle royale.
+// El radio inicial cubre la esquina del mapa (MAP_SIZE/2·√2 ≈ 3535), así nadie
 // recibe daño de zona al arrancar. Cada fase indica el radio objetivo cuando
 // quedan `t` segundos; entre fases el radio se interpola linealmente.
-const ZONA_RADIO_INICIAL = 3600;
+const ZONA_RADIO_INICIAL = Math.ceil(MAP_SIZE / 2 * 1.4142);
+const ZONA_RADIO_FINAL = 280;
+const ZONA_CIERRE_T = 40;           // s finales en los que la zona se cierra
+const ZONA_AVISO_T = 70;            // s restantes cuando se marca la zona final
 const ZONA_FASES = [
-    { t: 300, r: 3600 },
-    { t: 240, r: 2300 },
-    { t: 180, r: 1500 },
-    { t: 120, r: 900 },
-    { t: 60, r: 520 },
-    { t: 0, r: 280 }
+    { t: ZONA_CIERRE_T, r: ZONA_RADIO_INICIAL },
+    { t: 30, r: 2600 },
+    { t: 20, r: 1800 },
+    { t: 10, r: 1000 },
+    { t: 0,  r: ZONA_RADIO_FINAL }
 ];
-const ZONA_DPS = [4, 6, 9, 14, 20]; // HP/s fuera de la zona, por fase
-const ZONA_CIERRE_PX_S = 40;        // velocidad máxima de cierre (px/s)
+const ZONA_DPS = [4, 8, 12, 16, 20]; // HP/s fuera de la zona, por fase de cierre
+const ZONA_CIERRE_PX_S = 200;        // tope de cierre (px/s): el tramo más rápido pide ~94
 // La zona cierra en LUGARES ALEATORIOS: cada fase elige un centro nuevo dentro
 // del círculo anterior, de modo que la partida termina en un sitio distinto cada
 // vez (antes era siempre el centro del mapa). El centro deriva además hacia su
 // objetivo con un tope, para que el círculo se "desplace" y no dé saltos.
-const ZONA_CENTRO_PX_S = 60;        // velocidad máxima de deriva del centro (px/s)
-const ZONA_ALERTA_FINAL_T = 40;     // s restantes cuando se marca la zona final
+const ZONA_CENTRO_PX_S = 200;       // tope de deriva del centro (px/s): el pico pide ~66
 const ZONA_MARGEN_CENTRO = 400;     // el centro nunca a menos de 400 px del borde
                                     // (≥ radio final 280: la zona final cae en el mapa)
 
@@ -1360,8 +1365,9 @@ class GameRoom {
         return Math.min(idx, ZONA_DPS.length - 1);
     }
 
-    // Reducción de zona: progresiva durante TODA la partida (antes solo en el
-    // último minuto y a 5 px/s, que sobre un mapa de 5000 era imperceptible).
+    // Reducción de zona tipo battle royale: el círculo permanece a tamaño completo
+    // (cubre el mapa) hasta los ZONA_CIERRE_T segundos finales, en los que se
+    // cierra siguiendo ZONA_FASES. Antes se cerraba durante toda la partida.
     updateZone() {
         const objetivo = this.zonaObjetivo();
         if (this.zoneRadius > objetivo) {
@@ -1380,12 +1386,20 @@ class GameRoom {
             this.zoneCy += (dy / dist) * paso;
         }
 
-        // Alerta de la reducción final: se marca en el mapa el círculo definitivo
-        // (centro final real de la cadena + radio 280) para que dé tiempo a girar.
-        if (this.gameTime === ZONA_ALERTA_FINAL_T) {
+        // AVISO (battle royale): ZONA_AVISO_T segundos antes del cierre se marca en
+        // el mapa el círculo definitivo (centro final real de la cadena + radio
+        // final) para que dé tiempo a rotar hasta allí.
+        if (this.gameTime === ZONA_AVISO_T) {
             const fin = this.zoneChain[this.zoneChain.length - 1];
-            this.zoneNext = { x: fin.x, y: fin.y, radius: ZONA_FASES[ZONA_FASES.length - 1].r };
-            io.to(this.id).emit('announcement', 'REDUCCIÓN FINAL · NUEVA ZONA MARCADA EN EL MAPA');
+            this.zoneNext = { x: fin.x, y: fin.y, radius: ZONA_RADIO_FINAL };
+            io.to(this.id).emit('announcement', `⭕ NUEVA ZONA MARCADA EN EL MAPA · CIERRA EN ${ZONA_CIERRE_T}s`);
+            io.to(this.id).emit('playSound', 'explosion');
+        }
+        // Arranque del cierre (últimos ZONA_CIERRE_T s): aviso explícito. El índice
+        // de fase sigue en 0 en t=ZONA_CIERRE_T, así que el aviso de fase de más
+        // abajo no saltaría aquí.
+        if (this.gameTime === ZONA_CIERRE_T) {
+            io.to(this.id).emit('announcement', '⭕ ¡LA ZONA EMPIEZA A CERRARSE! · ¡AL CÍRCULO!');
             io.to(this.id).emit('playSound', 'explosion');
         }
         // El marcador se limpia cuando el radio ya alcanzó la zona final

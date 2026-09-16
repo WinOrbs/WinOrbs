@@ -129,6 +129,13 @@ function check(nombre, cond) {
     check('wallet.html sube comprobantes con unsigned preset', walletHtml.includes('api.cloudinary.com') && walletHtml.includes('upload_preset'));
     check('wallet.html NO usa Firebase Storage', !/firebase-storage|getStorage|uploadBytes|uploadBytesResumable/.test(walletHtml));
 
+    // ── Apuntado en el lienzo: la skin gira hacia el puntero (game.html) ──
+    const gameHtml = fs.readFileSync('public/game.html', 'utf8');
+    check('game.html rota la skin hacia el puntero/disparo', gameHtml.includes('ctx.rotate(p.angle'));
+    check('game.html ya NO dibuja la línea blanca de dirección',
+        !gameHtml.includes('ctx.lineTo(p.x + Math.cos(p.angle) * (p.radius + 12)'));
+    check('game.html usa el ángulo del stick en táctil', /keys\.angle = isTouchDevice\s*\?\s*touchAngle/.test(gameHtml));
+
     // El guard de server.js: la URL viaja en gameState a 60 fps a todos los
     // jugadores, así que se descarta si su peso codificado no cabe en el paquete.
     check('server.js acota el peso de imagenUrl en gameState', server.includes('encodeURIComponent(url).length'));

@@ -3,9 +3,11 @@
 //   1. Recarga manual (tecla R / botón móvil): ~2.5 s, SIN auto-recarga,
 //      disparo bloqueado mientras recarga, ignora cargador lleno.
 //      Cargador de la Pistola Base = 15 balas (PISTOLA_MAX_AMMO).
-//   2. Zona segura progresiva: radio inicial 3600, cierre toda la partida,
-//      fases + DPS expuestos, centro MÓVIL (zoneCx/zoneCy) y zona final marcada
-//      en el mapa (zoneNext) a falta de 40 s.
+//   2. Zona segura battle royale: el mapa es zona segura durante casi toda la
+//      partida (el círculo arranca cubriendo las esquinas y NO se reduce), y el
+//      cierre ocurre sólo en los últimos 40 s (ZONA_CIERRE_T) avisando a falta
+//      de 70 s (ZONA_AVISO_T) dónde caerá la zona final (zoneNext).
+//      Fases + DPS expuestos y centro MÓVIL (zoneCx/zoneCy).
 //   3. Tiendas itinerantes: 3 casetas con cuenta atrás que se reubican al agotar
 //      su vida (~15 s) dentro de la zona segura.
 //   4. Obstáculos tipados: rocas + coches/motos/barriles explosivos y muros finos.
@@ -92,13 +94,16 @@ async function run() {
     const kits0 = (s1.healthKits || []).length;
     log(`Botiquines sembrados al iniciar la partida (${kits0} >= 3)`, kits0 >= 3);
 
-    // ── 2. ZONA: radio inicial y cierre progresivo ──
+    // ── 2. ZONA battle royale: NO se cierra hasta los últimos 40 s ──
+    const rInicial = Math.ceil(s1.mapSize / 2 * 1.4142);
     const r0 = s1.zoneRadius;
-    log(`Radio inicial de zona = ${r0} (3600 cubre las esquinas del mapa)`, r0 > 3500 && r0 <= 3600);
+    log(`Radio inicial de zona = ${r0} (cubre las esquinas del mapa: ${Math.round(s1.mapSize / 2 * Math.SQRT2)})`,
+        Math.abs(r0 - rInicial) <= 1);
     await wait(8000);
     const r1 = s1.zoneRadius;
-    log(`La zona SE REDUCE con el tiempo (${Math.round(r0)} → ${Math.round(r1)} px)`, r1 < r0 - 80);
-    log(`zoneShrinking=true durante el cierre`, s1.zoneShrinking === true);
+    log(`La zona NO se reduce durante la partida (${Math.round(r0)} → ${Math.round(r1)} px)`,
+        Math.abs(r1 - r0) < 1);
+    log(`zoneShrinking=false fuera de la ventana de cierre`, s1.zoneShrinking === false);
     log(`Fase y daño de zona expuestos (fase=${s1.zoneFase}, dps=${s1.zoneDps})`, s1.zoneFase === 0 && s1.zoneDps === 4);
 
     // ── 3. ZONA MÓVIL: el círculo se cierra en un lugar ALEATORIO ──
@@ -106,7 +111,7 @@ async function run() {
         Number.isFinite(s1.zoneCx) && Number.isFinite(s1.zoneCy));
     log('El centro de la zona cae dentro del mapa con margen (nunca pegado al borde)',
         s1.zoneCx >= 400 && s1.zoneCx <= 4600 && s1.zoneCy >= 400 && s1.zoneCy <= 4600);
-    log('Sin zona final marcada todavía (zoneNext se revela a falta de 40 s)',
+    log('Sin zona final marcada todavía (zoneNext se revela a falta de ZONA_AVISO_T = 70 s)',
         s1.zoneNext === null || s1.zoneNext === undefined);
 
     // ── 4. TIENDAS ITINERANTES: 3 casetas con cuenta atrás que se reubican ──
@@ -225,13 +230,45 @@ async function parte2(p1, admin, m) {
         src.includes('const PISTOLA_MAX_AMMO = 15;') &&
         /ammo: PISTOLA_MAX_AMMO, maxAmmo: PISTOLA_MAX_AMMO,/.test(src));
     log('La zona se cierra en lugares ALEATORIOS (cadena de centros por fase)',
-        /generarCentrosZona\(\)/.test(src) && src.includes('ZONA_CENTRO_PX_S = 60') &&
+        /generarCentrosZona\(\)/.test(src) && src.includes('ZONA_CENTRO_PX_S = 200') &&
         src.includes('ZONA_MARGEN_CENTRO = 400') && src.includes('(rPrev - fase.r) * 0.7'));
-    log('Alerta de la reducción final a los 40 s con la zona final marcada (zoneNext)',
-        src.includes('ZONA_ALERTA_FINAL_T = 40') &&
-        src.includes('this.gameTime === ZONA_ALERTA_FINAL_T') &&
-        src.includes('REDUCCIÓN FINAL · NUEVA ZONA MARCADA EN EL MAPA') &&
-        /zoneNext = \{ x: fin\.x, y: fin\.y, radius: ZONA_FASES\[ZONA_FASES\.length - 1\]\.r \}/.test(src));
+
+    // El cierre debe CABER en su ventana: si el tope por segundo fuese menor que lo
+    // que pide la interpolación, la zona nunca alcanzaría su radio final.
+    const numOf = (re) => Number((src.match(re) || [])[1]);
+    const mapSizeSrc = numOf(/const MAP_SIZE = (\d+)/);
+    const cierreT = numOf(/ZONA_CIERRE_T = (\d+)/);
+    const rIniSrc = Math.ceil(mapSizeSrc / 2 * 1.4142);
+    const rFinSrc = numOf(/ZONA_RADIO_FINAL = (\d+)/);
+    const capCierre = numOf(/ZONA_CIERRE_PX_S = (\d+)/);
+    const capCentro = numOf(/ZONA_CENTRO_PX_S = (\d+)/);
+    const fasesSrc = [...src.matchAll(/\{ t: (ZONA_CIERRE_T|\d+),\s+r: (ZONA_RADIO_INICIAL|ZONA_RADIO_FINAL|\d+) \}/g)]
+        .map(mm => ({
+            t: mm[1] === 'ZONA_CIERRE_T' ? cierreT : Number(mm[1]),
+            r: mm[2] === 'ZONA_RADIO_INICIAL' ? rIniSrc : mm[2] === 'ZONA_RADIO_FINAL' ? rFinSrc : Number(mm[2])
+        }));
+    let picoRadio = 0, picoCentro = 0;
+    for (let i = 0; i < fasesSrc.length - 1; i++) {
+        const dt = (fasesSrc[i].t - fasesSrc[i + 1].t) || 1;
+        picoRadio = Math.max(picoRadio, (fasesSrc[i].r - fasesSrc[i + 1].r) / dt);
+        picoCentro = Math.max(picoCentro, 0.7 * (fasesSrc[i].r - fasesSrc[i + 1].r) / dt);
+    }
+    log(`Ventana de cierre: ${fasesSrc.length} fases, de ${fasesSrc.length ? fasesSrc[0].t : '?'}s a 0, radio final ${rFinSrc}`,
+        fasesSrc.length === 5 && fasesSrc[0].t === cierreT && fasesSrc[fasesSrc.length - 1].r === rFinSrc);
+    log(`El tope de cierre (${capCierre} px/s) cubre el pico de la interpolación (${Math.ceil(picoRadio)} px/s)`,
+        capCierre >= picoRadio);
+    log(`El tope de deriva del centro (${capCentro} px/s) cubre su pico (${Math.ceil(picoCentro)} px/s)`,
+        capCentro >= picoCentro);
+    log('Cierre battle royale: sólo en los últimos 40 s y con aviso de la zona final a falta de 70 s',
+        src.includes('ZONA_CIERRE_T = 40') && src.includes('ZONA_AVISO_T = 70') &&
+        src.includes('ZONA_RADIO_FINAL = 280') &&
+        src.includes('this.gameTime === ZONA_AVISO_T') &&
+        src.includes('this.gameTime === ZONA_CIERRE_T') &&
+        src.includes('NUEVA ZONA MARCADA EN EL MAPA') &&
+        src.includes('¡LA ZONA EMPIEZA A CERRARSE!') &&
+        /zoneNext = \{ x: fin\.x, y: fin\.y, radius: ZONA_RADIO_FINAL \}/.test(src) &&
+        /\{ t: ZONA_CIERRE_T, r: ZONA_RADIO_INICIAL \}/.test(src) &&
+        !src.includes('ZONA_ALERTA_FINAL_T'));
     log('El daño fuera de zona usa el centro MÓVIL (no MAP_SIZE/2)',
         src.includes('Math.hypot(p.x - this.zoneCx, p.y - this.zoneCy)') &&
         !src.includes('Math.hypot(p.x - MAP_SIZE / 2, p.y - MAP_SIZE / 2)'));
