@@ -3177,8 +3177,8 @@
                 ctx.imageSmoothingEnabled = true;
             } else {
                 ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1.5;
-                for (let x = 0; x <= MAP_SIZE; x += 5000) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, MAP_SIZE); ctx.stroke(); }
-                for (let y = 0; y <= MAP_SIZE; y += 5000) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(MAP_SIZE, y); ctx.stroke(); }
+                for (let x = 5000; x <= MAP_SIZE; x += 5000) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, MAP_SIZE); ctx.stroke(); }
+                for (let y = 5000; y <= MAP_SIZE; y += 5000) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(MAP_SIZE, y); ctx.stroke(); }
             }
 
             // Zonas Peligrosas
