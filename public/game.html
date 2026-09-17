@@ -3575,7 +3575,13 @@
                     ctx.fillStyle = gradOrbe;
                     ctx.fill();
                 }
-                ctx.strokeStyle = p.isDashing ? '#38bdf8' : skBorder; ctx.lineWidth = p.isDashing ? 4 : 2.5; ctx.stroke();
+                // El borde de color solo se pinta en el orbe de color (respaldo) y en
+                // el dash. La skin con imagen va sin borde: solo la imagen.
+                if (!skinLista || p.isDashing) {
+                    ctx.strokeStyle = p.isDashing ? '#38bdf8' : skBorder;
+                    ctx.lineWidth = p.isDashing ? 4 : 2.5;
+                    ctx.stroke();
+                }
                 if (p.isDashing) {
                     ctx.shadowBlur = 20;
                     ctx.shadowColor = '#38bdf8';
