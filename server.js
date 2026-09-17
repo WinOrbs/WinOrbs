@@ -159,7 +159,11 @@ try {
 // Límites de seguridad
 const MAX_SOCKETS_PER_IP = 3;          // en salas de pago
 const INPUT_MIN_INTERVAL = 8;          // ms entre eventos playerInput
-const SHOOT_COOLDOWN = { 1: 120, 2: 400 }; // ms por arma
+const SHOOT_COOLDOWN = { 1: 120, 2: 400, 3: 500 }; // ms por arma (3 = Bombas de Plasma)
+// ── BOMBAS DE PLASMA (arma 3: Q equipa · clic lanza hacia el cursor) ─────────
+const BOMBA_VEL = 12;          // velocidad inicial de lanzamiento (px/tick)
+const BOMBA_FRICCION = 0.95;   // rodadura: pierde ~5% de velocidad por tick
+const BOMBA_COOLDOWN_MS = 400; // anti-spam entre lanzamientos (botón directo móvil)
 const ITEM_COSTOS = { medkit: 30, shield: 50, bomb: 40, orbGun: 100 };
 
 // ── RECARGA (tecla R) ────────────────────────────────────────────────────────
@@ -1050,7 +1054,41 @@ class GameRoom {
                 isOrbBullet: true
             });
             io.to(this.id).emit('playSound', 'shoot');
+        } else if (p.currentWeapon === 3) {
+            // Bombas de Plasma: manda el ángulo EXACTO del clic (no el último
+            // sincronizado por playerInput). Sin munición no se gasta nada.
+            this.lanzarBomba(p, shootData.angle);
         }
+    }
+
+    // ── Lanzamiento de Bombas de Plasma (granada rodante) ───────────────────────
+    // Compartido por: clic con arma 3 (ángulo del cursor, desktop) y el botón
+    // móvil 'playerBomb' (ángulo del stick). Física: sale disparada con fricción
+    // y explota por temporizador; la explosión daña a TODOS en radio 150.
+    lanzarBomba(p, ang) {
+        if (typeof ang !== 'number' || !isFinite(ang)) ang = p.angle || 0;
+        if (p.bombs <= 0) {
+            this.avisarSinMunicion(p, 'Sin bombas · cómpralas en la tienda (⚡40)');
+            return;
+        }
+        const ahora = Date.now();
+        if (ahora - (p.lastBombAt || 0) < BOMBA_COOLDOWN_MS) return;
+        p.lastBombAt = ahora;
+        p.bombs--;
+        // Nace delante del jugador (como las balas) para no nacer encima del dueño
+        const x0 = p.x + Math.cos(ang) * (p.radius + 12);
+        const y0 = p.y + Math.sin(ang) * (p.radius + 12);
+        this.bombs.push({
+            ownerId: p.id,
+            x: x0,
+            y: y0,
+            currentX: x0,
+            currentY: y0,
+            vx: Math.cos(ang) * BOMBA_VEL,
+            vy: Math.sin(ang) * BOMBA_VEL,
+            timer: 90, // ~1.5 s a 60 ticks/s: explota aunque siga rodando
+            exploded: false
+        });
     }
 
     handleDash(socketId) {
@@ -1093,6 +1131,9 @@ class GameRoom {
         if (!p || p.isDead) return;
 
         const weaponNum = typeof data === 'number' ? data : data.weapon;
+        // Whitelist: 1 pistola · 2 Lanza-Orbes (requiere comprarlo) · 3 Bombas
+        // de Plasma (siempre equipable; sin existencias el aviso sale al lanzar)
+        if (![1, 2, 3].includes(weaponNum)) return;
         if (weaponNum === 2 && !p.hasOrbGun) return;
         // Cambiar de arma cancela la recarga en curso (sin cobrar nada)
         if (p.isReloading) {
@@ -1103,23 +1144,13 @@ class GameRoom {
         p.currentWeapon = weaponNum;
     }
 
+    // Botón MÓVIL de bomba: lanza directo hacia el apuntado actual (stick).
+    // En desktop el flujo es: Q equipa el arma 3 + clic lanza con el ángulo
+    // del cursor (rama currentWeapon === 3 de handleShoot).
     handleBomb(socketId) {
         const p = this.players[socketId];
-        if (!p || p.isDead || p.bombs <= 0) return;
-        p.bombs--;
-
-        this.bombs.push({
-            ownerId: socketId,
-            x: p.x,
-            y: p.y,
-            currentX: p.x,
-            currentY: p.y,
-            vx: 0,
-            vy: 0,
-            life: 180,
-            timer: 90,
-            exploded: false
-        });
+        if (!p || p.isDead) return;
+        this.lanzarBomba(p, p.angle);
     }
 
     handleBuyItem(socketId, itemType) {
@@ -1873,6 +1904,15 @@ class GameRoom {
         for (let i = this.bombs.length - 1; i >= 0; i--) {
             let bomb = this.bombs[i];
             if (!bomb.exploded) {
+                // Granada rodante: avanza y pierde velocidad hasta explotar por
+                // temporizador. El cliente ya pinta currentX/currentY del estado.
+                bomb.currentX += bomb.vx;
+                bomb.currentY += bomb.vy;
+                bomb.vx *= BOMBA_FRICCION;
+                bomb.vy *= BOMBA_FRICCION;
+                // Límites del mapa: pegada al borde sigue rodando hasta explotar
+                bomb.currentX = Math.max(0, Math.min(MAP_SIZE, bomb.currentX));
+                bomb.currentY = Math.max(0, Math.min(MAP_SIZE, bomb.currentY));
                 bomb.timer--;
                 if (bomb.timer <= 0) {
                     bomb.exploded = true;

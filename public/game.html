@@ -2104,7 +2104,7 @@
             </span>
             <span class="k"><img class="pix" src="assets/game/ui-gun.png" alt="">Arma</span>
             <b><span id="weapon-name" style="color: var(--primary);">Pistola Base</span></b>
-            <small style="margin-left:auto;">[<span class="kbd">1</span>/<span class="kbd">2</span>]</small>
+            <small style="margin-left:auto;">[<span class="kbd">1</span>/<span class="kbd">2</span>/<span class="kbd">Q</span>]</small>
         </div>
         <div class="row">
             <span class="ic">
@@ -2130,7 +2130,7 @@
             </span>
             <span class="k"><img class="pix" src="assets/game/ui-bomb.png" alt="">Bombas</span>
             <b><span id="bomb-count" style="color: var(--red);">0</span></b>
-            <small style="margin-left:auto;"><span class="kbd">Q</span> Lanzar</small>
+            <small style="margin-left:auto;"><span class="kbd">Q</span> Equipar</small>
         </div>
         <div class="row">
             <span class="ic" style="background: rgba(52,211,153,0.14); color: var(--green);">
@@ -3299,7 +3299,7 @@
                 e.preventDefault();
                 if (!e.repeat && !isDead && !isGameOver) socket.emit('playerReload');
             }
-            if (k === 'q') socket.emit('playerBomb');
+            if (k === 'q' && !e.repeat) socket.emit('switchWeapon', 3); // arma 3: Bombas de Plasma (el clic lanza)
             if (k === '1') socket.emit('switchWeapon', 1);
             if (k === '2') socket.emit('switchWeapon', 2);
         });
@@ -3755,6 +3755,15 @@
                             ? `<span style="color:#22c55e;">Cargador lleno</span>`
                             : `<span class="kbd">R</span> Recargar`);
                 }
+            } else if (me.currentWeapon === 3) {
+                // Bombas de Plasma: el "cargador" son las bombas (máx 3, tienda ⚡40)
+                nameEl.innerText = "Bombas de Plasma";
+                nameEl.style.color = "#ef4444";
+                ammoEl.innerText = String(me.bombs || 0);
+                ammoEl.style.color = (me.bombs || 0) <= 0 ? "#ef4444" : "";
+                statusEl.innerHTML = (me.bombs || 0) <= 0
+                    ? `<span style="color:#ef4444;font-weight:700;">SIN BOMBAS · CÓMPRALAS EN LA TIENDA (⚡40)</span>`
+                    : `Clic para lanzar · <span class="kbd">1</span>/<span class="kbd">2</span> volver al arma`;
             } else {
                 nameEl.innerText = "Lanza-Orbes (Especial)";
                 nameEl.style.color = recargando ? "#f59e0b" : "#a855f7";
