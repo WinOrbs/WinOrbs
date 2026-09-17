@@ -1050,6 +1050,84 @@
             color: var(--red);
         }
 
+        /* ============ Intro de carga (barra de % + orbe) ============ */
+        #intro-overlay {
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(900px 500px at 50% 10%, rgba(56, 189, 248, 0.12), transparent 60%),
+                radial-gradient(700px 400px at 50% 100%, rgba(176, 107, 255, 0.1), transparent 60%),
+                rgba(6, 9, 17, 0.97);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 14px;
+            z-index: 9997;
+            padding: 24px;
+            text-align: center;
+            transition: opacity 0.45s ease;
+        }
+
+        #intro-overlay.oculto {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #intro-canvas {
+            display: block;
+            width: min(92vw, 900px);
+            height: 190px;
+            max-height: 46vh;
+        }
+
+        .intro-pista {
+            width: min(92vw, 620px);
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+        }
+
+        .intro-barra {
+            width: 100%;
+            height: 9px;
+            background: var(--border);
+            border: 1px solid rgba(148, 163, 184, 0.12);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+
+        #intro-fill {
+            width: 0%;
+            height: 100%;
+            border-radius: 999px;
+            background: linear-gradient(90deg, var(--primary), var(--green));
+            box-shadow: 0 0 16px -2px rgba(56, 189, 248, 0.75);
+            transition: width 0.35s ease;
+        }
+
+        .intro-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 12px;
+        }
+
+        #intro-pct {
+            font-family: var(--font-display);
+            font-weight: 700;
+            font-size: 17px;
+            letter-spacing: 1px;
+            color: var(--primary);
+            text-shadow: 0 0 18px rgba(56, 189, 248, 0.35);
+        }
+
+        #intro-paso {
+            font-size: 12.5px;
+            color: var(--muted);
+            letter-spacing: 0.4px;
+        }
+
         /* ============ Estado de conexion ============ */
         #conn-status {
             position: absolute;
@@ -1692,6 +1770,29 @@
         </button>
     </div>
 
+    <!-- Intro de carga: barra de % + orbe que come puntos y dispara -->
+    <div id="intro-overlay">
+        <div class="brand-badge">
+            <div class="brand-mark">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <circle cx="12" cy="12" r="9"></circle>
+                    <circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none"></circle>
+                </svg>
+            </div>
+            <span class="wordmark" style="font-size: 30px;">WinOrbs</span>
+        </div>
+        <canvas id="intro-canvas"></canvas>
+        <div class="intro-pista">
+            <div class="intro-barra">
+                <div id="intro-fill"></div>
+            </div>
+            <div class="intro-meta">
+                <span id="intro-pct">0%</span>
+                <span id="intro-paso">Preparando arena…</span>
+            </div>
+        </div>
+    </div>
+
     <!-- Overlay de desconexion -->
     <div id="conn-overlay">
         <div class="status-icon">
@@ -2066,6 +2167,381 @@
         });
     </script>
 
+    <script>
+        // ── INTRO DE CARGA ─────────────────────────────────────────────────
+        // Barra de % alimentada por hitos reales del arranque (sprites, socket,
+        // identidad, sala y primer estado) + mini-arena animada: un orbe con la
+        // skin equipada que vaga por la pantalla, come puntos y dispara a dianas
+        // flotantes. Se autodestruye al 100 % (o al agotarse el tiempo máximo).
+        (function () {
+            const overlay = document.getElementById('intro-overlay');
+            if (!overlay) return;
+            const cv = document.getElementById('intro-canvas');
+            const cctx = cv ? cv.getContext('2d') : null;
+            const fillEl = document.getElementById('intro-fill');
+            const pctEl = document.getElementById('intro-pct');
+            const pasoEl = document.getElementById('intro-paso');
+            if (!cv || !cctx || !fillEl || !pctEl || !pasoEl) return;
+
+            // Pesos de los hitos del arranque (suman 100)
+            const PESOS = { sprites: 45, conexion: 15, identidad: 15, join: 15, estado: 10 };
+            const PASOS = {
+                sprites: 'Cargando arena…',
+                conexion: 'Conectando…',
+                identidad: 'Validando sesión…',
+                join: 'Entrando a la sala…',
+                estado: 'Sincronizando…'
+            };
+            const hechos = Object.create(null);
+            let progreso = 0;   // objetivo real (0..100)
+            let mostrado = 0;   // valor suavizado que pinta la barra
+            let finPedido = false;
+            let terminado = false;
+            let frameId = 0;
+            let ultimoTs = 0;
+            const t0 = performance.now();
+            const MIN_MS = 1200;   // tiempo mínimo en pantalla (evita el parpadeo)
+            const MAX_MS = 12000;  // red de seguridad: nunca deja la pantalla bloqueada
+
+            // Skin equipada (mismas claves de sessionStorage que el script principal)
+            let skin = { c1: '#38bdf8', c2: '#0284c7', border: '#bae6fd' };
+            try {
+                const guardada = sessionStorage.getItem('mi_skin') || sessionStorage.getItem('player_skin');
+                if (guardada) skin = Object.assign(skin, typeof guardada === 'string' ? JSON.parse(guardada) : guardada);
+            } catch (e) { }
+            // Si la skin trae foto, el orbe la pinta recortada; el gradiente es el respaldo
+            let skinImg = null, skinLista = false;
+            if (skin && skin.imagenUrl) {
+                skinImg = new Image();
+                try { skinImg.referrerPolicy = 'no-referrer'; } catch (e) { }
+                skinImg.onload = () => { skinLista = !!skinImg.naturalWidth; };
+                skinImg.onerror = () => { skinLista = false; };
+                skinImg.src = skin.imagenUrl;
+            }
+
+            // Lienzo a la densidad real (mismo patrón que el canvas del juego)
+            let W = 0, H = 0;
+            function resizeIntro() {
+                const dpr = Math.min(window.devicePixelRatio || 1, 2);
+                const r = cv.getBoundingClientRect();
+                W = Math.max(220, Math.round(r.width));
+                H = Math.max(120, Math.round(r.height));
+                cv.width = Math.round(W * dpr);
+                cv.height = Math.round(H * dpr);
+                cctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            }
+            resizeIntro();
+            window.addEventListener('resize', resizeIntro);
+            window.addEventListener('orientationchange', resizeIntro);
+
+            // ── Entidades de la mini-arena ──
+            const VEL = 118;   // px/s del orbe
+            const orbe = { x: 0, y: 0, vx: VEL, vy: 40, r: 15, rizo: 0, crecido: 0, disparo: 0.5, fogonazo: 0 };
+            const puntos = [];   // comida
+            const dianas = [];   // objetivos flotantes
+            const balas = [];
+            const chispas = [];
+            const NUM_PUNTOS = 6, NUM_DIANAS = 3, MAX_CHISPAS = 240;
+            let puntosComidos = 0, dianasRotas = 0;
+
+            function alAzar(min, max) { return min + Math.random() * (max - min); }
+            function puntoLejos() {
+                const m = 26;
+                for (let i = 0; i < 24; i++) {
+                    const p = { x: alAzar(m, W - m), y: alAzar(m, H - m), r: 7, fase: Math.random() * 6.28 };
+                    if (Math.hypot(p.x - orbe.x, p.y - orbe.y) > 90) return p;
+                }
+                return { x: alAzar(m, W - m), y: alAzar(m, H - m), r: 7, fase: 0 };
+            }
+            function dianaNueva() {
+                const m = 24;
+                return {
+                    x: alAzar(m, W - m), y: alAzar(m, H - m), r: 13,
+                    vx: alAzar(-34, 34), vy: alAzar(-26, 26),
+                    rota: false, respawn: 0, fase: Math.random() * 6.28
+                };
+            }
+            function repartir() {
+                puntos.length = 0; dianas.length = 0;
+                for (let i = 0; i < NUM_PUNTOS; i++) puntos.push(puntoLejos());
+                for (let i = 0; i < NUM_DIANAS; i++) dianas.push(dianaNueva());
+            }
+            orbe.x = W * 0.35; orbe.y = H * 0.5;
+            repartir();
+
+            // Partículas con tope: el pool se recicla y nunca crece sin control
+            function chispear(x, y, color, n, fuerza) {
+                for (let i = 0; i < n; i++) {
+                    if (chispas.length >= MAX_CHISPAS) chispas.shift();
+                    const a = Math.random() * Math.PI * 2, v = alAzar(0.4, 1) * fuerza;
+                    chispas.push({
+                        x: x, y: y, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+                        vida: alAzar(0.25, 0.7), t: 0, r: alAzar(1.4, 3), color: color
+                    });
+                }
+            }
+            // Disparo: apunta a la diana viva más cercana (con imprecisión); si no hay, al azar
+            function disparar() {
+                let obj = null, mejor = Infinity;
+                for (const d of dianas) {
+                    if (d.rota) continue;
+                    const dist = Math.hypot(d.x - orbe.x, d.y - orbe.y);
+                    if (dist < mejor) { mejor = dist; obj = d; }
+                }
+                let a = obj ? Math.atan2(obj.y - orbe.y, obj.x - orbe.x) : Math.atan2(orbe.vy, orbe.vx);
+                a += alAzar(-0.09, 0.09);
+                const r = orbe.r + orbe.crecido * 0.5;
+                const hoja = 330;   // velocidad de la bala (px/s)
+                balas.push({
+                    x: orbe.x + Math.cos(a) * r, y: orbe.y + Math.sin(a) * r,
+                    vx: Math.cos(a) * hoja, vy: Math.sin(a) * hoja, vida: 2.2, t: 0
+                });
+                orbe.fogonazo = 0.09;
+            }
+
+            function paso(dt) {
+                const r = orbe.r + orbe.crecido * 0.5;
+
+                // Objetivo: el punto (comida) más cercano
+                let obj = null, mejor = Infinity;
+                for (const p of puntos) {
+                    const dist = Math.hypot(p.x - orbe.x, p.y - orbe.y);
+                    if (dist < mejor) { mejor = dist; obj = p; }
+                }
+                // Dirección: hacia el objetivo + rizo de "vagar" + repulsión de paredes
+                // (la repulsión evita el zigzag que daría un rebote duro en las paredes).
+                let dx = obj ? obj.x - orbe.x : Math.cos(orbe.rizo);
+                let dy = obj ? obj.y - orbe.y : Math.sin(orbe.rizo);
+                dx += Math.sin(orbe.rizo) * 30;
+                dy += Math.cos(orbe.rizo * 0.8) * 30;
+                const m = r + 4;
+                if (orbe.x < m + 34) dx += (m + 34 - orbe.x) * 1.6;
+                if (orbe.x > W - m - 34) dx -= (orbe.x - (W - m - 34)) * 1.6;
+                if (orbe.y < m + 34) dy += (m + 34 - orbe.y) * 1.6;
+                if (orbe.y > H - m - 34) dy -= (orbe.y - (H - m - 34)) * 1.6;
+                const largo = Math.hypot(dx, dy) || 1;
+                orbe.vx = (dx / largo) * VEL;
+                orbe.vy = (dy / largo) * VEL;
+                orbe.x += orbe.vx * dt;
+                orbe.y += orbe.vy * dt;
+                orbe.x = Math.max(m, Math.min(W - m, orbe.x));
+                orbe.y = Math.max(m, Math.min(H - m, orbe.y));
+                orbe.rizo += dt * 1.1;
+                if (orbe.fogonazo > 0) orbe.fogonazo -= dt;
+                if (orbe.crecido > 0) orbe.crecido = Math.max(0, orbe.crecido - dt * 1.6);
+
+                // Comer puntos: pop de partículas y respawn lejos del orbe
+                for (let i = 0; i < puntos.length; i++) {
+                    const p = puntos[i];
+                    p.fase += dt * 2.4;
+                    if (Math.hypot(p.x - orbe.x, p.y - orbe.y) < r + p.r) {
+                        puntosComidos++;
+                        chispear(p.x, p.y, '#38bdf8', 9, 90);
+                        orbe.crecido = Math.min(7, orbe.crecido + 1.4);
+                        puntos[i] = puntoLejos();
+                    }
+                }
+
+                // Cadencia de disparo
+                orbe.disparo -= dt;
+                if (orbe.disparo <= 0) { disparar(); orbe.disparo = alAzar(0.4, 0.55); }
+
+                // Balas: avanzan, rompen dianas y se reciclan al salir
+                for (let i = balas.length - 1; i >= 0; i--) {
+                    const b = balas[i];
+                    b.x += b.vx * dt; b.y += b.vy * dt; b.t += dt;
+                    if (b.t > b.vida || b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) {
+                        balas.splice(i, 1);
+                        continue;
+                    }
+                    for (const d of dianas) {
+                        if (d.rota) continue;
+                        if (Math.hypot(d.x - b.x, d.y - b.y) < d.r + 4) {
+                            d.rota = true;
+                            d.respawn = 0.7;
+                            dianasRotas++;
+                            chispear(d.x, d.y, '#f5b301', 16, 150);
+                            balas.splice(i, 1);
+                            break;
+                        }
+                    }
+                }
+
+                // Dianas: derivan, rebotan y reaparecen tras ser rotas
+                for (const d of dianas) {
+                    d.fase += dt * 1.6;
+                    if (d.rota) {
+                        d.respawn -= dt;
+                        if (d.respawn <= 0) Object.assign(d, dianaNueva());
+                        continue;
+                    }
+                    d.x += d.vx * dt; d.y += d.vy * dt;
+                    if (d.x < d.r + 6 || d.x > W - d.r - 6) {
+                        d.vx *= -1;
+                        d.x = Math.max(d.r + 6, Math.min(W - d.r - 6, d.x));
+                    }
+                    if (d.y < d.r + 6 || d.y > H - d.r - 6) {
+                        d.vy *= -1;
+                        d.y = Math.max(d.r + 6, Math.min(H - d.r - 6, d.y));
+                    }
+                }
+
+                // Chispas: se frenan y se apagan
+                for (let i = chispas.length - 1; i >= 0; i--) {
+                    const c = chispas[i];
+                    c.t += dt;
+                    if (c.t >= c.vida) { chispas.splice(i, 1); continue; }
+                    c.x += c.vx * dt; c.y += c.vy * dt;
+                    c.vx *= 0.94; c.vy *= 0.94;
+                }
+            }
+            function dibujar() {
+                cctx.clearRect(0, 0, W, H);
+
+                // Rejilla tenue: evoca la arena del juego
+                cctx.strokeStyle = 'rgba(148, 163, 184, 0.07)';
+                cctx.lineWidth = 1;
+                cctx.beginPath();
+                for (let x = 0; x <= W; x += 44) { cctx.moveTo(x + 0.5, 0); cctx.lineTo(x + 0.5, H); }
+                for (let y = 0; y <= H; y += 44) { cctx.moveTo(0, y + 0.5); cctx.lineTo(W, y + 0.5); }
+                cctx.stroke();
+
+                // Puntos (comida): halo + núcleo. Sin shadowBlur: más barato en móvil
+                for (const p of puntos) {
+                    const pulso = 1 + Math.sin(p.fase) * 0.16;
+                    cctx.beginPath(); cctx.arc(p.x, p.y, p.r * 2.1 * pulso, 0, Math.PI * 2);
+                    cctx.fillStyle = 'rgba(56, 189, 248, 0.1)'; cctx.fill();
+                    cctx.beginPath(); cctx.arc(p.x, p.y, p.r * pulso, 0, Math.PI * 2);
+                    cctx.fillStyle = '#38bdf8'; cctx.fill();
+                    cctx.beginPath(); cctx.arc(p.x - 2, p.y - 2, p.r * 0.4, 0, Math.PI * 2);
+                    cctx.fillStyle = 'rgba(255, 255, 255, 0.8)'; cctx.fill();
+                }
+
+                // Dianas flotantes
+                for (const d of dianas) {
+                    if (d.rota) continue;
+                    const pulso = 1 + Math.sin(d.fase) * 0.08;
+                    cctx.beginPath(); cctx.arc(d.x, d.y, d.r * pulso, 0, Math.PI * 2);
+                    cctx.strokeStyle = 'rgba(245, 179, 1, 0.85)'; cctx.lineWidth = 2; cctx.stroke();
+                    cctx.beginPath(); cctx.arc(d.x, d.y, d.r * 0.45 * pulso, 0, Math.PI * 2);
+                    cctx.fillStyle = 'rgba(245, 179, 1, 0.85)'; cctx.fill();
+                }
+
+                // Balas
+                cctx.lineWidth = 3;
+                cctx.lineCap = 'round';
+                cctx.strokeStyle = 'rgba(125, 211, 252, 0.9)';
+                for (const b of balas) {
+                    cctx.beginPath();
+                    cctx.moveTo(b.x, b.y);
+                    cctx.lineTo(b.x - b.vx * 0.02, b.y - b.vy * 0.02);
+                    cctx.stroke();
+                }
+
+                // Chispas
+                for (const c of chispas) {
+                    cctx.globalAlpha = Math.max(0, 1 - c.t / c.vida);
+                    cctx.beginPath(); cctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+                    cctx.fillStyle = c.color; cctx.fill();
+                }
+                cctx.globalAlpha = 1;
+
+                // Orbe con la skin equipada
+                const r = orbe.r + orbe.crecido * 0.5;
+                cctx.save();
+                cctx.beginPath(); cctx.arc(orbe.x, orbe.y, r, 0, Math.PI * 2);
+                cctx.save();
+                cctx.clip();
+                if (skinLista) {
+                    cctx.save();
+                    cctx.translate(orbe.x, orbe.y);
+                    cctx.rotate(Math.atan2(orbe.vy, orbe.vx) + Math.PI / 2);
+                    cctx.drawImage(skinImg, -r, -r, r * 2, r * 2);
+                    cctx.restore();
+                } else {
+                    const g = cctx.createRadialGradient(orbe.x - r * 0.35, orbe.y - r * 0.35, r * 0.15, orbe.x, orbe.y, r);
+                    g.addColorStop(0, skin.c1 || '#38bdf8');
+                    g.addColorStop(1, skin.c2 || '#0284c7');
+                    cctx.fillStyle = g;
+                    cctx.fill();
+                }
+                cctx.restore();
+                cctx.strokeStyle = skin.border || '#bae6fd';
+                cctx.lineWidth = 2.5;
+                cctx.stroke();
+                cctx.restore();
+
+                // Fogonazo del disparo (boca del orbe, en el sentido de la marcha)
+                if (orbe.fogonazo > 0) {
+                    const a = Math.atan2(orbe.vy, orbe.vx);
+                    cctx.globalAlpha = Math.min(1, orbe.fogonazo / 0.09);
+                    cctx.beginPath();
+                    cctx.arc(orbe.x + Math.cos(a) * (r + 3), orbe.y + Math.sin(a) * (r + 3), 5, 0, Math.PI * 2);
+                    cctx.fillStyle = '#fde68a'; cctx.fill();
+                    cctx.globalAlpha = 1;
+                }
+
+                // Marcador de la mini-arena
+                cctx.font = '700 13px Rajdhani, system-ui, sans-serif';
+                cctx.textAlign = 'left';
+                cctx.fillStyle = 'rgba(234, 241, 251, 0.75)';
+                cctx.fillText('PUNTOS ' + puntosComidos + '  ·  DIANAS ' + dianasRotas, 14, 22);
+            }
+
+            function pintarBarra() {
+                fillEl.style.width = mostrado.toFixed(1) + '%';
+                pctEl.innerText = Math.round(mostrado) + '%';
+            }
+
+            // Hito cumplido: suma su peso una sola vez y actualiza el texto del paso
+            function sumar(clave) {
+                if (hechos[clave]) return;
+                hechos[clave] = true;
+                progreso = Math.min(100, progreso + (PESOS[clave] || 0));
+                if (PASOS[clave]) pasoEl.innerText = PASOS[clave];
+                if (progreso >= 100) finPedido = true;
+            }
+
+            function finalizar() {
+                if (terminado) return;
+                terminado = true;
+                progreso = 100;
+                mostrado = 100;
+                pintarBarra();
+                if (frameId) cancelAnimationFrame(frameId);
+                frameId = 0;
+                overlay.classList.add('oculto');
+                setTimeout(() => { overlay.style.display = 'none'; }, 520);
+            }
+            function bucle(ts) {
+                if (terminado) return;
+                frameId = requestAnimationFrame(bucle);
+                if (document.hidden) { ultimoTs = ts; return; }   // pestaña oculta: no se anima
+                if (!W || !H) resizeIntro();
+                const dt = ultimoTs ? Math.min(0.05, (ts - ultimoTs) / 1000) : 0.016;
+                ultimoTs = ts;
+
+                // La identidad de Firebase se resuelve en otro <script>: se sondea
+                if (window.__identidadLista === true) sumar('identidad');
+
+                // Barra suavizada (lerp): el % real nunca da saltos bruscos
+                mostrado += (progreso - mostrado) * Math.min(1, dt * 5);
+                if (Math.abs(progreso - mostrado) < 0.4) mostrado = progreso;
+                pintarBarra();
+
+                const transcurrido = performance.now() - t0;
+                if (finPedido && mostrado >= 99.5 && transcurrido >= MIN_MS) { finalizar(); return; }
+                if (transcurrido >= MAX_MS) { finalizar(); return; }   // red de seguridad
+
+                paso(dt);
+                dibujar();
+            }
+
+            // API para los hitos del arranque (sprites, socket, sala, estado)
+            window.__intro = { sumar: sumar, finalizar: finalizar };
+            frameId = requestAnimationFrame(bucle);
+        })();
+    </script>
     <script>
         const socket = io(window.SERVIDOR_URL || undefined);
         window.socket = socket; // accesible para el módulo de Firebase (setUid)
@@ -2450,13 +2926,17 @@
         let spriteFondoPattern = null;
         (function precargarSprites() {
             let pendientes = Object.keys(SPRITES_MANIFEST).length;
+            // Al asentarse el último PNG (cargado o fallido) el arranque pasa el hito
+            const spriteAsentado = () => {
+                if (--pendientes === 0) {
+                    console.log('[WinOrbs] Sprites del mapa cargados');
+                    window.__intro && window.__intro.sumar('sprites');
+                }
+            };
             Object.keys(SPRITES_MANIFEST).forEach(clave => {
                 const img = new Image();
-                img.onload = () => {
-                    sprites[clave] = img;
-                    if (--pendientes === 0) console.log('[WinOrbs] Sprites del mapa cargados');
-                };
-                img.onerror = () => { sprites[clave] = null; pendientes--; };
+                img.onload = () => { sprites[clave] = img; spriteAsentado(); };
+                img.onerror = () => { sprites[clave] = null; spriteAsentado(); };
                 img.src = SPRITES_MANIFEST[clave].src;
             });
         })();
@@ -2678,6 +3158,7 @@
         socket.on('joinedSuccess', (data) => {
             myPlayerId = data.playerId;
             connStatus.classList.remove("visible");
+            window.__intro && window.__intro.sumar('join');
         });
 
         socket.on('errorMsg', (msg) => {
@@ -2697,10 +3178,13 @@
             document.getElementById("conn-title").innerText = "Desconectado del servidor";
             document.getElementById("conn-text").innerText = "Se perdio la conexion. Verifica tu red e intentalo de nuevo.";
             connOverlay.classList.add("visible");
+            // La intro no debe tapar el aviso de desconexión
+            window.__intro && window.__intro.finalizar();
         });
 
         socket.on('connect', () => {
             connOverlay.classList.remove("visible");
+            window.__intro && window.__intro.sumar('conexion');
             if (!myPlayerId) {
                 // Nunca emitir joinRoom antes de resolver uid+token (salas de pago)
                 joinEnviado = false;
@@ -2740,6 +3224,8 @@
 
         socket.on('gameState', (state) => {
             gameState = state;
+            // Primer estado recibido = arranque completo (sumar() es idempotente)
+            window.__intro && window.__intro.sumar('estado');
             // Autocuracion: si el servidor ya no me registra, regresar al lobby
             if (myPlayerId && !isGameOver && !state.players[myPlayerId]) {
                 isGameOver = true;
