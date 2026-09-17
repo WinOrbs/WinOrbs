@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#060a12">
     <link rel="icon" type="image/png" href="/assets/logo/logo-shield.png">
     <title>WinOrbs - Entrar a Jugar</title>
@@ -179,7 +179,8 @@
             animation: escudoPulse 4s ease-in-out infinite;
         }
         .escudo {
-            position: relative; width: 430px; height: 430px; object-fit: contain;
+            position: relative; width: 100%; max-width: 280px; height: auto;
+            object-fit: contain; aspect-ratio: 1 / 1; margin: 0 auto; display: block;
             filter: drop-shadow(0 10px 22px rgba(56, 189, 248, .4)) drop-shadow(0 0 26px rgba(56, 189, 248, .25));
             animation: logoFloat 6s ease-in-out infinite;
         }
@@ -546,9 +547,21 @@
             font-size: 11.5px; color: var(--muted); letter-spacing: .4px;
         }
 
+        /* ── Chip de apodo (solo lectura, viene del perfil) ── */
+        .apodo-chip {
+            display: flex; align-items: center; gap: 8px;
+            padding: 10px 14px; border-radius: 8px;
+            background: var(--surface-deep); border: 1px dashed var(--line-glow);
+            font-family: var(--font-display); font-weight: 600; font-size: 15px;
+            letter-spacing: .5px; color: var(--cyan);
+            text-shadow: 0 0 10px rgba(56, 189, 248, .4);
+        }
+
         /* ── Responsive: se apila topbar → config → salas ── */
         @media (max-width: 1020px) {
-            .arena { grid-template-columns: 1fr; padding: 18px 16px 30px; }
+            .arena { grid-template-columns: 1fr 1fr; padding: 18px 16px 30px; }
+            .panel-config { grid-column: 1 / -1; }
+            .escudo { max-width: 200px; }
             .topbar { padding: 12px 16px; }
             .panel-salas { min-height: auto; }
             .panel-retiros { min-height: auto; }
@@ -556,14 +569,22 @@
             .grid-salas { max-height: none; min-height: 0; overflow: visible; }
             .filtros { align-items: flex-start; }
         }
+        @media (max-width: 760px) {
+            .arena { grid-template-columns: 1fr; }
+            .topbar-right { width: 100%; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+        }
         @media (max-width: 560px) {
             .grid-salas { grid-template-columns: 1fr; }
             .grupo-grid { grid-template-columns: 1fr; }
-            .topbar-right { width: 100%; justify-content: space-between; }
+            .topbar { padding: 10px 12px; }
+            .topbar-right { gap: 6px; }
             .logo { font-size: 22px; }
-            .escudo { width: 500px; height: 500px; }
+            .escudo { max-width: 160px; }
             .panel-head-right { gap: 8px; }
             .salas-count { font-size: 10.5px; }
+            .arena { padding: 14px 12px 24px; gap: 16px; }
+            .panel { padding: 16px; }
+            .sala-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
         }
     </style>
 </head>
@@ -611,7 +632,11 @@
                 <span class="panel-kicker">// Tu configuración</span>
             </div>
 
-            <!-- Tienda / Selector de Skins (firmas onclick intactas: game.html consume mi_skin) -->
+            <!-- El apodo viaja desde el perfil (Firestore): no se edita aquí -->
+            <div class="form-group">
+                <label>Tu Apodo (del perfil)</label>
+                <div id="apodo-perfil" class="apodo-chip">cargando…</div>
+            </div>
             <div class="form-group">
                 <label>Elige tu Skin (Aspecto)</label>
                 <div class="skins-grid">
@@ -719,13 +744,7 @@
             window.__economyMode = !!(cfg && cfg.economy);
         });
 
-        // Completar el apodo con el usuario que vino de login.html (sesión local)
-        try {
-            const usuarioGuardado = localStorage.getItem("ode_user");
-            if (usuarioGuardado) {
-                document.getElementById("player-nickname").value = usuarioGuardado;
-            }
-        } catch (e) { }
+        // El apodo ya no se pide aquí: se lee del perfil (window.apodoJugador)
 
         // Mostrar aviso si la sala fue cerrada o la partida finalizo
         try {
@@ -1108,9 +1127,11 @@
 
         // Entrar a la sala seleccionada
         window.unirseASala = function (salaId, esPrivada) {
-            const nick = document.getElementById("player-nickname").value.trim();
+            // El apodo SIEMPRE viene del perfil (Firestore), no se edita en el lobby
+            const perfil = window.__perfilLobby || {};
+            const nick = String(perfil.apodo || perfil.nick || perfil.nombre || "").trim();
             if (!nick) {
-                alert("Por favor, ingresa un apodo antes de unirte.");
+                alert("No se pudo cargar tu apodo del perfil. Recarga la página e inténtalo de nuevo.");
                 return;
             }
 
@@ -1122,14 +1143,13 @@
 
             // Guardar configuración en sessionStorage para que game.html se conecte
             sessionStorage.setItem("mi_nick", nick);
-            sessionStorage.setItem("mi_skin", JSON.stringify(window.skinSeleccionada));
+            sessionStorage.setItem("mi_skin", JSON.stringify(window.skinSeleccionada || { c1: '#38bdf8' }));
             sessionStorage.setItem("mi_sala_id", salaId);
-            sessionStorage.setItem("mi_sala_password", password);
+            sessionStorage.setItem("mi_sala_password", password || "");
 
             // Redirigir al lienzo del juego
             window.location.href = `game.html?sala=${salaId}`;
         };
-    </script>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
@@ -1168,12 +1188,16 @@
                 const chip = document.getElementById("user-chip");
                 if (chip) chip.innerText = "👤 " + (p.apodo || "Jugador");
 
-                const nick = document.getElementById("player-nickname");
-                if (nick && p.apodo) nick.value = p.apodo;
+            // El apodo ya no se completa desde localStorage: viaja desde el perfil
 
                 // Skins compradas + skin equipada persistida en el perfil
                 // (multi-dispositivo: el perfil manda sobre localStorage)
                 window.__perfilLobby = p;
+                // Apodo del perfil visible en el lobby (solo lectura)
+                try {
+                    const chip = document.getElementById("apodo-perfil");
+                    if (chip) chip.textContent = String(p.apodo || p.nick || p.nombre || "—");
+                } catch (e) { }
                 if (window.renderSkinsCompradas) window.renderSkinsCompradas();
                 if (window.aplicarSkinEquipadaDePerfil) window.aplicarSkinEquipadaDePerfil();
             }, (e) => {
