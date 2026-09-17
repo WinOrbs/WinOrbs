@@ -114,6 +114,12 @@
     }
     .tarjeta-datos.vacio { color: var(--muted); border-style: dashed; }
 
+    /* Destino oficial del depósito (lo publica el admin): se destaca en verde */
+    .tarjeta-destino {
+      white-space: pre-line; line-height: 1.65;
+      border-color: rgba(52, 211, 153, .35); background: rgba(52, 211, 153, .06);
+    }
+
     /* Tarjetas de cuenta de cobro (retiro) */
     #ret-cards { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
     .tarjeta-cobro {
@@ -200,6 +206,8 @@
         <option>Binance (USDT)</option>
         <option>Otro</option>
       </select>
+      <label>¿A dónde pagar? Datos oficiales de WinOrbs (se actualizan solos)</label>
+      <div class="tarjeta-datos tarjeta-destino" id="dep-destino-card">Cargando datos de pago…</div>
       <label>Datos del pago registrados en tu Perfil (no editables)</label>
       <div class="tarjeta-datos" id="dep-datos-card">Cargando tus datos…</div>
       <label>Referencia / Nº de operación (solo números)</label>
@@ -271,6 +279,61 @@
     let cobroSeleccionado = null;   // tarjeta de cobro activa {metodo, lineas[]}
     let comprobanteArchivo = null;  // imagen del comprobante elegida
     const COMISION_CASA = 0.2;      // 20% que retiene la casa al pagar el retiro
+
+    // ── Destino OFICIAL del depósito (lo publica el admin en configuracion/pagos) ──
+    // Sin esto el usuario no sabe a dónde pagar para recargar. En vivo: el admin
+    // cambia los datos y la tarjeta se actualiza sola, según el método elegido.
+    let cfgPagos = null; // { tasaUSD_Bs, pagoMovil:{...}, transferencia:{...}, usdt:{...} }
+    onSnapshot(doc(db, "configuracion", "pagos"), (snap) => {
+      cfgPagos = snap.exists() ? (snap.data() || {}) : null;
+      renderDestinoPago();
+    }, () => { cfgPagos = null; renderDestinoPago(); }); // sin doc/permisos: la tarjeta lo explica
+
+    function lineaDestino(etiqueta, valor) {
+      const v = String(valor == null ? '' : valor).trim();
+      return v ? (etiqueta + ': ' + v) : '';
+    }
+
+    // Tarjeta de destino según el método elegido + equivalente en Bs con la tasa
+    // del día (para saber cuánto pagar en bolívares). textContent, nunca
+    // innerHTML: los valores vienen de Firestore.
+    function renderDestinoPago() {
+      const card = $("dep-destino-card");
+      if (!card) return;
+      const metodo = $("dep-metodo").value;
+      const monto = parseFloat($("dep-monto").value) || 0;
+      if (!cfgPagos) {
+        card.textContent = "Aún no hay datos de pago publicados. Si persiste, avisa al soporte.";
+        card.classList.add("vacio");
+        return;
+      }
+      let lineas = [];
+      if (metodo === "Pago Móvil") {
+        const pm = cfgPagos.pagoMovil || {};
+        lineas = [lineaDestino("Banco", pm.banco), lineaDestino("Teléfono", pm.telefono),
+                  lineaDestino("Cédula", pm.cedula), lineaDestino("Titular", pm.titular)];
+      } else if (metodo === "Transferencia Bancaria") {
+        const tr = cfgPagos.transferencia || {};
+        lineas = [lineaDestino("Banco", tr.banco), lineaDestino("Cuenta", tr.cuenta),
+                  lineaDestino("Titular", tr.titular)];
+      } else if (metodo === "Binance (USDT)") {
+        const u = cfgPagos.usdt || {};
+        lineas = [lineaDestino("Red", u.red), lineaDestino("Wallet", u.wallet),
+                  lineaDestino("Notas", u.notas)];
+      } else {
+        lineas = ["Para " + metodo + ", coordina el destino con el soporte antes de pagar."];
+      }
+      const validas = lineas.filter(Boolean);
+      // Equivalente en bolívares (solo métodos en Bs): ayuda a saber cuánto pagar
+      const tasa = Number(cfgPagos.tasaUSD_Bs || 0);
+      if (monto > 0 && tasa > 0 && (metodo === "Pago Móvil" || metodo === "Transferencia Bancaria")) {
+        const bs = (monto * tasa).toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const tasaTxt = tasa.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        validas.push("A pagar ≈ " + bs + " Bs (tasa del día $1 = " + tasaTxt + " Bs)");
+      }
+      card.textContent = validas.length ? validas.join("\n") : "El admin aún no publica datos para este método.";
+      card.classList.toggle("vacio", !validas.length);
+    }
 
     // Guard de sesión + saldo y datos de cobro en vivo
     let reclamoAutoHecho = false;
@@ -416,7 +479,8 @@
       renderTarjetasRetiro();
     }
 
-    $("dep-metodo").addEventListener("change", renderTarjetaDeposito);
+    $("dep-metodo").addEventListener("change", () => { renderTarjetaDeposito(); renderDestinoPago(); });
+    $("dep-monto").addEventListener("input", renderDestinoPago); // recalcula el ≈ Bs en vivo
     $("ret-monto").addEventListener("input", renderComision);
     $("dep-referencia").addEventListener("input", (e) => { e.target.value = e.target.value.replace(/\D/g, ""); });
 

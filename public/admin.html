@@ -174,6 +174,7 @@
     <div class="sidebar">
         <h2>WinOrbs Admin</h2>
         <div class="menu-item active" onclick="switchSection('finanzas', this)">💰 Finanzas & Pagos</div>
+        <div class="menu-item" onclick="switchSection('pagos', this)">💳 Pagos & Tasa</div>
         <div class="menu-item" onclick="switchSection('salas', this)">⚙️ Gestión de Salas</div>
         <div class="menu-item" onclick="switchSection('skins', this)">🛒 Tienda de Skins</div>
         <div class="menu-item" onclick="switchSection('usuarios', this)">👥 Usuarios</div>
@@ -266,6 +267,69 @@
                         </tr>
                     </tbody>
                 </table>
+            </div>
+        </div>
+
+        <!-- 1b. MÓDULO PAGOS & TASA (datos para cobrar + tasa del dólar del día) -->
+        <div id="sec-pagos" class="section">
+            <div class="form-container">
+                <h3>Tasa del Dólar del Día</h3>
+                <small style="display:block; color:#94a3b8; font-size:11.5px; margin:-6px 0 12px 0;">
+                    Se muestra en el lobby como aviso (ej.: "💵 Tasa: $1 = 1.000,00 Bs"). Déjalo en 0 para ocultar el aviso.
+                </small>
+                <div class="form-group">
+                    <label>Tasa: 1 USD = cuántos Bolívares</label>
+                    <input type="number" id="tasa-valor" placeholder="Ej: 1000" step="0.01" min="0">
+                </div>
+
+                <h3 style="margin-top:18px;">Pago Móvil</h3>
+                <div class="form-group">
+                    <label>Banco</label>
+                    <input type="text" id="pm-banco" placeholder="Ej: Banco de Venezuela (0102)">
+                </div>
+                <div class="form-group">
+                    <label>Teléfono</label>
+                    <input type="text" id="pm-telefono" placeholder="Ej: 0412-1234567">
+                </div>
+                <div class="form-group">
+                    <label>Cédula (titular)</label>
+                    <input type="text" id="pm-cedula" placeholder="Ej: V-12345678">
+                </div>
+                <div class="form-group">
+                    <label>Titular (nombre)</label>
+                    <input type="text" id="pm-titular" placeholder="Ej: R. González">
+                </div>
+
+                <h3 style="margin-top:18px;">Transferencia</h3>
+                <div class="form-group">
+                    <label>Banco</label>
+                    <input type="text" id="tr-banco" placeholder="Ej: Banesco (0134)">
+                </div>
+                <div class="form-group">
+                    <label>Número de Cuenta</label>
+                    <input type="text" id="tr-cuenta" placeholder="Ej: 0134-0000-00-0000000000">
+                </div>
+                <div class="form-group">
+                    <label>Titular (nombre) / Cédula</label>
+                    <input type="text" id="tr-titular" placeholder="Ej: R. González · V-12345678">
+                </div>
+
+                <h3 style="margin-top:18px;">USDT (Tether)</h3>
+                <div class="form-group">
+                    <label>Red</label>
+                    <input type="text" id="usdt-red" placeholder="Ej: TRC20">
+                </div>
+                <div class="form-group">
+                    <label>Wallet / Dirección</label>
+                    <input type="text" id="usdt-wallet" placeholder="Ej: TVh...xyz">
+                </div>
+                <div class="form-group">
+                    <label>Notas (opcional)</label>
+                    <input type="text" id="usdt-notas" placeholder="Ej: mínimo 5 USDT · confirmación en 1 min">
+                </div>
+
+                <button class="btn btn-primary" onclick="guardarConfigPagos()">💾 Guardar Configuración</button>
+                <small id="cfg-pagos-estado" style="margin-left:10px; color:#94a3b8; font-size:12px;"></small>
             </div>
         </div>
 
@@ -520,6 +584,7 @@
             
             const titles = {
                 'finanzas': 'Finanzas & Pagos (Caja Chica)',
+                'pagos': 'Datos de Pago & Tasa del Dólar',
                 'salas': 'Gestor y Creador de Salas (Socket.io)',
                 'skins': 'Tienda y Gestor de Skins',
                 'usuarios': 'Gestión de Usuarios y Moderación'
@@ -988,6 +1053,71 @@ const colorTipo = esRetiro ? '#ef4444' : esPremio ? '#f59e0b' : '#22c55e';
             escucharMetricas();
             escucharUsuarios();
             escucharPremios();
+            escucharConfigPagos(); // tasa del día + datos de pago móvil/transferencia/USDT
+        }
+
+        // ── CONFIG DE PAGOS & TASA (configuracion/pagos) ────────────────────────
+        // El admin define la tasa del dólar del día (que muestra el lobby) y los
+        // datos para cobrar (pago móvil, transferencia, USDT). setDoc = upsert.
+        function limpiarTexto(v, max) {
+            return String(v == null ? '' : v).replace(/[<>&"']/g, '').trim().slice(0, max);
+        }
+
+        function valorTasa() {
+            const n = Number(document.getElementById('tasa-valor').value);
+            return (isFinite(n) && n > 0) ? n : 0;
+        }
+
+        window.guardarConfigPagos = function () {
+            const estado = document.getElementById('cfg-pagos-estado');
+            const datos = {
+                tasaUSD_Bs: valorTasa(),
+                pagoMovil: {
+                    banco: limpiarTexto(document.getElementById('pm-banco').value, 60),
+                    telefono: limpiarTexto(document.getElementById('pm-telefono').value, 30),
+                    cedula: limpiarTexto(document.getElementById('pm-cedula').value, 30),
+                    titular: limpiarTexto(document.getElementById('pm-titular').value, 60)
+                },
+                transferencia: {
+                    banco: limpiarTexto(document.getElementById('tr-banco').value, 60),
+                    cuenta: limpiarTexto(document.getElementById('tr-cuenta').value, 40),
+                    titular: limpiarTexto(document.getElementById('tr-titular').value, 80)
+                },
+                usdt: {
+                    red: limpiarTexto(document.getElementById('usdt-red').value, 20),
+                    wallet: limpiarTexto(document.getElementById('usdt-wallet').value, 120),
+                    notas: limpiarTexto(document.getElementById('usdt-notas').value, 120)
+                },
+                actualizadoPor: (auth.currentUser || {}).email || '',
+                actualizadoEn: serverTimestamp()
+            };
+            setDoc(doc(db, 'configuracion', 'pagos'), datos).then(() => {
+                estado.textContent = '✅ Guardado ' + new Date().toLocaleTimeString();
+                estado.style.color = '#22c55e';
+            }).catch((e) => {
+                estado.textContent = '⛔ Error al guardar (' + (e.code || e.message) + ')';
+                estado.style.color = '#ef4444';
+                errorReglas('configuracion', e);
+            });
+        };
+
+        // Precarga en vivo: rellena el formulario y confirma guardados ajenos
+        function escucharConfigPagos() {
+            onSnapshot(doc(db, 'configuracion', 'pagos'), (snap) => {
+                if (!snap.exists()) return;
+                const c = snap.data() || {};
+                const pm = c.pagoMovil || {}, tr = c.transferencia || {}, us = c.usdt || {};
+                // No pisar lo que el admin está tecleando: solo rellenar vacíos
+                const rellena = (id, val) => {
+                    const el = document.getElementById(id);
+                    if (el && el.value === '') el.value = val || '';
+                };
+                rellena('tasa-valor', c.tasaUSD_Bs > 0 ? c.tasaUSD_Bs : '');
+                rellena('pm-banco', pm.banco); rellena('pm-telefono', pm.telefono);
+                rellena('pm-cedula', pm.cedula); rellena('pm-titular', pm.titular);
+                rellena('tr-banco', tr.banco); rellena('tr-cuenta', tr.cuenta); rellena('tr-titular', tr.titular);
+                rellena('usdt-red', us.red); rellena('usdt-wallet', us.wallet); rellena('usdt-notas', us.notas);
+            }, (e) => errorReglas('configuracion', e));
         }
 
         function errorReglas(coleccion, e) {

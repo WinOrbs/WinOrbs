@@ -126,6 +126,14 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // ── Configuración global (tasa del dólar del día + datos de pago móvil,
+    //    transferencia y USDT). La LEE cualquier usuario autenticado: el lobby
+    //    muestra el aviso "Tasa del día". SOLO el admin la ESCRIBE.
+    match /configuracion/{id} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
     // ── Métricas internas (comisiones de la casa): SOLO admin.
     // El servidor (Admin SDK) las escribe igualmente; los clientes no.
     match /metricas/{id} {

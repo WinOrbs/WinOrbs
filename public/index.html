@@ -107,6 +107,17 @@
         .brand-tag { font-size: 11px; font-weight: 600; letter-spacing: 2.5px; text-transform: uppercase; color: var(--muted); }
 
         .topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+        /* ── Chip de tasa del día (viene de configuracion/pagos en Firestore) ── */
+        .chip-tasa {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 12px; border-radius: 999px;
+            background: rgba(52, 211, 153, 0.12); border: 1px solid rgba(52, 211, 153, 0.35);
+            color: #34d399; font-family: var(--font-display); font-weight: 600;
+            font-size: 12px; letter-spacing: .3px; white-space: nowrap;
+        }
+        .chip-tasa b { color: #a7f3d0; }
+        .chip-tasa[hidden] { display: none; }
         .topbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
         .chip {
@@ -609,6 +620,7 @@
         </div>
         <div class="topbar-right">
             <span class="chip chip-user" id="user-chip">Cargando…</span>
+            <span class="chip-tasa" id="chip-tasa" hidden>💵 Tasa: $1 = <b id="tasa-valor-txt">…</b> Bs</span>
             <span class="chip chip-balance">
                 <span class="chip-ico">💰</span><span id="user-balance">$0.00 USD</span>
             </span>
@@ -1230,6 +1242,21 @@
                 if (window.renderSkinsCompradas) window.renderSkinsCompradas();
                 if (window.aplicarSkinEquipadaDePerfil) window.aplicarSkinEquipadaDePerfil();
             }, () => { /* sin permiso de lectura: el lobby solo muestra las básicas */ });
+
+            // Tasa del dólar del día (configuracion/pagos, la escribe el admin):
+            // aviso visible en la topbar, ej.: "💵 Tasa: $1 = 1.000,00 Bs"
+            onSnapshot(doc(db, "configuracion", "pagos"), (snap) => {
+                const chip = document.getElementById("chip-tasa");
+                if (!chip) return;
+                const tasa = Number((snap.data() || {}).tasaUSD_Bs || 0);
+                if (!snap.exists() || !(tasa > 0)) { chip.hidden = true; return; }
+                document.getElementById("tasa-valor-txt").textContent =
+                    tasa.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                chip.hidden = false;
+            }, () => {
+                const c = document.getElementById("chip-tasa");
+                if (c) c.hidden = true; // sin permiso de lectura: el chip queda oculto
+            });
         });
 
         // Navegación: Perfil / Wallet / Salir
