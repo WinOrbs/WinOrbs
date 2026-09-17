@@ -15,6 +15,38 @@ app.use(express.static(__dirname + '/public'));
 // Endpoint ligero para keep-alive externo (UptimeRobot / cron-job.org)
 app.get('/ping', (req, res) => res.json({ ok: true, ts: Date.now() }));
 
+// ── Diagnóstico de Firebase (GET /status) ────────────────────────────────────
+// Para verificar el despliegue (Render): abre https://TU-APP.onrender.com/status
+//  - firebase:true → el servidor arrancó con clave de servicio (modo economía)
+//  - firestore.ok  → el servidor REALMENTE lee Firestore (prueba en vivo; el
+//    Admin SDK bypasa reglas: si esto falla el problema son credenciales/red,
+//    no las reglas de Firestore del cliente)
+// No expone credenciales: solo el id del proyecto (público) y códigos de error.
+app.get('/status', async (req, res) => {
+    const r = {
+        firebase: !!FIREBASE_ECONOMY,
+        modo: FIREBASE_ECONOMY ? 'ECONOMIA' : 'DEGRADADO',
+        proyecto: null,
+        firestore: { ok: false, latenciaMs: null, error: null }
+    };
+    try { r.proyecto = (firebaseAdmin && firebaseAdmin.app().options.projectId) || null; } catch (e) { /* sin app inicializada */ }
+    try {
+        if (!FIREBASE_ECONOMY || !FIREBASE_DB) {
+            r.firestore.error = 'SIN_CLAVE_DE_SERVICIO';
+        } else {
+            // Lectura mínima: el doc puede no existir; lo que se prueba es la
+            // conectividad + credenciales contra Firestore real (no escribe nada).
+            const t0 = Date.now();
+            await FIREBASE_DB.collection('diagnostico').doc('ping').get();
+            r.firestore.ok = true;
+            r.firestore.latenciaMs = Date.now() - t0;
+        }
+    } catch (e) {
+        r.firestore.error = String(e.code || e.message || 'ERROR').slice(0, 200);
+    }
+    res.json(r);
+});
+
 const MAP_SIZE = 5000;
 const rooms = {};
 
@@ -118,6 +150,7 @@ try {
         console.log('[FIREBASE] Modo economía SEGURA activado (Admin SDK). El servidor maneja entradas y premios.');
     } else {
         console.log('[FIREBASE] Sin clave de servicio (busqué en FIREBASE_SERVICE_ACCOUNT, /etc/secrets/ y ' + __dirname + '): modo DEGRADADO. Cobro/premio los gestiona el cliente (parches Fase 0).');
+        console.log('[FIREBASE] FIX Render: Firebase Console → Cuentas de servicio → Generar clave privada → en Render crea un Secret File "serviceAccountKey.json" (o la env FIREBASE_SERVICE_ACCOUNT_B64 con el JSON en Base64) y reinicia el servicio. Verifica en GET /status.');
     }
 } catch (e) {
     console.warn('[FIREBASE] firebase-admin no disponible:', e.message);
