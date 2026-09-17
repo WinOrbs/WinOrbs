@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&family=Space+Grotesk:wght@500;600;700&family=Press+Start+2P&display=swap"
         rel="stylesheet">
     <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>
     <script src="/js/servidor-config.js"></script>
@@ -1730,6 +1730,245 @@
                 font-size: 8.5px;
             }
         }
+
+
+        /* ==================================================================== */
+        /* ============  HUD PIXEL-ART · RESTYLE RETRO (custom)  ============== */
+        /*  Paneles cuadrados con esquinas mordidas, bordes duros, sombra       */
+        /*  dura sin blur, tipografia Press Start 2P y scanlines CRT.           */
+        /*  Todos los IDs y la logica JS se mantienen intactos.                 */
+        /* ==================================================================== */
+        :root {
+            --font-pixel: 'Press Start 2P', monospace;
+            --pix-panel: rgba(10, 15, 28, 0.95);
+            --pix-border: #3d517f;
+            --pix-border-dim: #28365a;
+            --pix-dark: #05080f;
+        }
+
+        /* Scanlines CRT sutiles sobre toda la pantalla */
+        body::after {
+            content: "";
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 98;
+            background: repeating-linear-gradient(0deg, rgba(2, 5, 10, 0.20) 0 1px, transparent 1px 3px);
+            opacity: 0.7;
+        }
+
+        .pix {
+            image-rendering: pixelated;
+            -webkit-user-drag: none;
+            flex: none;
+            width: 13px;
+            height: 13px;
+        }
+
+        /* Paneles: cuadrados, borde duro, esquinas mordidas (clip-path) */
+        .hud,
+        .weapon-hud,
+        .ability-hud,
+        .leaderboard,
+        .shop-modal,
+        #minimap {
+            border-radius: 0 !important;
+            border: 2px solid var(--pix-border) !important;
+            background: var(--pix-panel) !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+            clip-path: polygon(
+                0 6px, 6px 6px, 6px 0,
+                calc(100% - 6px) 0, calc(100% - 6px) 6px, 100% 6px,
+                100% calc(100% - 6px), calc(100% - 6px) calc(100% - 6px),
+                calc(100% - 6px) 100%, 6px 100%, 6px calc(100% - 6px), 0 calc(100% - 6px));
+            box-shadow: inset 0 -3px 0 rgba(2, 5, 12, 0.55),
+                        inset 0 2px 0 rgba(125, 160, 220, 0.14) !important;
+        }
+
+        #minimap { image-rendering: pixelated; }
+
+        /* HUD superior: items en columna con etiqueta pixel */
+        .hud-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            text-align: center;
+        }
+
+        .hud-item .label,
+        .weapon-hud .k,
+        .ability-hud .label {
+            font-family: var(--font-pixel) !important;
+            font-size: 6.5px !important;
+            letter-spacing: 0 !important;
+            color: #8fa8d4 !important;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .hud-item b,
+        .weapon-hud b {
+            font-family: var(--font-pixel) !important;
+            font-size: 10px !important;
+            letter-spacing: 0 !important;
+        }
+
+        .weapon-hud small,
+        .hud-item small {
+            font-family: var(--font-pixel) !important;
+            font-size: 6px !important;
+        }
+
+        .hud-item.timer b { font-size: 14px !important; color: #fde047 !important; }
+        .hud-item.pot b { font-size: 10px !important; color: #fde047 !important; }
+        .hud-item.charge b { color: #d8b4fe !important; }
+        .hud-item.bank b { color: #86efac !important; }
+
+        #hud-timer.critico {
+            color: #fb7185 !important;
+            animation: pixblink 0.4s steps(2, end) infinite;
+        }
+
+        #hud-shield-text {
+            font-family: var(--font-pixel) !important;
+            font-size: 6.5px !important;
+            letter-spacing: 0 !important;
+        }
+
+        /* Barras segmentadas estilo retro (en vez de degradados con glow) */
+        .bar-container {
+            height: 11px !important;
+            border: 2px solid var(--pix-dark) !important;
+            border-radius: 0 !important;
+            background: #131c33 !important;
+            margin-bottom: 5px;
+        }
+
+        .bar-fill-hp {
+            background: repeating-linear-gradient(90deg, #f43f5e 0 6px, #a91f39 6px 8px) !important;
+            box-shadow: none !important;
+        }
+
+        .bar-fill-shield {
+            background: repeating-linear-gradient(90deg, #38bdf8 0 6px, #1e7ba8 6px 8px) !important;
+            box-shadow: none !important;
+        }
+
+        .ability-cooldown {
+            height: 8px !important;
+            border: 2px solid var(--pix-dark) !important;
+            border-radius: 0 !important;
+            background: #131c33 !important;
+        }
+
+        .ability-fill {
+            background: repeating-linear-gradient(90deg, #38bdf8 0 6px, #1e7ba8 6px 8px) !important;
+        }
+
+        .ability-icon {
+            border-radius: 0 !important;
+            background: #0a1526 !important;
+            color: #38bdf8 !important;
+            border: 2px solid #38bdf8 !important;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.35) !important;
+        }
+
+        .ability-icon svg { display: none; }
+
+        /* Leaderboard arcade */
+        .leaderboard h3 {
+            font-family: var(--font-pixel) !important;
+            font-size: 8px !important;
+            letter-spacing: 0 !important;
+            color: #fde047 !important;
+        }
+
+        .leaderboard h3 svg { display: none; }
+        .leaderboard h3 .pix { width: 14px; height: 14px; }
+
+        .leaderboard ol { font-size: 10px !important; }
+
+        .leaderboard li {
+            font-family: var(--font-pixel) !important;
+            font-size: 6.5px !important;
+            line-height: 1.8 !important;
+        }
+
+        .leaderboard li::before {
+            border-radius: 0 !important;
+            font-family: var(--font-pixel) !important;
+            font-size: 7px !important;
+        }
+
+        /* Botones flotantes: chapaleta retro con sombra dura */
+        .top-btn {
+            border-radius: 0 !important;
+            font-family: var(--font-pixel) !important;
+            font-size: 8px !important;
+            letter-spacing: 0 !important;
+            background: var(--pix-panel) !important;
+            border: 2px solid var(--pix-border) !important;
+            box-shadow: 0 3px 0 rgba(0, 0, 0, 0.7) !important;
+        }
+
+        .top-btn:hover {
+            transform: translateY(1px) !important;
+            box-shadow: 0 2px 0 rgba(0, 0, 0, 0.7) !important;
+        }
+
+        .kbd {
+            border-radius: 0 !important;
+            font-family: var(--font-pixel) !important;
+            font-size: 6px !important;
+            border: 1px solid var(--pix-border) !important;
+            background: #131c33 !important;
+        }
+
+        /* Banners de aviso: tipografia arcade, parpadeo en la zona de peligro */
+        .extract-banner,
+        .zone-warning,
+        .announcement-banner,
+        .solo-banner {
+            border-radius: 0 !important;
+            font-family: var(--font-pixel) !important;
+            font-size: 8px !important;
+            letter-spacing: 0 !important;
+            padding: 10px 16px !important;
+        }
+
+        .zone-warning { animation: pixblink 0.5s steps(2, end) infinite !important; }
+
+        @keyframes pixblink {
+            50% { opacity: 0.55; }
+        }
+
+        /* Tienda y overlays: coherencia pixel */
+        .shop-modal h2 {
+            font-family: var(--font-pixel) !important;
+            font-size: 11px !important;
+            letter-spacing: 0 !important;
+        }
+
+        .shop-item button,
+        .btn-close-shop,
+        .btn-respawn {
+            border-radius: 0 !important;
+            font-family: var(--font-pixel) !important;
+            font-size: 8px !important;
+            letter-spacing: 0 !important;
+        }
+
+        .shop-item { border-radius: 0 !important; }
+
+        /* En moviles muy pequeños, el pixel font no crece de mas */
+        @media (pointer: coarse) {
+            .hud-item b, .weapon-hud b { font-size: 9px !important; }
+            .hud-item.timer b { font-size: 12px !important; }
+            .leaderboard li { font-size: 6px !important; }
+        }
     </style>
 </head>
 
@@ -1820,15 +2059,15 @@
     <!-- HUD -->
     <div class="hud">
         <div class="hud-item timer">
-            <span class="label">Tiempo restante</span>
+            <span class="label"><img class="pix" src="assets/game/ui-clock.png" alt="">Tiempo restante</span>
             <b id="hud-timer">05:00</b>
         </div>
         <div class="hud-item pot">
-            <span class="label">Bote de la sala</span>
+            <span class="label"><img class="pix" src="assets/game/ui-coin.png" alt="">Bote de la sala</span>
             <b id="hud-pot">$8.00 USD</b>
         </div>
         <div class="hud-item hp">
-            <span class="label">Salud &amp; escudo</span>
+            <span class="label"><img class="pix" src="assets/game/ui-heart.png" alt="">Salud &amp; escudo</span>
             <div class="status-bars">
                 <div class="bar-container">
                     <div class="bar-fill-hp" id="hp-fill"></div>
@@ -1840,11 +2079,11 @@
             <small id="hud-shield-text">ESCUDO: 0%</small>
         </div>
         <div class="hud-item charge">
-            <span class="label">Gemas en mano · en riesgo</span>
+            <span class="label"><img class="pix" src="assets/game/ui-gem.png" alt="">Gemas en mano · en riesgo</span>
             <b id="hud-charge">0 pts</b>
         </div>
         <div class="hud-item bank">
-            <span class="label">Asegurado · banco</span>
+            <span class="label"><img class="pix" src="assets/game/ui-shield.png" alt="">Asegurado · banco</span>
             <b id="hud-bank">0 pts</b>
         </div>
     </div>
@@ -1863,7 +2102,7 @@
                     <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"></circle>
                 </svg>
             </span>
-            <span class="k">Arma</span>
+            <span class="k"><img class="pix" src="assets/game/ui-gun.png" alt="">Arma</span>
             <b><span id="weapon-name" style="color: var(--primary);">Pistola Base</span></b>
             <small style="margin-left:auto;">[<span class="kbd">1</span>/<span class="kbd">2</span>]</small>
         </div>
@@ -1875,7 +2114,7 @@
                     <path d="M7 15v3"></path>
                 </svg>
             </span>
-            <span class="k">Balas</span>
+            <span class="k"><img class="pix" src="assets/game/ui-ammo.png" alt="">Balas</span>
             <b><span id="ammo-count">15 / 15</span></b>
             <small id="ammo-status" style="margin-left:auto;"><span class="kbd">R</span> Recargar</small>
         </div>
@@ -1889,7 +2128,7 @@
                     <path d="M16 6l2-2"></path>
                 </svg>
             </span>
-            <span class="k">Bombas</span>
+            <span class="k"><img class="pix" src="assets/game/ui-bomb.png" alt="">Bombas</span>
             <b><span id="bomb-count" style="color: var(--red);">0</span></b>
             <small style="margin-left:auto;"><span class="kbd">Q</span> Lanzar</small>
         </div>
@@ -1900,7 +2139,7 @@
                     <path d="M6 2h12v4l-4 4 4 4v4H6v-4l4-4-4-4z"></path>
                 </svg>
             </span>
-            <span class="k">Tienda</span>
+            <span class="k"><img class="pix" src="assets/game/ui-coin.png" alt="">Tienda</span>
             <small><span class="kbd">E</span> en zona azul</small>
         </div>
     </div>
@@ -1911,11 +2150,7 @@
     <div class="solo-banner" id="solo-banner" style="display:none;">⏳ SOLO EN LA SALA · VICTORIA EN 10s</div>
 
     <div class="ability-hud">
-        <div class="ability-icon">
-            <svg viewBox="0 0 24 24" fill="currentColor">
-                <path d="M13 2 4.5 13H11l-1 9 8.5-11H12z"></path>
-            </svg>
-        </div>
+        <div class="ability-icon"><img class="pix" src="assets/game/ui-bolt.png" alt="" style="width:18px;height:18px;"></div>
         <div>
             <div class="label" style="color: var(--muted);">Módulo táctico</div>
             <div style="color: var(--primary); font-family: var(--font-display); font-weight: 600; font-size: 13px;">
@@ -1928,15 +2163,7 @@
 
     <div class="leaderboard">
         <h3>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                stroke-linejoin="round">
-                <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path>
-                <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path>
-                <path d="M4 22h16"></path>
-                <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"></path>
-                <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"></path>
-                <path d="M18 2H6v7a6 6 0 0 0 12 0z"></path>
-            </svg>
+            <img class="pix" src="assets/game/ui-trophy.png" alt="">
             Tabla de posiciones
         </h3>
         <ol id="leader-list"></ol>
@@ -3558,7 +3785,10 @@
             // Timer
             const mins = Math.floor(gameState.gameTime / 60);
             const secs = gameState.gameTime % 60;
-            document.getElementById("hud-timer").innerText = `${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
+            const timerEl = document.getElementById("hud-timer");
+            timerEl.innerText = `${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
+            // Parpadeo arcade cuando la partida está a punto de terminar
+            timerEl.classList.toggle('critico', gameState.gameStarted && gameState.gameTime <= 30);
 
             // Indicador Banco
             document.getElementById("extract-banner").style.display = me.isExtracting ? "block" : "none";
