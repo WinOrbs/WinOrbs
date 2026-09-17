@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#060a12">
+    <link rel="icon" type="image/png" href="/assets/logo/logo-shield.png">
     <title>WinOrbs - Entrar a Jugar</title>
     <!-- Incluimos la librería cliente de Socket.io -->
     <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>
@@ -149,8 +150,8 @@
 
         /* ── Layout arena: sidebar de config + salas protagonistas ── */
         .arena {
-            flex: 1; width: 100%; max-width: 1280px; margin: 0 auto;
-            display: grid; grid-template-columns: 350px minmax(0, 1fr);
+            flex: 1; width: 100%; max-width: 1440px; margin: 0 auto;
+            display: grid; grid-template-columns: 340px minmax(0, 1fr) 300px;
             gap: 22px; align-items: start;
             padding: 26px 28px 36px;
         }
@@ -166,6 +167,24 @@
         }
 
         .panel-salas { display: flex; flex-direction: column; min-height: 520px; }
+
+        /* ── Escudo (logo) del sidebar ── */
+        .escudo-wrap {
+            display: flex; justify-content: center; align-items: center;
+            position: relative; margin: 2px 0 16px;
+        }
+        .escudo-wrap::before {
+            content: ""; position: absolute; width: 132px; height: 132px; border-radius: 50%;
+            background: radial-gradient(circle, rgba(56, 189, 248, .16), transparent 70%);
+            animation: escudoPulse 4s ease-in-out infinite;
+        }
+        .escudo {
+            position: relative; width: 430px; height: 430px; object-fit: contain;
+            filter: drop-shadow(0 10px 22px rgba(56, 189, 248, .4)) drop-shadow(0 0 26px rgba(56, 189, 248, .25));
+            animation: logoFloat 6s ease-in-out infinite;
+        }
+        @keyframes escudoPulse { 0%, 100% { opacity: .7; transform: scale(1); } 50% { opacity: 1; transform: scale(1.08); } }
+        @keyframes logoFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
 
         .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
 
@@ -479,11 +498,61 @@
             .orb { animation: none; }
         }
 
+        /* ── Log de retiros recientes (columna derecha del lobby) ── */
+        .panel-retiros { display: flex; flex-direction: column; min-height: 520px; }
+        .retiros-lista {
+            list-style: none; margin: 0; padding: 0;
+            display: flex; flex-direction: column; gap: 8px;
+            flex: 1; overflow-y: auto; max-height: 400px;
+            scrollbar-width: thin; scrollbar-color: rgba(56, 189, 248, .35) transparent;
+        }
+        .retiros-lista::-webkit-scrollbar { width: 6px; }
+        .retiros-lista::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, .35); border-radius: 999px; }
+        .retiro-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 9px 11px; border-radius: 11px;
+            background: rgba(2, 6, 17, .5);
+            border: 1px solid rgba(148, 163, 184, .12);
+            animation: rise .5s cubic-bezier(.16, .84, .3, 1) backwards;
+        }
+        .retiro-item:nth-child(2) { animation-delay: .06s; }
+        .retiro-item:nth-child(3) { animation-delay: .12s; }
+        .retiro-item:nth-child(4) { animation-delay: .18s; }
+        .retiro-item.top { border-color: rgba(34, 197, 94, .38); box-shadow: 0 0 20px -8px rgba(34, 197, 94, .45); }
+        .retiro-pos {
+            flex: 0 0 24px; height: 24px; border-radius: 7px;
+            display: grid; place-items: center;
+            font-family: var(--font-display); font-weight: 700; font-size: 11px;
+            color: var(--muted); background: rgba(148, 163, 184, .14);
+        }
+        .retiro-pos-1 { color: #1c1204; background: linear-gradient(135deg, #fde047, #f59e0b); box-shadow: 0 0 14px -4px rgba(245, 158, 11, .8); }
+        .retiro-pos-2 { color: #e2e8f0; background: linear-gradient(135deg, #cbd5e1, #64748b); }
+        .retiro-pos-3 { color: #2b1408; background: linear-gradient(135deg, #fb923c, #b45309); }
+        .retiro-user {
+            flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+            font-weight: 600; font-size: 14px; color: var(--text);
+        }
+        .retiro-monto {
+            font-family: var(--font-display); font-weight: 700; font-size: 14px;
+            color: var(--green); text-shadow: 0 0 12px rgba(34, 197, 94, .4); white-space: nowrap;
+        }
+        .retiro-vacio {
+            text-align: center; color: var(--muted); font-size: 13px; line-height: 1.7;
+            padding: 26px 12px; border: 1px dashed rgba(148, 163, 184, .25); border-radius: 12px;
+        }
+        .retiros-foot {
+            margin-top: 14px; padding-top: 12px;
+            border-top: 1px dashed rgba(148, 163, 184, .25);
+            font-size: 11.5px; color: var(--muted); letter-spacing: .4px;
+        }
+
         /* ── Responsive: se apila topbar → config → salas ── */
         @media (max-width: 1020px) {
             .arena { grid-template-columns: 1fr; padding: 18px 16px 30px; }
             .topbar { padding: 12px 16px; }
             .panel-salas { min-height: auto; }
+            .panel-retiros { min-height: auto; }
+            .retiros-lista { max-height: none; overflow: visible; }
             .grid-salas { max-height: none; min-height: 0; overflow: visible; }
             .filtros { align-items: flex-start; }
         }
@@ -492,6 +561,7 @@
             .grupo-grid { grid-template-columns: 1fr; }
             .topbar-right { width: 100%; justify-content: space-between; }
             .logo { font-size: 22px; }
+            .escudo { width: 500px; height: 500px; }
             .panel-head-right { gap: 8px; }
             .salas-count { font-size: 10.5px; }
         }
@@ -533,13 +603,12 @@
     <main class="arena">
         <!-- Sidebar: tu configuración -->
         <aside class="panel panel-config reveal r1">
+            <!-- Escudo (logo) del lobby -->
+            <div class="escudo-wrap">
+                <img class="escudo" src="/assets/logo/logo-shield.png" alt="Escudo de WinOrbs">
+            </div>
             <div class="panel-head">
                 <span class="panel-kicker">// Tu configuración</span>
-            </div>
-
-            <div class="form-group">
-                <label for="player-nickname">Apodo / Name (único, el de tu cuenta)</label>
-                <input type="text" id="player-nickname" placeholder="Ej: ProOrb99" value="Jugador1" readonly title="Tu apodo viene de tu cuenta y no se puede cambiar aquí. Cámbialo en Mi Perfil.">
             </div>
 
             <!-- Tienda / Selector de Skins (firmas onclick intactas: game.html consume mi_skin) -->
@@ -625,6 +694,19 @@
                 </div>
             </div>
         </section>
+
+        <!-- Log de retiros recientes (columna derecha): los cobros más grandes
+             de la comunidad. La lista la emite el servidor en vivo (retirosList). -->
+        <aside class="panel panel-retiros reveal r2" aria-label="Retiros recientes">
+            <div class="panel-head">
+                <span class="panel-kicker">// Retiros recientes</span>
+                <span class="live-badge"><span class="live-dot"></span>TOP</span>
+            </div>
+            <ul class="retiros-lista" id="retiros-lista">
+                <li class="retiro-vacio">Cargando retiros…</li>
+            </ul>
+            <p class="retiros-foot">💸 Cobros más grandes de la comunidad · en vivo</p>
+        </aside>
     </main>
 
     <script>
@@ -998,6 +1080,31 @@
             salasCache = Array.isArray(salasList) ? salasList : [];
             renderLobby();
         });
+
+        // ── Log de retiros recientes (columna derecha) ─────────────────────
+        // El servidor arma el top (mayor monto primero) desde Firestore y lo
+        // emite en vivo; aquí solo pintamos usuario + monto (HTML escapado).
+        const listaRetiros = document.getElementById('retiros-lista');
+        function renderRetiros(retiros) {
+            if (!listaRetiros) return;
+            const lista = Array.isArray(retiros) ? retiros : [];
+            if (!lista.length) {
+                listaRetiros.innerHTML = '<li class="retiro-vacio">Aún no hay retiros.<br>¡Sé el primero en cobrar! 💸</li>';
+                return;
+            }
+            listaRetiros.innerHTML = lista.map((r, i) => {
+                const nombre = escapeHTML(r.usuario || 'Jugador');
+                const monto = Number(r.monto || 0).toFixed(2);
+                const top = i === 0 ? ' top' : '';
+                return '<li class="retiro-item' + top + '">' +
+                    '<span class="retiro-pos retiro-pos-' + (i + 1) + '">' + (i + 1) + '</span>' +
+                    '<span class="retiro-user" title="' + nombre + '">' + nombre + '</span>' +
+                    '<span class="retiro-monto">$' + monto + '</span>' +
+                    '</li>';
+            }).join('');
+        }
+        socket.on('retirosList', renderRetiros);
+        socket.emit('pedirRetiros');
 
         // Entrar a la sala seleccionada
         window.unirseASala = function (salaId, esPrivada) {

@@ -2141,10 +2141,83 @@ async function salirDeSala(socket, room) {
     room.removePlayer(socket.id);
 }
 
+// ── Log de retiros recientes para el lobby ─────────────────────────────
+// Los retiros viven en la colección "pagos" (tipo 'retiro'). El cliente NO
+// puede leer pagos ajenos (reglas de Firestore), así que el SERVIDOR arma el
+// top de retiros más grandes (aprobados y pendientes, nunca rechazados) y lo
+// emite por socket: caché anti-duplicado + snapshot en vivo de Firestore.
+let cacheRetiros = [];
+let refrescoRetirosEnCurso = null;
+const MAX_RETIROS_LOG = 10;
+
+function normalizarRetiro(p) {
+    const fecha = p.fecha;
+    return {
+        usuario: sanitizeNick(String(p.usuario || 'Jugador')),
+        monto: +Number(p.monto || 0).toFixed(2),
+        fecha: (fecha && typeof fecha.toMillis === 'function') ? fecha.toMillis() : 0
+    };
+}
+
+async function refrescarRetirosRecientes() {
+    if (!FIREBASE_ECONOMY || !FIREBASE_DB) return [];
+    if (refrescoRetirosEnCurso) return refrescoRetirosEnCurso;
+    refrescoRetirosEnCurso = (async () => {
+        try {
+            // Orden por UN solo campo (fecha): no exige índice compuesto en Firestore.
+            const snap = await FIREBASE_DB.collection('pagos')
+                .orderBy('fecha', 'desc').limit(150).get();
+            const lista = snap.docs
+                .map(d => d.data() || {})
+                .filter(p => p.tipo === 'retiro' && p.estado !== 'rechazado')
+                .map(normalizarRetiro)
+                .filter(p => p.monto > 0)
+                // Desempate determinista: a igual monto, gana el más reciente
+                .sort((a, b) => b.monto - a.monto || b.fecha - a.fecha)
+                .slice(0, MAX_RETIROS_LOG);
+            if (lista.length) cacheRetiros = lista;
+            return lista.length ? lista : cacheRetiros;
+        } catch (e) {
+            console.warn('[RETIROS] No se pudo refrescar el log:', e.message);
+            return cacheRetiros; // ante error, se sirve la última lista buena
+        } finally {
+            refrescoRetirosEnCurso = null;
+        }
+    })();
+    return refrescoRetirosEnCurso;
+}
+
+// Difusión en vivo: cualquier cambio en "pagos" re-arma el top y lo emite a
+// todos los lobbies (con debounce para no martillar en ráfagas de escritura).
+if (FIREBASE_ECONOMY && FIREBASE_DB) {
+    try {
+        let difusionRetirosPend = false;
+        FIREBASE_DB.collection('pagos').onSnapshot(() => {
+            if (difusionRetirosPend) return;
+            difusionRetirosPend = true;
+            setTimeout(async () => {
+                difusionRetirosPend = false;
+                const lista = await refrescarRetirosRecientes();
+                if (lista.length) io.emit('retirosList', lista);
+            }, 1500);
+        }, () => { /* sin permiso/índice: queda el refresco por conexión */ });
+    } catch (e) { /* sin listener en vivo: el lobby usa pedirRetiros */ }
+}
+
 io.on('connection', (socket) => {
     socket.isAdmin = false;
     socket.emit('serverConfig', { economy: FIREBASE_ECONOMY });
     socket.emit('roomsList', Object.values(rooms).map(r => r.getSummary()));
+
+    // Log de retiros: caché instantáneo + refresco en segundo plano
+    if (cacheRetiros.length) socket.emit('retirosList', cacheRetiros);
+    refrescarRetirosRecientes().then((lista) => {
+        if (lista.length) socket.emit('retirosList', lista);
+    });
+
+    socket.on('pedirRetiros', async () => {
+        socket.emit('retirosList', await refrescarRetirosRecientes());
+    });
 
     // Rate-limit del panel admin por IP (5 fallos → bloqueo 60 s)
     socket.on('adminAuth', ({ password }) => {
