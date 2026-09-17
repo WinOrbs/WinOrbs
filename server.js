@@ -6,9 +6,47 @@ const http = require('http');
 const { Server } = require('socket.io');
 
 const app = express();
+app.set('trust proxy', 1);
 const server = http.createServer(app);
-const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
-const io = new Server(server, { cors: { origin: CORS_ORIGIN } });
+// ── CORS ────────────────────────────────────────────────────────────────────
+// Frontend en producción: https://winorbs.pages.dev (Cloudflare Pages)
+// Backend: https://winorbs.onrender.com (Render).
+// - CORS_ORIGIN="*" (defecto, dev) → refleja cualquier origen.
+// - CORS_ORIGIN="https://winorbs.pages.dev,https://xxx..." → solo esos.
+// Sin esto el polling XHR de Socket.IO falla con:
+// "No 'Access-Control-Allow-Origin' header is present".
+// NOTA: ese error también aparece cuando Render devuelve 503 (servicio dormido/
+// caído) porque la respuesta la genera el proxy de Render, no Node. Por eso
+// además se corrige el puerto (process.env.PORT) más abajo.
+const CORS_RAW = (process.env.CORS_ORIGIN || '*').split(',').map((s) => s.trim()).filter(Boolean);
+const CORS_ALLOW_ALL = CORS_RAW.includes('*');
+function isOriginAllowed(origin) {
+    if (!origin) return true; // curl / health-checks / mismo origen sin header
+    if (CORS_ALLOW_ALL) return true;
+    return CORS_RAW.includes(origin);
+}
+app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (isOriginAllowed(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', CORS_ALLOW_ALL && !origin ? '*' : (origin || '*'));
+        res.setHeader('Vary', 'Origin');
+    }
+    res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    if (req.method === 'OPTIONS') return res.sendStatus(204);
+    next();
+});
+const io = new Server(server, {
+    cors: {
+        origin: (origin, cb) => {
+            if (isOriginAllowed(origin)) return cb(null, true);
+            return cb(new Error('CORS bloqueado para ' + origin), false);
+        },
+        methods: ['GET', 'POST'],
+        credentials: true
+    }
+});
 
 app.use(express.static(__dirname + '/public'));
 
@@ -2680,6 +2718,7 @@ io.on('connection', (socket) => {
     });
 });
 
-server.listen(3000, () => {
-    console.log('Servidor WinOrbs corriendo en http://localhost:3000');
+const PORT = Number(process.env.PORT) || 3000;
+server.listen(PORT, () => {
+    console.log('Servidor WinOrbs corriendo en http://localhost:' + PORT);
 });
