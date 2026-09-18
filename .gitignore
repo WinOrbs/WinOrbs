@@ -4,3 +4,6 @@ serviceAccountKey.json
 dist/
 *.log
 *.bak
+# Volcados de depuración en la raíz (listados, logs de arranque, salidas
+# de tests...). Solo la raíz: así un public/*.txt legítimo sigue versionable.
+/*.txt
