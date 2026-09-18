@@ -1,6 +1,0 @@
-﻿OK   public/index.html (2 bloques inline)
-OK   public/login.html (1 bloques inline)
-OK   public/perfil.html (1 bloques inline)
-OK   public/wallet.html (0 bloques inline)
-OK   public/admin.html (0 bloques inline)
-OK   public/game.html (2 bloques inline)

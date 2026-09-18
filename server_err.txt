@@ -1,4 +1,0 @@
-[FIREBASE] firebase-admin no disponible: Cannot find module 'firebase-admin'
-Require stack:
-- C:\Users\Usuario\Downloads\ode\server.js
-⚠️  ADMIN: usando la contraseña por defecto "admin123". Define ADMIN_PASSWORD como variable de entorno.
