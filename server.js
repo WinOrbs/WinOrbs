@@ -229,7 +229,7 @@ const ZONA_FASES = [
     { t: 30, r: 2600 },
     { t: 20, r: 1800 },
     { t: 10, r: 1000 },
-    { t: 0,  r: ZONA_RADIO_FINAL }
+    { t: 0, r: ZONA_RADIO_FINAL }
 ];
 const ZONA_DPS = [4, 8, 12, 16, 20]; // HP/s fuera de la zona, por fase de cierre
 const ZONA_CIERRE_PX_S = 200;        // tope de cierre (px/s): el tramo más rápido pide ~94
@@ -239,7 +239,7 @@ const ZONA_CIERRE_PX_S = 200;        // tope de cierre (px/s): el tramo más rá
 // objetivo con un tope, para que el círculo se "desplace" y no dé saltos.
 const ZONA_CENTRO_PX_S = 200;       // tope de deriva del centro (px/s): el pico pide ~66
 const ZONA_MARGEN_CENTRO = 400;     // el centro nunca a menos de 400 px del borde
-                                    // (≥ radio final 280: la zona final cae en el mapa)
+// (≥ radio final 280: la zona final cae en el mapa)
 
 // ── TIENDAS ITINERANTES ─────────────────────────────────────────────────────
 // Antes eran 6 casetas fijas en esquinas y bordes: nadie las disputaba y el
@@ -261,9 +261,9 @@ const TIENDA_MIN_JUGADOR = 250;         // no reubicar encima de un jugador vivo
 // coche / moto / barril: bloquean balas (−6) y EXPLOTAN al destruirse; el barril
 // prende en cadena a los que tenga cerca (cola con retardo, sin recursión).
 const OBSTACULOS_TIPOS = {
-    roca:   { radio: 0,   dano: 0,  hp: 30 },
-    coche:  { radio: 150, dano: 45, hp: 36 },
-    moto:   { radio: 100, dano: 25, hp: 18 },
+    roca: { radio: 0, dano: 0, hp: 30 },
+    coche: { radio: 150, dano: 45, hp: 36 },
+    moto: { radio: 100, dano: 25, hp: 18 },
     barril: { radio: 130, dano: 40, hp: 12 }
 };
 const BARRIL_CADENA_TICKS = 6;      // retardo de la reacción en cadena (~0,1 s)
@@ -656,7 +656,7 @@ async function servidorReclamarPremiosDeUsuario(uid) {
 }
 
 const CONCILIAR_CADA_MS = Math.max(60000, Number(process.env.PREMIOS_AUTO_MS || 2 * 60 * 1000));
-setInterval(() => { servidorConciliarPremiosPendientes('worker').catch(() => {}); }, CONCILIAR_CADA_MS);
+setInterval(() => { servidorConciliarPremiosPendientes('worker').catch(() => { }); }, CONCILIAR_CADA_MS);
 
 function randID() {
     return Math.random().toString(36).substr(2, 9);
@@ -837,10 +837,10 @@ class GameRoom {
     // daño de bomba se reutilizan sin tocar nada.
     generateObstacles() {
         const defs = [
-            { tipo: 'roca',   n: 14, ancho: [60, 120], alto: [60, 120] },
-            { tipo: 'coche',  n: 6,  ancho: [70, 70],  alto: [44, 44] },
-            { tipo: 'moto',   n: 6,  ancho: [46, 46],  alto: [26, 26] },
-            { tipo: 'barril', n: 8,  ancho: [30, 30],  alto: [30, 30] }
+            { tipo: 'roca', n: 14, ancho: [60, 120], alto: [60, 120] },
+            { tipo: 'coche', n: 6, ancho: [70, 70], alto: [44, 44] },
+            { tipo: 'moto', n: 6, ancho: [46, 46], alto: [26, 26] },
+            { tipo: 'barril', n: 8, ancho: [30, 30], alto: [30, 30] }
         ];
         const obs = [];
         const entreSi = 60;   // separación mínima entre obstáculos (evita racimos)
@@ -2449,7 +2449,7 @@ io.on('connection', (socket) => {
         }
     });
 
-        // ── Tienda de skins ──────────────────────────────────────────
+    // ── Tienda de skins ──────────────────────────────────────────
     // Lista de skins activas (respaldo para la tienda si Firestore directo falla)
     socket.on('tiendaSkins', async () => {
         try {
@@ -2719,6 +2719,6 @@ io.on('connection', (socket) => {
 });
 
 const PORT = Number(process.env.PORT) || 3000;
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
     console.log('Servidor WinOrbs corriendo en http://localhost:' + PORT);
 });
