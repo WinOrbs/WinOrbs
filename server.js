@@ -821,8 +821,8 @@ class GameRoom {
         const pads = [];
         for (let i = 0; i < 6; i++) {
             pads.push({
-                x: Math.random() * (MAP_SIZE - 400) + 200,
-                y: Math.random() * (MAP_SIZE - 400) + 200,
+                x: Math.round(Math.random() * (MAP_SIZE - 400) + 200),
+                y: Math.round(Math.random() * (MAP_SIZE - 400) + 200),
                 w: 80,
                 h: 30,
                 angle: Math.random() * Math.PI * 2
@@ -859,7 +859,7 @@ class GameRoom {
                         y < pd.y + pd.h + 40 && y + h > pd.y - 40)) continue;
                     if (obs.some(o => x < o.x + o.w + entreSi && x + w + entreSi > o.x &&
                         y < o.y + o.h + entreSi && y + h + entreSi > o.y)) continue;
-                    obs.push({ x, y, w, h, hp, maxHp: hp, tipo: d.tipo });
+                    obs.push({ x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h), hp, maxHp: hp, tipo: d.tipo });
                     break;
                 }
             }
@@ -898,6 +898,11 @@ class GameRoom {
             r.x - 40 < o.x + o.w && r.x + r.w + 40 > o.x &&
             r.y - 40 < o.y + o.h && r.y + r.h + 40 > o.y);
         const maxGrupo = 5;
+        // Coordenadas enteras: la geometría viaja en CADA estado del juego
+        // (34 obstáculos + ~28 muros = ~6.9 KB/tick). Redondear aquí, una sola
+        // vez, quita los 18 decimales de Math.random() sin tocar el gameplay
+        // (la colisión usa la caja redondeada, sub-píxel de diferencia).
+        const redondea = (v) => ({ x: Math.round(v.x), y: Math.round(v.y), w: Math.round(v.w), h: Math.round(v.h) });
         for (let i = 0; i < 60 && walls.length < maxGrupo * 4; i++) {
             const w = 80 + Math.random() * 110;
             const h = 40 + Math.random() * 90;
@@ -908,7 +913,7 @@ class GameRoom {
                 { x: MAP_SIZE - x - w, y, w, h },
                 { x, y: MAP_SIZE - y - h, w, h },
                 { x: MAP_SIZE - x - w, y: MAP_SIZE - y - h, w, h }
-            ];
+            ].map(redondea);
             if (variantes.some(v => v.x < margin || v.y < margin ||
                 v.x + v.w > MAP_SIZE - margin || v.y + v.h > MAP_SIZE - margin ||
                 overlapsBlocked(v) || overlapsWall(v) || overlapsPad(v) || overlapsObstaculo(v))) continue;
@@ -930,7 +935,7 @@ class GameRoom {
                 { x: MAP_SIZE - x - w, y, w, h },
                 { x, y: MAP_SIZE - y - h, w, h },
                 { x: MAP_SIZE - x - w, y: MAP_SIZE - y - h, w, h }
-            ];
+            ].map(redondea);
             if (variantes.some(v => v.x < margin || v.y < margin ||
                 v.x + v.w > MAP_SIZE - margin || v.y + v.h > MAP_SIZE - margin ||
                 overlapsBlocked(v) || overlapsWall(v) || overlapsPad(v) || overlapsObstaculo(v))) continue;
@@ -1252,8 +1257,21 @@ class GameRoom {
 
     startLoop() {
         this.interval = setInterval(() => {
+            const jugadores = Object.keys(this.players).length;
+
+            // Sala VACÍA: no hay nada que simular ni a quién enviar. La sala sigue
+            // existiendo (hay 20 automáticas), pero dejar de tickear evita quemar
+            // CPU del proceso entero: antes esto corría a 60 Hz en TODAS las salas
+            // (vacías incluidas) = ~1200 getState()/s y presión de GC constante.
+            if (jugadores === 0) return;
+
             this.update();
-            io.to(this.id).emit('gameState', this.getState());
+
+            // volatile: si el cliente va saturado se DESCARTA el estado atrasado
+            // en lugar de encolarlo. Sin esto, un móvil lento acumula cola y su
+            // retraso crece sin parar (el estado llega 60 veces/s: perder alguno
+            // no importa, siempre viene otro detrás).
+            io.to(this.id).volatile.emit('gameState', this.getState());
         }, 1000 / 60);
 
         this.timerInterval = setInterval(() => {
@@ -2126,6 +2144,35 @@ class GameRoom {
         return Object.values(this.players).sort((a, b) => b.bankedScore - a.bankedScore);
     }
 
+    // ─ Versión RED del estado (recorta lo que el cliente no usa) ─────────────
+    // El diagnóstico (test_latencia.js) mostró que droppedEnergy era el 56% de
+    // cada gameState (~11 KB de 19.7 KB): 150 orbes en el suelo reenviados con
+    // id de 11 caracteres, val y coordenadas de 18 dígitos, 54 veces/s, cuando
+    // el cliente SOLO DIBUJA x e y (game.html → drawSprite('orbe', g.x, g.y…)).
+    // El modelo interno NO cambia (id/val/life siguen viviendo en
+    // this.droppedEnergy y alimentan recogida y caducidad): esto solo recorta
+    // el wire. Peso por orbe: ~68 B → ~20 B.
+    energiaRed() {
+        const arr = this.droppedEnergy;
+        const out = new Array(arr.length);
+        for (let i = 0; i < arr.length; i++) {
+            const g = arr[i];
+            out[i] = { x: Math.round(g.x), y: Math.round(g.y) };
+        }
+        return out;
+    }
+
+    // Botiquines: igual criterio (el cliente solo pinta x/y).
+    kitsRed() {
+        const arr = this.droppedHealthKits;
+        const out = new Array(arr.length);
+        for (let i = 0; i < arr.length; i++) {
+            const g = arr[i];
+            out[i] = { x: Math.round(g.x), y: Math.round(g.y) };
+        }
+        return out;
+    }
+
     getState() {
         return {
             players: this.players,
@@ -2133,8 +2180,8 @@ class GameRoom {
             zoneFase: this.zoneFase,
             zoneDps: this.zoneDps,
             bullets: this.bullets,
-            droppedEnergy: this.droppedEnergy,
-            healthKits: this.droppedHealthKits,
+            droppedEnergy: this.energiaRed(),
+            healthKits: this.kitsRed(),
             bankZone: this.bankZone,
             gameTime: this.gameTime,
             zoneRadius: this.zoneRadius,
