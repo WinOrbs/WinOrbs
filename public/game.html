@@ -2775,6 +2775,58 @@
         // modo polling si el upgrade falla.
         const socket = io(window.SERVIDOR_URL || undefined, { transports: ['websocket'] });
         window.socket = socket; // accesible para el módulo de Firebase (setUid)
+
+        // ── Overlay de diagnóstico de rendimiento (?diag=1) ──────────────────
+        // Mide EN EL DISPOSITIVO REAL del jugador (que es donde se siente el
+        // lag): RTT del canal de juego (evento latProbe), jitter, FPS, Hz y
+        // KB/s que llegan por 'gameState'. Autocontenido: no toca el juego.
+        (function overlayDiag() {
+            if (!new URLSearchParams(location.search).has('diag')) return;
+            const el = document.createElement('div');
+            el.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:99999;' +
+                'font:11px/1.35 monospace;color:#a7f3d0;background:rgba(2,6,23,.82);' +
+                'border:1px solid rgba(167,243,208,.35);border-radius:8px;padding:6px 8px;' +
+                'pointer-events:none;white-space:pre;';
+            document.body.appendChild(el);
+
+            let rtt = [], kb = 0, estados = 0, frames = 0, fps = 0;
+            let t0 = performance.now();
+
+            setInterval(() => {                       // RTT (mismo probe que test_latencia.js)
+                const t = performance.now();
+                try {
+                    window.socket.emit('latProbe', Date.now(), () => {
+                        rtt.push(performance.now() - t);
+                    });
+                } catch (e) { /* socket aún no listo */ }
+            }, 1000);
+
+            window.socket.on('gameState', (st) => {   // volumen real de datos
+                estados++;
+                try { kb += JSON.stringify(st).length / 1024; } catch (e) { }
+            });
+
+            (function contar() { frames++; requestAnimationFrame(contar); })();
+
+            setInterval(() => {
+                const seg = (performance.now() - t0) / 1000;
+                const media = rtt.length ? rtt.reduce((s, x) => s + x, 0) / rtt.length : NaN;
+                const jit = rtt.length > 1
+                    ? Math.sqrt(rtt.reduce((s, x) => s + (x - media) ** 2, 0) / rtt.length)
+                    : NaN;
+                let transporte = '?';
+                try { transporte = window.socket.io.engine.transport.name; } catch (e) { }
+                fps = Math.round(frames / seg) || 0;
+                el.textContent =
+                    'RTT     ' + (isFinite(media) ? media.toFixed(0) + ' ms' : '—') + '\n' +
+                    'jitter  ' + (isFinite(jit) ? jit.toFixed(0) + ' ms' : '—') + '\n' +
+                    'FPS     ' + fps + '\n' +
+                    'tick    ' + (estados / seg).toFixed(1) + ' Hz\n' +
+                    'datos   ' + (kb / seg).toFixed(0) + ' KB/s\n' +
+                    'transp. ' + transporte;
+                rtt = []; estados = 0; kb = 0; frames = 0; t0 = performance.now();
+            }, 2000);
+        })();
         const canvas = document.getElementById("gameCanvas");
         const ctx = canvas.getContext("2d");
         const miniCanvas = document.getElementById("minimap");
