@@ -11,5 +11,5 @@
 //
 // Déjalo VACÍO ("") para desarrollo local (mismo origen, localhost:3000).
 // ─────────────────────────────────────────────────────────────
-window.SERVIDOR_URL = "https://texas-babies-colon-unexpected.trycloudflare.com";
+window.SERVIDOR_URL = "https://mmgv-studio.tail96bd34.ts.net";
 
