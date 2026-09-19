@@ -1,4 +1,7 @@
 const { io } = require('socket.io-client');
+// El password de admin viene de .env (dotenv) y NO debe quedar fijo en los tests.
+try { require('dotenv').config(); } catch (e) { /* dotenv opcional */ }
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 
 const results = [];
 function log(msg, ok = true) {
@@ -88,7 +91,7 @@ async function runTests() {
     socket.emit('requestRespawn');
     log('Evento de respawn enviado');
 
-    socket.emit('adminAuth', { password: 'admin123' });
+    socket.emit('adminAuth', { password: ADMIN_PASSWORD });
     const adminAuthed = await new Promise((resolve) => {
         socket.on('adminAuthed', (d) => resolve(d));
     });

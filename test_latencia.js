@@ -220,13 +220,19 @@ function medirGameState(socket, duracionMs = 5000) {
         setTimeout(() => {
             socket.off('gameState', handler);
             let bytesEstaticos = 0;
+            let porClave = null;
             if (ultimo) {
                 for (const k of CLAVES_ESTATICAS) {
                     if (ultimo[k] === undefined) continue;
                     try { bytesEstaticos += Buffer.byteLength(JSON.stringify({ [k]: ultimo[k] }), 'utf8'); } catch (e) { }
                 }
+                // Desglose por campo: sirve para saber QUÉ recortar (Fase 2).
+                porClave = {};
+                for (const k of Object.keys(ultimo)) {
+                    try { porClave[k] = Buffer.byteLength(JSON.stringify({ [k]: ultimo[k] }), 'utf8'); } catch (e) { }
+                }
             }
-            res({ n, bytes, ultimo, bytesEstaticos, duracionMs });
+            res({ n, bytes, ultimo, bytesEstaticos, porClave, duracionMs });
         }, duracionMs);
     });
 }
@@ -328,6 +334,16 @@ async function main() {
                     const pct = Math.round(g.bytesEstaticos / (porEstado || 1) * 100);
                     console.log('  de eso, GEOMETRÍA FIJA   ' + f1(g.bytesEstaticos / 1024) + ' KB (' + pct +
                         '% de cada estado) → lo que quita la Fase 2');
+                }
+                if (g.porClave) {
+                    const orden = Object.keys(g.porClave)
+                        .sort((a, b) => g.porClave[b] - g.porClave[a])
+                        .slice(0, 12);
+                    console.log('  desglose por campo (los 12 mayores):');
+                    for (const k of orden) {
+                        console.log('    ' + k.padEnd(16) + f1(g.porClave[k] / 1024).padStart(7) + ' KB  (' +
+                            Math.round(g.porClave[k] / (porEstado || 1) * 100) + '%)');
+                    }
                 }
                 sock.emit('leaveRoom');
                 console.log('  (sala de prueba abandonada)');

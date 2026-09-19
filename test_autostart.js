@@ -1,5 +1,8 @@
 // Test de autostart con contador de espera de 30 s + victoria por abandono
 const { io } = require('socket.io-client');
+// El password de admin viene de .env (dotenv) y NO debe quedar fijo en los tests.
+try { require('dotenv').config(); } catch (e) { /* dotenv opcional */ }
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 
 const URL = 'http://localhost:3000';
 const ROOM = 'autostart_t';
@@ -32,7 +35,7 @@ async function run() {
 
     admin.connect();
     await wait(400);
-    admin.emit('adminAuth', { password: 'admin123' });
+    admin.emit('adminAuth', { password: ADMIN_PASSWORD });
     await wait(300);
 
     // Sala limpia de prueba
