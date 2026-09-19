@@ -2330,6 +2330,12 @@ io.on('connection', (socket) => {
         socket.emit('retirosList', await refrescarRetirosRecientes());
     });
 
+    // ─ Diagnóstico de latencia (rendimiento, Fase 0) ──────────────────────
+    // Eco puro: devuelve el timestamp que envía el cliente. Sin estado, sin
+    // efectos en el juego ni en la economía. Lo usa test_latencia.js para medir
+    // el RTT REAL del canal de juego (Socket.IO), no solo el de un GET.
+    socket.on('latProbe', (t0, cb) => { if (typeof cb === 'function') cb(t0); });
+
     // Rate-limit del panel admin por IP (5 fallos → bloqueo 60 s)
     socket.on('adminAuth', ({ password }) => {
         const ip = socket.handshake?.address || '';
