@@ -748,7 +748,9 @@
 
     <script>
         // Inicializar conexión Socket.io
-        const socket = io(window.SERVIDOR_URL || undefined);
+        // transports:['websocket'] salta el handshake inicial por polling
+        // (~2-3 s en rutas con latencia alta). El túnel soporta WebSocket directo.
+        const socket = io(window.SERVIDOR_URL || undefined, { transports: ['websocket'] });
         const contenedorSalas = document.getElementById("lista-salas");
 
         socket.on('serverConfig', (cfg) => {

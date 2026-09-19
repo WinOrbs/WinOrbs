@@ -155,7 +155,9 @@
             { id: 'bas-esmeralda', nombre: 'Esmeralda', c1: '#22c55e', c2: '#15803d', border: '#dcfce7', precio: 0 }
         ];
 
-        const socket = io(window.SERVIDOR_URL || undefined);
+        // transports:['websocket'] salta el handshake inicial por polling
+        // (~2-3 s en rutas con latencia alta). El túnel soporta WebSocket directo.
+        const socket = io(window.SERVIDOR_URL || undefined, { transports: ['websocket'] });
         // El servidor anuncia su modo al conectar: true = cobra entradas y paga
         // premios vía Admin SDK (sin esto, __economyMode queda indefinido y la
         // tienda bloquearía TODAS las compras aunque el modo economía esté activo).

@@ -531,7 +531,9 @@
         // se suben a Cloudinary con el unsigned preset de js/media-config.js
 
         // Conexión Socket.io
-        const socket = io(window.SERVIDOR_URL || undefined);
+        // transports:['websocket'] salta el handshake inicial por polling
+        // (~2-3 s en rutas con latencia alta). El túnel soporta WebSocket directo.
+        const socket = io(window.SERVIDOR_URL || undefined, { transports: ['websocket'] });
 
         socket.on('connect', () => {
             document.getElementById('socket-status').innerText = "Servidor Node.js Online";

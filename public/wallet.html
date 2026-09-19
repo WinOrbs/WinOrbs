@@ -263,7 +263,9 @@
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
-    const socket = io(window.SERVIDOR_URL || undefined); // para notificar solicitudes por Telegram vía server.js
+    // transports:['websocket'] salta el handshake inicial por polling
+    // (~2-3 s en rutas con latencia alta). El túnel soporta WebSocket directo.
+    const socket = io(window.SERVIDOR_URL || undefined, { transports: ['websocket'] }); // para notificar solicitudes por Telegram vía server.js
 
     const $ = (id) => document.getElementById(id);
 
