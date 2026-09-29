@@ -2362,6 +2362,17 @@ if (FIREBASE_ECONOMY && FIREBASE_DB) {
     } catch (e) { /* sin listener en vivo: el lobby usa pedirRetiros */ }
 }
 
+// IP real del cliente cuando hay un proxy delante (Render, Cloudflare, Nginx):
+// la primera entrada de X-Forwarded-For es la del jugador. Sin proxy se usa la
+// dirección directa del handshake. Sin esto, tras el balanceador de Render
+// TODOS los jugadores comparten la IP del proxy: el límite por IP bloquearía a
+// partir del 4º jugador y el rate-limit del panel se volvería global.
+function ipDeSocket(socket) {
+    const reenviada = socket.handshake?.headers['x-forwarded-for'];
+    if (reenviada) return String(reenviada).split(',')[0].trim();
+    return socket.handshake?.address || '';
+}
+
 io.on('connection', (socket) => {
     socket.isAdmin = false;
     socket.emit('serverConfig', { economy: FIREBASE_ECONOMY });
@@ -2385,7 +2396,7 @@ io.on('connection', (socket) => {
 
     // Rate-limit del panel admin por IP (5 fallos → bloqueo 60 s)
     socket.on('adminAuth', ({ password }) => {
-        const ip = socket.handshake?.address || '';
+        const ip = ipDeSocket(socket);
         const now = Date.now();
         const rec = (adminFailuresByIP[ip] = adminFailuresByIP[ip] || { fail: 0, until: 0 });
         if (rec.until > now) {
@@ -2569,7 +2580,7 @@ io.on('connection', (socket) => {
             return socket.emit('errorMsg', 'La sala está llena.');
         }
 
-        const ip = socket.handshake?.address || '';
+        const ip = ipDeSocket(socket);
         // Anti multi-cuenta: límite de sockets por IP en salas de pago
         if (room.entryFee > 0 && !yaEstaAqui) {
             let mismaIp = 0;

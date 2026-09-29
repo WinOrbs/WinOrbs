@@ -3,7 +3,12 @@ serviceAccountKey.json
 .env
 dist/
 *.log
-*.bak
+
+# Respaldos: cubre .bak y también .bak-fix (server.js.bak-fix, game.html.bak-fix)
+*.bak*
+
+# Scripts de sondeo de una sola sesión (depuración manual, no forman parte del juego)
+debug_*.js
 # Volcados de depuración en la raíz (listados, logs de arranque, salidas
 # de tests...). Solo la raíz: así un public/*.txt legítimo sigue versionable.
 /*.txt
