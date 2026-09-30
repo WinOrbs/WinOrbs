@@ -5,6 +5,7 @@ dist/
 *.log
 *.example
 
+
 # Configuración del IDE: es por máquina, no del proyecto
 .idea/
 
