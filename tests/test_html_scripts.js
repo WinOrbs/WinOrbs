@@ -15,7 +15,7 @@ function check(nombre, cond) {
   if (!cond) fallos++;
 }
 
-const dir = path.join(__dirname, 'public');
+const dir = path.join(__dirname, '..', 'public');
 const archivos = fs.readdirSync(dir).filter(f => f.endsWith('.html'));
 
 // Un <script> dentro de un comentario JS de línea no cuenta (único caso
@@ -78,5 +78,5 @@ for (const f of archivos) {
 
 const resumen = 'RESULTADO: ' + (fallos ? fallos + ' FALLOS' : 'TODO OK (' + archivos.length + ' HTML)');
 console.log(resumen);
-fs.writeFileSync(path.join(__dirname, '.test_html_scripts_out.log'), out.join('\n') + '\n' + resumen + '\n');
+fs.writeFileSync(path.join(__dirname, '..', '.test_html_scripts_out.log'), out.join('\n') + '\n' + resumen + '\n');
 process.exit(fallos ? 1 : 0);

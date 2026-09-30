@@ -201,7 +201,7 @@ async function parte2(p1, admin, m) {
     // El botín real depende de la posición del jugador y del airdrop (cae cada
     // 45 s + alcance de bala ~990 px): no es determinista por red, así que se
     // verifica el contrato del servidor en el código fuente.
-    const src = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
     log('openAirdrop suelta 5 orbes ×25 SIEMPRE',
         /for \(let i = 0; i < 5; i\+\+\)/.test(src) && /val: 25,/.test(src));
     log('Botín: botiquín 65% y Lanza-Orbes 35%',
@@ -301,10 +301,10 @@ async function parte2(p1, admin, m) {
     log('Muros finos de 3 balas (14 px, hp 15) con esquema simétrico',
         /hp: 15, maxHp: 15, tipo: 'fino'/.test(src) && src.includes("const vertical = Math.random() < 0.5;"));
     log('Cliente: obstáculos por tipo, anillo de tienda y marcador de zona final',
-        fs.readFileSync(path.join(__dirname, 'public', 'game.html'), 'utf8')
+        fs.readFileSync(path.join(__dirname, '..', 'public', 'game.html'), 'utf8')
             .match(/coche: \{ src: 'assets\/game\/car\.png' \}/) !== null &&
-        fs.readFileSync(path.join(__dirname, 'public', 'game.html'), 'utf8').includes('ZONA FINAL') &&
-        fs.readFileSync(path.join(__dirname, 'public', 'game.html'), 'utf8').includes('sz.life / sz.maxLife'));
+        fs.readFileSync(path.join(__dirname, '..', 'public', 'game.html'), 'utf8').includes('ZONA FINAL') &&
+        fs.readFileSync(path.join(__dirname, '..', 'public', 'game.html'), 'utf8').includes('sz.life / sz.maxLife'));
 }
 
 run().catch(e => { console.error(e); process.exit(1); });

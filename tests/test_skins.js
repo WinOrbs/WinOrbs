@@ -1,8 +1,9 @@
 // ── Test de skins: validarSkinCliente (server.js) + sintaxis inline de tienda.html ──
-// Ejecutar desde la raíz del proyecto:  node test_skins.js
+// Ejecutar desde la raíz del proyecto:  node tests/test_skins.js
 // Sigue el patrón de test_lobby.js: vm + stubs, sin depender de node_modules.
 const fs = require('fs');
 const vm = require('vm');
+const path = require('path');
 
 let fallos = 0;
 function check(nombre, cond) {
@@ -12,7 +13,7 @@ function check(nombre, cond) {
 
 (async function main() {
     // ── 1. Extraer el bloque de skins de server.js y correrlo en una sandbox ──
-    const server = fs.readFileSync('server.js', 'utf8');
+    const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
     const ini = server.indexOf('function sanitizeNick');
     const fnIni = server.indexOf('async function validarSkinCliente');
     if (ini < 0 || fnIni < 0) throw new Error('No se encontró el bloque de skins en server.js');
@@ -81,7 +82,7 @@ function check(nombre, cond) {
     }
 
     // ── 2. Sintaxis de los scripts inline de tienda.html (no está en check_scripts.js) ──
-    const htmlTienda = fs.readFileSync('public/tienda.html', 'utf8');
+    const htmlTienda = fs.readFileSync(path.join(__dirname, '..', 'public/tienda.html'), 'utf8');
     const re = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
     let m, i = 0, tiendaOk = true;
     while ((m = re.exec(htmlTienda)) !== null) {
@@ -113,24 +114,24 @@ function check(nombre, cond) {
 // ── 4. Subida de imágenes: Cloudinary (Firebase Storage exige plan Blaze) ──
     // Regresión vigilada: si alguien vuelve a enganchar Firebase Storage, la
     // subida del panel falla ("storage/unknown") y la skin queda SIN imagen.
-    const mediaCfg = fs.readFileSync('public/js/media-config.js', 'utf8');
+    const mediaCfg = fs.readFileSync(path.join(__dirname, '..', 'public/js/media-config.js'), 'utf8');
     check('media-config.js expone window.MEDIA_UPLOAD', /window\.MEDIA_UPLOAD\s*=/.test(mediaCfg));
     check('media-config.js declara cloudName y preset', /cloudName\s*:/.test(mediaCfg) && /preset\s*:/.test(mediaCfg));
     check('media-config.js limita a 5 MB', /maxBytes\s*:\s*5\s*\*\s*1024\s*\*\s*1024/.test(mediaCfg));
 
-    const adminHtml = fs.readFileSync('public/admin.html', 'utf8');
+    const adminHtml = fs.readFileSync(path.join(__dirname, '..', 'public/admin.html'), 'utf8');
     check('admin.html carga /js/media-config.js', adminHtml.includes('/js/media-config.js'));
     check('admin.html sube con unsigned preset a Cloudinary', adminHtml.includes('api.cloudinary.com') && adminHtml.includes('upload_preset'));
     check('admin.html rellena #skin-url con data.secure_url', adminHtml.includes('data.secure_url') && adminHtml.includes('getElementById("skin-url").value'));
     check('admin.html NO usa Firebase Storage', !/firebase-storage|getStorage|uploadBytes|uploadBytesResumable/.test(adminHtml));
 
-    const walletHtml = fs.readFileSync('public/wallet.html', 'utf8');
+    const walletHtml = fs.readFileSync(path.join(__dirname, '..', 'public/wallet.html'), 'utf8');
     check('wallet.html carga /js/media-config.js', walletHtml.includes('/js/media-config.js'));
     check('wallet.html sube comprobantes con unsigned preset', walletHtml.includes('api.cloudinary.com') && walletHtml.includes('upload_preset'));
     check('wallet.html NO usa Firebase Storage', !/firebase-storage|getStorage|uploadBytes|uploadBytesResumable/.test(walletHtml));
 
     // ── Apuntado en el lienzo: la skin gira hacia el puntero (game.html) ──
-    const gameHtml = fs.readFileSync('public/game.html', 'utf8');
+    const gameHtml = fs.readFileSync(path.join(__dirname, '..', 'public/game.html'), 'utf8');
     check('game.html rota la skin hacia el puntero/disparo', gameHtml.includes('ctx.rotate(p.angle'));
     check('game.html ya NO dibuja la línea blanca de dirección',
         !gameHtml.includes('ctx.lineTo(p.x + Math.cos(p.angle) * (p.radius + 12)'));

@@ -15,7 +15,7 @@ function check(nombre, cond) {
 
 async function main() {
   // ── 1) Extraer el bloque /status de server.js ──
-  const server = fs.readFileSync('/workspaces/WinOrbs/server.js', 'utf8');
+  const server = fs.readFileSync(require('path').join(__dirname, '..', 'server.js'), 'utf8');
   const ini = server.indexOf('// ── Diagnóstico de Firebase (GET /status)');
   const fin = server.indexOf('const MAP_SIZE = 5000;');
   assert.ok(ini > 0 && fin > ini, 'No se encontró el bloque /status en server.js');
@@ -97,7 +97,7 @@ async function main() {
         srv.close();
         const resumen = 'RESULTADO: ' + (fallos ? fallos + ' FALLOS' : 'TODO OK');
         console.log(resumen);
-        fs.writeFileSync('/workspaces/WinOrbs/.test_status_out.log', out.join('\n') + '\n' + resumen + '\n');
+        fs.writeFileSync(require('path').join(__dirname, '..', '.test_status_out.log'), out.join('\n') + '\n' + resumen + '\n');
         process.exit(fallos ? 1 : 0);
       });
     }).on('error', () => {
@@ -111,6 +111,6 @@ async function main() {
 main().catch((e) => {
   out.push('ERROR: ' + (e && e.message));
   console.log(out[out.length - 1]);
-  fs.writeFileSync('/workspaces/WinOrbs/.test_status_out.log', out.join('\n') + '\n');
+  fs.writeFileSync(require('path').join(__dirname, '..', '.test_status_out.log'), out.join('\n') + '\n');
   process.exit(1);
 });

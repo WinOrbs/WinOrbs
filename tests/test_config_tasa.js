@@ -1,9 +1,9 @@
 // Test de la configuración de pagos & tasa del día:
 //  - reglas de Firestore: bloque 'configuracion' idéntico en firestore.rules y
-//    en el generador patch_rules.js (se desincronizan = bug silencioso)
+//    en el generador tools/patch_rules.js (se desincronizan = bug silencioso)
 //  - admin.html: sección + guardado/lectura en configuracion/pagos
 //  - index.html: chip de tasa leyendo el MISMO campo que escribe el admin
-// Patrón de la casa: node test_config_tasa.js
+// Patrón de la casa: node tests/test_config_tasa.js
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
@@ -15,10 +15,11 @@ function check(nombre, cond) {
   if (!cond) fallos++;
 }
 
-const raiz = __dirname;
+// La raíz del proyecto: este script vive en tests/, todo lo demás un nivel arriba.
+const raiz = path.join(__dirname, '..');
 const leer = (f) => fs.readFileSync(path.join(raiz, f), 'utf8');
 const reglas = leer('firestore.rules');
-const patch = leer('patch_rules.js');
+const patch = leer('tools/patch_rules.js');
 const admin = leer('public/admin.html');
 const index = leer('public/index.html');
 const wallet = leer('public/wallet.html');
@@ -39,8 +40,8 @@ check('configuracion: escritura SOLO admin', /configuracion\/\{id\}[\s\S]{0,200}
 
 // ── 2) patch_rules.js regenera un archivo equivalente al publicado ──
 const reglasAntes = reglas;
-execFileSync(process.execPath, ['patch_rules.js'], { cwd: raiz });
-check('node patch_rules.js regenera firestore.rules sin cambios (RULES_OK)', leer('firestore.rules') === reglasAntes);
+execFileSync(process.execPath, ['tools/patch_rules.js'], { cwd: raiz });
+check('node tools/patch_rules.js regenera firestore.rules sin cambios (RULES_OK)', leer('firestore.rules') === reglasAntes);
 
 // ─ 3) Admin: sección, formulario y guardado ──
 // Extrae el cuerpo de una función desde su cabecera hasta su cierre real:

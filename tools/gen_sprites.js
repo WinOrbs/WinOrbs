@@ -19,7 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 
-const OUT_DIR = path.join(__dirname, 'public', 'assets', 'game');
+const OUT_DIR = path.join(__dirname, '..', 'public', 'assets', 'game');
 
 /* ===================== 1. Codificador PNG mínimo ===================== */
 

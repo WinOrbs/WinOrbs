@@ -13,8 +13,8 @@ function check(nombre, cond) {
   if (!cond) fallos++;
 }
 
-const server = fs.readFileSync('/workspaces/WinOrbs/server.js', 'utf8');
-const game = fs.readFileSync('/workspaces/WinOrbs/public/game.html', 'utf8');
+const server = fs.readFileSync(require('path').join(__dirname, '..', 'server.js'), 'utf8');
+const game = fs.readFileSync(require('path').join(__dirname, '..', 'public', 'game.html'), 'utf8');
 
 // ── 1) Extraer métodos de la sala (handleShoot … handleBuyItem) ──
 const iniMet = server.indexOf('    handleShoot(socketId, shootData) {');
@@ -158,11 +158,11 @@ function jugador(extra) {
 
   const resumen = 'RESULTADO: ' + (fallos ? fallos + ' FALLOS' : 'TODO OK');
   console.log(resumen);
-  fs.writeFileSync('/workspaces/WinOrbs/.test_bombas_out.log', out.join('\n') + '\n' + resumen + '\n');
+  fs.writeFileSync(require('path').join(__dirname, '..', '.test_bombas_out.log'), out.join('\n') + '\n' + resumen + '\n');
   process.exit(fallos ? 1 : 0);
 })().catch((e) => {
   out.push('ERROR: ' + (e && e.message));
   console.log(out[out.length - 1]);
-  fs.writeFileSync('/workspaces/WinOrbs/.test_bombas_out.log', out.join('\n') + '\n');
+  fs.writeFileSync(require('path').join(__dirname, '..', '.test_bombas_out.log'), out.join('\n') + '\n');
   process.exit(1);
 });

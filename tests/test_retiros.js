@@ -14,7 +14,7 @@ function check(nombre, cond) {
 
 async function main() {
   // ── 1) Extraer el bloque de retiros de server.js ──
-  const server = fs.readFileSync('/workspaces/WinOrbs/server.js', 'utf8');
+  const server = fs.readFileSync(require('path').join(__dirname, '..', 'server.js'), 'utf8');
   const ini = server.indexOf('// ── Log de retiros recientes para el lobby');
   const fin = server.indexOf("io.on('connection', (socket) => {");
   assert.ok(ini > 0 && fin > ini, 'No se encontró el bloque de retiros en server.js');
@@ -73,7 +73,7 @@ async function main() {
 
   // ── 5) Static del logo: mismo express.static que server.js (raíz /public) ──
   const app = express();
-  app.use(express.static('/workspaces/WinOrbs/public'));
+  app.use(express.static(require('path').join(__dirname, '..', 'public')));
   const srv = app.listen(0, '127.0.0.1', async () => {
     const puerto = srv.address().port;
     const get = (p) => new Promise((res) => {
@@ -91,13 +91,13 @@ async function main() {
     srv.close();
     const resumen = 'RESULTADO: ' + (fallos ? fallos + ' FALLOS' : 'TODO OK');
     console.log(resumen);
-    fs.writeFileSync('/workspaces/WinOrbs/.test_retiros_out.log', out.join('\n') + '\n' + resumen + '\n');
+    fs.writeFileSync(require('path').join(__dirname, '..', '.test_retiros_out.log'), out.join('\n') + '\n' + resumen + '\n');
     process.exit(fallos ? 1 : 0);
   });
 }
 
 main().catch((e) => {
   out.push('ERROR: ' + (e && e.message));
-  fs.writeFileSync('/workspaces/WinOrbs/.test_retiros_out.log', out.join('\n') + '\n');
+  fs.writeFileSync(require('path').join(__dirname, '..', '.test_retiros_out.log'), out.join('\n') + '\n');
   process.exit(1);
 });

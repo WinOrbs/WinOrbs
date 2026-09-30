@@ -3,6 +3,10 @@ serviceAccountKey.json
 .env
 dist/
 *.log
+*.example
+
+# Configuración del IDE: es por máquina, no del proyecto
+.idea/
 
 # Respaldos: cubre .bak y también .bak-fix (server.js.bak-fix, game.html.bak-fix)
 *.bak*

@@ -21,7 +21,10 @@ service cloud.firestore {
 
     function isAdmin() {
       return request.auth != null && (
-        request.auth.uid == "2TRnwllarqhaggRR8so48rSVzji1" ||
+        // ⚠️ SUSTITUYE_ESTO_POR_TU_UID antes de publicar en Firebase Console.
+        //    Ruta: Console → Authentication → Users → tu cuenta de admin → copiar UID.
+        //    Con el placeholder, esa cuenta pierde los permisos de admin.
+        request.auth.uid == "SUSTITUYE_ESTO_POR_TU_UID" ||
         request.auth.token.email == "winorbs@admins.com"
       );
     }

@@ -4,10 +4,12 @@ const path = require('path');
 const vm = require('vm');
 
 const pages = ['public/index.html', 'public/login.html', 'public/perfil.html', 'public/wallet.html', 'public/admin.html', 'public/game.html'];
+// Este script vive en tests/: las páginas están un nivel arriba.
+const RAIZ = path.join(__dirname, '..');
 let allOk = true;
 
 for (const page of pages) {
-    const html = fs.readFileSync(page, 'utf8');
+    const html = fs.readFileSync(path.join(RAIZ, page), 'utf8');
     const blocks = [];
     const re = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
     let m;

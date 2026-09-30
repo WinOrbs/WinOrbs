@@ -1,4 +1,5 @@
 const fs = require('fs');
+const path = require('path');
 const content = String.raw`rules_version = '2';
 
 // ─────────────────────────────────────────────────────────────
@@ -22,7 +23,10 @@ service cloud.firestore {
 
     function isAdmin() {
       return request.auth != null && (
-        request.auth.uid == "2TRnwllarqhaggRR8so48rSVzji1" ||
+        // ⚠️ SUSTITUYE_ESTO_POR_TU_UID antes de publicar en Firebase Console.
+        //    Ruta: Console → Authentication → Users → tu cuenta de admin → copiar UID.
+        //    Con el placeholder, esa cuenta pierde los permisos de admin.
+        request.auth.uid == "SUSTITUYE_ESTO_POR_TU_UID" ||
         request.auth.token.email == "winorbs@admins.com"
       );
     }
@@ -203,5 +207,9 @@ service cloud.firestore {
   }
 }
 `;
-fs.writeFileSync('firestore.rules', content, 'utf8');
+// Normaliza a LF: este archivo puede guardarse con CRLF en Windows y con LF en
+// Linux, y sin esto firestore.rules saldría distinto en cada sistema (el test de
+// sincronía lo detecta). Así el generador siempre produce el mismo resultado.
+const reglas = content.replace(/\r\n/g, '\n');
+fs.writeFileSync(path.join(__dirname, '..', 'firestore.rules'), reglas, 'utf8');
 console.log('RULES_OK');

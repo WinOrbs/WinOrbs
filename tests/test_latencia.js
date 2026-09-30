@@ -40,7 +40,7 @@ function urlObjetivo() {
     const explicita = ARGS.find((a) => /^https?:\/\//.test(a));
     if (explicita) return explicita.replace(/\/+$/, '');
     try {
-        const cfg = fs.readFileSync(path.join(__dirname, 'public/js/servidor-config.js'), 'utf8');
+        const cfg = fs.readFileSync(path.join(__dirname, '..', 'public/js/servidor-config.js'), 'utf8');
         const m = cfg.match(/window\.SERVIDOR_URL\s*=\s*"([^"]*)"/);
         if (m && m[1]) return m[1].replace(/\/+$/, '');
     } catch (e) { /* sin config: se usa local */ }

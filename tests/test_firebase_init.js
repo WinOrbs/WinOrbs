@@ -1,12 +1,12 @@
 // Test: valida el bloque de inicialización de Firebase (server.js) en sandbox
 // (patrón test_skins.js): todas las rutas de la clave de servicio + modo degradado.
-// Ejecutar desde la raíz del proyecto:  node test_firebase_init.js
+// Ejecutar desde la raíz del proyecto:  node tests/test_firebase_init.js
 const fs = require('fs');
 const vm = require('vm');
 const os = require('os');
 const path = require('path');
 
-const server = fs.readFileSync(path.join(__dirname, 'server.js'), 'utf8');
+const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 const ini = server.indexOf('let firebaseAdmin = null;');
 const fin = server.indexOf('// Límites de seguridad');
 if (ini < 0 || fin < 0) throw new Error('bloque no encontrado');

@@ -13,7 +13,7 @@ function check(nombre, cond) {
     else { fallos++; console.log('FAIL ' + nombre); }
 }
 
-const html = fs.readFileSync('public/game.html', 'utf8');
+const html = fs.readFileSync(require('path').join(__dirname, '..', 'public', 'game.html'), 'utf8');
 
 // ── 1. Marcadores estructurales del overlay ──
 const marcadores = [

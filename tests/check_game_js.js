@@ -11,7 +11,7 @@ const path = require('path');
 
 const archivos = process.argv.slice(2).length
     ? process.argv.slice(2)
-    : [path.join(__dirname, 'public', 'game.html'), path.join(__dirname, 'public', 'index.html'), path.join(__dirname, 'public', 'admin.html')];
+    : [path.join(__dirname, '..', 'public', 'game.html'), path.join(__dirname, '..', 'public', 'index.html'), path.join(__dirname, '..', 'public', 'admin.html')];
 
 let mal = 0;
 for (const archivo of archivos) {

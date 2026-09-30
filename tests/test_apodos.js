@@ -7,12 +7,12 @@
 //
 // La reserva de prueba se crea y se borra dentro del mismo script, con una clave
 // imposible de colisionar con un apodo real. No escribe nada en partidas/pagos.
-// Uso: node test_apodos.js   (con el servidor corriendo en localhost:3000)
+// Uso: node tests/test_apodos.js   (con el servidor corriendo en localhost:3000)
 const { io } = require('socket.io-client');
 const fs = require('fs');
 const path = require('path');
 
-const SA_PATH = path.join(__dirname, 'serviceAccountKey.json');
+const SA_PATH = path.join(__dirname, '..', 'serviceAccountKey.json');
 let db = null;
 if (fs.existsSync(SA_PATH)) {
   const admin = require('firebase-admin');

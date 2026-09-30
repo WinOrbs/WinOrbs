@@ -15,8 +15,8 @@
 const fs = require('fs');
 const path = require('path');
 
-const CONFIG = path.join(__dirname, 'public/js/servidor-config.js');
-const ENV = path.join(__dirname, '.env');
+const CONFIG = path.join(__dirname, '..', 'public/js/servidor-config.js');
+const ENV = path.join(__dirname, '..', '.env');
 const CORS_BASE = 'https://winorbs.pages.dev'; // frontend en Cloudflare Pages
 
 function salir(msg) { console.error(msg); process.exit(1); }

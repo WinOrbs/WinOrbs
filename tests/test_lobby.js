@@ -189,7 +189,7 @@ module.exports = { Element, Document, parseHTML, despachar };
 const fs = require('fs');
 const path = require('path');
 
-const html = fs.readFileSync('/workspaces/WinOrbs/public/index.html', 'utf8');
+const html = fs.readFileSync(require('path').join(__dirname, '..', 'public', 'index.html'), 'utf8');
 
 // Script inline (sin src ni type=module) que contiene el lobby
 const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)];
