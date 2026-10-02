@@ -209,6 +209,13 @@ const ITEM_COSTOS = { medkit: 30, shield: 50, bomb: 40, orbGun: 100 };
 // recargar. La recarga tarda RELOAD_TICKS (~2.5 s) y bloquea el disparo.
 const RELOAD_TICKS = 150;           // ~2.5 s a 60 fps
 const RECARGA_ORBES_COSTE = 25;     // gemas NO aseguradas por recargar el Lanza-Orbes
+
+// La SIMULACIÓN corre a 60 Hz, pero el gameState se EMITE 1 de cada 2 ticks
+// (30 Hz). El input del cliente va por su propio bucle de 60 FPS, así que la
+// respuesta a teclado/joystick no depende de esto; lo que baja a la mitad es el
+// ancho de banda. Con volatile, si un móvil se satura se descarta el estado
+// atrasado en vez de acumular cola.
+const TICK_EMITIR_CADA = 2;
 const ORBGUN_MAX_AMMO = 3;          // orbes por cargador del Lanza-Orbes
 const PISTOLA_MAX_AMMO = 15;        // balas por cargador de la Pistola Base
 
@@ -1256,6 +1263,19 @@ class GameRoom {
     }
 
     startLoop() {
+        // SIMULACIÓN a 60 Hz, EMISIÓN a 30 Hz. Son dos relojes distintos y a
+        // propósito: el juego (movimiento, balas, colisiones, timers) sigue a
+        // 60 Hz para no cambiar la sensación, pero el estado sale a la mitad.
+        // El input del cliente ya viaja por su propio setInterval de 60 FPS
+        // (game.html → bucle de envío de inputs), así que la respuesta a
+        // teclado/joystick NO depende de la tasa de emisión.
+        //
+        // OJO: el cliente NO interpola posiciones (dibuja p.x/p.y tal cual), así
+        // que con 30 Hz el movimiento se ve a 33 ms por paso: aceptable en
+        // escritorio, algo escalonado en móvil. Si molesta, la solución NO es
+        // subir la frecuencia, es interpolar en el render (pendiente de
+        // decidir con el usuario, ver nota de riesgo en el historial).
+        this.tick = 0;
         this.interval = setInterval(() => {
             const jugadores = Object.keys(this.players).length;
 
@@ -1267,10 +1287,14 @@ class GameRoom {
 
             this.update();
 
+            // Solo se emite 1 de cada 2 ticks de simulación (30 Hz).
+            this.tick++;
+            if (this.tick % TICK_EMITIR_CADA !== 0) return;
+
             // volatile: si el cliente va saturado se DESCARTA el estado atrasado
             // en lugar de encolarlo. Sin esto, un móvil lento acumula cola y su
-            // retraso crece sin parar (el estado llega 60 veces/s: perder alguno
-            // no importa, siempre viene otro detrás).
+            // retraso crece sin parar: perder un estado no importa porque
+            // siempre viene otro detrás.
             io.to(this.id).volatile.emit('gameState', this.getState());
         }, 1000 / 60);
 
@@ -2173,9 +2197,61 @@ class GameRoom {
         return out;
     }
 
+    // Jugadores: lista blanca de lo que el cliente REALMENTE usa en game.html.
+    // Se cae lo que solo le interesa al servidor:
+    //   uid            → además de inútil, es el UID de Firebase de cada jugador
+    //                    empujado a TODOS los clientes 60 veces/s. No viaja.
+    //   inputs         → input crudo (w/a/s/d/angle) del propio jugador
+    //   lastShotAt     → marca interna del anti-spam
+    //   speed          → constante, lo usa el servidor para mover
+    //   dashCooldown   → solo el servidor decide si admite el dash
+    //   turboCooldown  → igual, interno
+    //   reloadWeapon   → qué arma se recarga; el cliente ya lee currentWeapon
+    // El modelo interno (this.players) NO cambia: la economía, el anti-spam y
+    // los premios siguen leyendo estos campos igual que antes. Solo se recorta
+    // el wire. Coordenadas redondeadas: el subpíxel no aporta nada a 30 Hz.
+    jugadoresRed() {
+        const out = {};
+        for (const id in this.players) {
+            const p = this.players[id];
+            out[id] = {
+                id: p.id,
+                nick: p.nick,
+                x: Math.round(p.x),
+                y: Math.round(p.y),
+                angle: Math.round(p.angle * 100) / 100,
+                radius: p.radius,
+                hp: p.hp,
+                maxHp: p.maxHp,
+                shield: p.shield,
+                maxShield: p.maxShield,
+                charge: p.charge,
+                bankedScore: p.bankedScore,
+                isDead: p.isDead,
+                respawnTimer: p.respawnTimer,
+                canRespawn: p.canRespawn,
+                currentWeapon: p.currentWeapon,
+                ammo: p.ammo,
+                maxAmmo: p.maxAmmo,
+                ammo2: p.ammo2,
+                maxAmmo2: p.maxAmmo2,
+                bombs: p.bombs,
+                hasOrbGun: p.hasOrbGun,
+                isReloading: p.isReloading,
+                reloadTimer: p.reloadTimer,
+                isExtracting: p.isExtracting,
+                dashProgress: Math.round(p.dashProgress * 100) / 100,
+                isDashing: p.isDashing,
+                turboTimer: p.turboTimer,
+                skin: p.skin
+            };
+        }
+        return out;
+    }
+
     getState() {
         return {
-            players: this.players,
+            players: this.jugadoresRed(),
             droppedOrbGuns: this.droppedOrbGuns,
             zoneFase: this.zoneFase,
             zoneDps: this.zoneDps,

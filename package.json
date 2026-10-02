@@ -7,8 +7,10 @@
     "start": "node server.js",
     "build": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true});fs.cpSync('public','dist',{recursive:true});console.log('dist/ listo (copia de public/)')\"",
     "check": "node tests/check_scripts.js && node tests/check_game_js.js",
-    "test": "node tests/test_config_tasa.js && node tests/test_html_scripts.js",
-    "test:live": "node tests/test_auth.js && node tests/test_edge.js && node tests/test_multiplayer.js && node tests/test_multiplayer2.js && node tests/test_autostart.js",
+    "test": "node tests/test_config_tasa.js && node tests/test_html_scripts.js && node tests/test_red.js",
+    "test:live": "node tests/run_live.js",
+    "banda": "node tools/medir_ancho.js",
+    "banda:tick": "node tools/medir_tick.js",
     "rules": "node tools/patch_rules.js",
     "sprites": "node tools/gen_sprites.js",
     "servidor": "node tools/cambiar-servidor.js"
