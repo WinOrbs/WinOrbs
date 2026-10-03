@@ -216,6 +216,21 @@ const RECARGA_ORBES_COSTE = 25;     // gemas NO aseguradas por recargar el Lanza
 // ancho de banda. Con volatile, si un móvil se satura se descarta el estado
 // atrasado en vez de acumular cola.
 const TICK_EMITIR_CADA = 2;
+
+// ── roomConfig: geometría estática separada del estado mutable ───────────────
+// El mapa NO es estático: los muros y obstáculos se destruyen (el cliente ve las
+// barras de vida) y las tiendas se reubican. Por eso la opción "mover el mapa
+// entero a un evento aparte" NO es válida tal cual.
+//
+// Lo que sí es invariable dentro de una partida es la GEOMETRÍA: posición,
+// tamaño y tipo. Eso viaja una sola vez en 'roomConfig'; el estado mutable (hp,
+// life) sigue en cada gameState como un mapa indexado por id.
+//   Antes: 34 obstáculos + ~28 muros completos × 30 Hz  (~6.9 KB/tick)
+//   Ahora: solo hp por id × 30 Hz (~1.5 KB/tick) + geometría 1 vez
+//
+// REVERSIÓN DE EMERGENCIA: poner en false y getState() vuelve a enviar los
+// arrays completos. game.html detecta la ausencia de roomConfig y dibuja igual.
+const ROOMCONFIG_V2 = true;
 const ORBGUN_MAX_AMMO = 3;          // orbes por cargador del Lanza-Orbes
 const PISTOLA_MAX_AMMO = 15;        // balas por cargador de la Pistola Base
 
@@ -706,6 +721,10 @@ class GameRoom {
         this.shopZones = this.generarTiendas();   // tras obstáculos y antes de muros
         this.walls = this.generateWalls();
         this.explosionChain = [];                 // barriles encendidos (cola)
+        // Versión del mapa: sube en cada reset(). El cliente la usa para saber
+        // que su roomConfig quedó obsoleto y hay que pedir la geometría nueva
+        // (si no, emparejaría hp viejos contra el mapa de la partida anterior).
+        this.configVersion = (this.configVersion || 0) + 1;
 
         this.airdropTimer = 0;
         this.hazardTimer = 0;
@@ -866,7 +885,7 @@ class GameRoom {
                         y < pd.y + pd.h + 40 && y + h > pd.y - 40)) continue;
                     if (obs.some(o => x < o.x + o.w + entreSi && x + w + entreSi > o.x &&
                         y < o.y + o.h + entreSi && y + h + entreSi > o.y)) continue;
-                    obs.push({ x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h), hp, maxHp: hp, tipo: d.tipo });
+                    obs.push({ id: 'o' + obs.length, x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h), hp, maxHp: hp, tipo: d.tipo });
                     break;
                 }
             }
@@ -924,7 +943,7 @@ class GameRoom {
             if (variantes.some(v => v.x < margin || v.y < margin ||
                 v.x + v.w > MAP_SIZE - margin || v.y + v.h > MAP_SIZE - margin ||
                 overlapsBlocked(v) || overlapsWall(v) || overlapsPad(v) || overlapsObstaculo(v))) continue;
-            variantes.forEach(v => walls.push({ ...v, hp: 30, maxHp: 30, tipo: 'muro' }));
+            variantes.forEach(v => walls.push({ id: 'w' + walls.length, ...v, hp: 30, maxHp: 30, tipo: 'muro' }));
         }
 
         // Muros finos: tiras de 14 px que aguantan 3 balas (hp 15). Sirven de
@@ -947,7 +966,7 @@ class GameRoom {
                 v.x + v.w > MAP_SIZE - margin || v.y + v.h > MAP_SIZE - margin ||
                 overlapsBlocked(v) || overlapsWall(v) || overlapsPad(v) || overlapsObstaculo(v))) continue;
             gruposFinos++;
-            variantes.forEach(v => walls.push({ ...v, hp: 15, maxHp: 15, tipo: 'fino' }));
+            variantes.forEach(v => walls.push({ id: 'w' + walls.length, ...v, hp: 15, maxHp: 15, tipo: 'fino' }));
         }
         return walls;
     }
@@ -1660,6 +1679,12 @@ class GameRoom {
         this.pozoTotal = 0;
         this.ending = false;
         this.initEnergy();
+        // El mapa es NUEVO: sube la versión y se reenvía la geometría. Sin esto
+        // el cliente emparejaría el hp de la partida anterior contra este mapa
+        // (ids coincidentes o no, lo que saldría es un mapa dibujado con el
+        // estado de otro).
+        this.configVersion = (this.configVersion || 0) + 1;
+        this.emitirConfig();
     }
 
     update() {
@@ -2249,7 +2274,58 @@ class GameRoom {
         return out;
     }
 
+    // Envía la geometría del mapa a la sala. Se llama al entrar cada jugador
+    // (para que un cliente nuevo o una reconexión no dependa de haberla oído)
+    // y en cada reset(). NO es volatile: perderla deja al cliente sin mapa, así
+    // que aquí encolar es lo correcto (a diferencia de gameState, que sí puede
+    // descartarse porque siempre viene otro detrás).
+    emitirConfig(socket) {
+        if (!ROOMCONFIG_V2) return;
+        const cfg = this.configEstatica();
+        if (socket) socket.emit('roomConfig', cfg);
+        else io.to(this.id).emit('roomConfig', cfg);
+    }
+
+    // Geometría del mapa: viaja UNA vez por partida en el evento 'roomConfig'.
+    // Solo lo que no cambia al destroyse: id, caja y tipo. Ni hp ni life (eso
+    // cambia en vivo y va aparte, en gameState).
+    configEstatica() {
+        const geo = (arr) => arr.map(o => ({
+            id: o.id, x: o.x, y: o.y, w: o.w, h: o.h, tipo: o.tipo, maxHp: o.maxHp
+        }));
+        return {
+            v: this.configVersion,        // se incrementa en cada reset()
+            mapSize: MAP_SIZE,
+            bankZone: this.bankZone,
+            speedPads: this.speedPads,     // los turbos no se destruyen
+            obstacles: geo(this.obstacles),
+            walls: geo(this.walls)
+            // shopZones NO va aquí: las tiendas se reubican cuando se agota su
+            // life (update() → reubicarTienda), así que su x/y cambia en partida.
+        };
+    }
+
+    // Estado mutable del mapa, indexado por id: lo único que cambia al disparar.
+    // Con ROOMCONFIG_V2 activo el cliente junta esto con la geometría que ya
+    // tiene; si el flag está en false, getState() ignora esto y manda los
+    // arrays completos (reversión de emergencia).
+    estadoMapa() {
+        const hp = {};
+        for (const o of this.obstacles) hp[o.id] = o.hp;
+        const hpMuros = {};
+        for (const w of this.walls) hpMuros[w.id] = w.hp;
+        return { configVersion: this.configVersion, obstaculosHp: hp, murosHp: hpMuros };
+    }
+
     getState() {
+        // Con ROOMCONFIG_V2 la geometría no viaja aquí: solo el hp por id.
+        // Con el flag apagado se manda todo completo (reversión de emergencia).
+        const geo = ROOMCONFIG_V2 ? this.estadoMapa() : {
+            obstacles: this.obstacles,
+            walls: this.walls,
+            speedPads: this.speedPads,
+            bankZone: this.bankZone
+        };
         return {
             players: this.jugadoresRed(),
             droppedOrbGuns: this.droppedOrbGuns,
@@ -2266,12 +2342,13 @@ class GameRoom {
             zoneCy: this.zoneCy,
             zoneNext: this.zoneNext,
             mapSize: MAP_SIZE,
+            // Las tiendas siguen aquí completas: se reubican al expirar su life,
+            // así que su posición NO es geometría estática.
             shopZones: this.shopZones,
             hazardZones: this.hazardZones,
-            speedPads: this.speedPads,
             airdrops: this.airdrops,
-            obstacles: this.obstacles,
-            walls: this.walls,
+            // Geometría: solo hp por id (ROOMCONFIG_V2) o arrays completos.
+            ...geo,
             waitingTimer: this.waitingTimer,
             soloTimer: this.soloTimer,
             bombs: this.bombs,
@@ -2738,6 +2815,10 @@ io.on('connection', (socket) => {
 
         socket.join(room.id);
         socket.roomId = room.id;
+        // Geometría del mapa para este cliente concreto (recién unido o
+        // reconectado). Va antes que nada de gameState para que tenga el mapa
+        // ya montado cuando empiece a dibujar.
+        room.emitirConfig(socket);
         // Anticheat de skins: si la skin no es básica ni está en el inventario del jugador → básica
         const skinValidada = await validarSkinCliente(skin, socket.verifiedUid || (typeof uid === 'string' ? uid.slice(0, 128) : null));
         room.addPlayer(socket.id, nickFinal, skinValidada, socket.verifiedUid || (typeof uid === 'string' ? uid.slice(0, 128) : null));
@@ -2823,6 +2904,14 @@ io.on('connection', (socket) => {
         if (socket.roomId && rooms[socket.roomId]) {
             rooms[socket.roomId].handleRespawn(socket.id);
         }
+    });
+
+    socket.on('pedirConfig', () => {
+        const room = rooms[socket.roomId];
+        // El cliente lo pide cuando le falta la geometría o su configVersion no
+        // cuadra con la del gameState (mapas tras un reset). Es idempotente y
+        // barata; no filtra nada porque solo devuelve la sala del propio socket.
+        if (room) room.emitirConfig(socket);
     });
 
     socket.on('startGame', ({ roomId }) => {

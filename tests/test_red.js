@@ -21,8 +21,11 @@ const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 const game = fs.readFileSync(path.join(__dirname, '..', 'public', 'game.html'), 'utf8');
 
 // ── 1) Extraer jugadoresRed() y montarlo como método con `this` controlado ──
+// El corte va justo antes de emitirConfig(), el siguiente método de la clase:
+// antes el slice llegaba hasta getState() y arrastraba los métodos de roomConfig,
+// que al compilarlos dentro de una función suelta rompían el test.
 const ini = server.indexOf('    jugadoresRed() {');
-const fin = server.indexOf('    getState() {');
+const fin = server.indexOf('    emitirConfig(', ini);
 assert.ok(ini > 0 && fin > ini, 'No se encontró jugadoresRed() en server.js');
 const metodo = server.slice(ini, fin);
 // Solo el CUERPO del método: la firma ('jugadoresRed() {') no va dentro de la
@@ -105,6 +108,48 @@ check('TICK_EMITIR_CADA divide 2 → 30 Hz de emisión', /TICK_EMITIR_CADA = 2;/
 const dibujaCrudo = /ctx\.arc\(p\.x, p\.y/.test(game);
 check('el cliente dibuja p.x/p.y sin interpolar (riesgo 30 Hz asumido a conciencia)',
     dibujaCrudo && /NO interpola posiciones/.test(server));
+
+// ── 7) roomConfig: la geometría viaja una vez, no en cada gameState ──
+// El mapa NO es estático (muros/obstáculos se destruyen, tiendas se reubican),
+// así que lo que se separa es la GEOMETRÍA; el hp sigue en cada gameState.
+const cuerpoGetState = server.slice(server.indexOf('    getState() {'));
+check('existe el flag de reversión ROOMCONFIG_V2', /const ROOMCONFIG_V2 = (true|false);/.test(server));
+check('configEstatica() existe y manda geometría sin hp',
+    /configEstatica\(\)\s*\{/.test(server) && !/configEstatica\(\)\s*\{[\s\S]{0,600}?hp:/.test(server));
+check('la geometría se manda en el evento roomConfig',
+    /emit\('roomConfig'/.test(server));
+// El comentario de contexto ocupa 3 líneas, así que la ventana es amplia a
+// propósito: lo que importa es que la llamada siga al socket.join().
+check('se emite al unirse el jugador (no solo al arrancar la sala)',
+    /socket\.join\(room\.id\)[\s\S]{0,400}room\.emitirConfig\(socket\)/.test(server));
+check('se re-emite en reset() con la versión subida',
+    /this\.configVersion = \(this\.configVersion \|\| 0\) \+ 1;[\s\S]{0,80}?this\.emitirConfig\(\)/.test(server));
+check('el cliente puede pedirla si le falta (pedirConfig)',
+    /socket\.on\('pedirConfig'/.test(server) && /socket\.emit\('pedirConfig'/.test(game));
+// Con el flag activo, getState() NO debe reenviar la geometría como arrays.
+const flagActivo = /const ROOMCONFIG_V2 = true;/.test(server);
+// Con el flag activo, la rama del return NO debe reenviar los arrays: la
+// geometría tiene que entrar solo por ...geo. (La rama de reversión sí los
+// lleva a propósito, así que se cuenta aparte.)
+const ramaEstado = cuerpoGetState.slice(
+    cuerpoGetState.indexOf('const geo ='), cuerpoGetState.indexOf('return {'));
+const geomEnRetorno = /obstacles:\s*this\.obstacles,/.test(
+    cuerpoGetState.slice(cuerpoGetState.indexOf('return {')));
+check('con el flag activo getState() usa el hp indexado, no los arrays completos',
+    flagActivo
+        ? /const geo = ROOMCONFIG_V2 \? this\.estadoMapa\(\)/.test(ramaEstado) && !geomEnRetorno
+        : geomEnRetorno);
+check('las tiendas siguen viajando completas en gameState (se reubican)',
+    /shopZones:\s*this\.shopZones/.test(cuerpoGetState));
+// Cliente: combina geometría + hp, y tiene salida de emergencia.
+check('el cliente combina roomConfig con el hp del frame (combinarMapa)',
+    /function combinarMapa\(/.test(game) && /obstaculosHp/.test(game) && /murosHp/.test(game));
+check('el cliente dibuja los muros/obstáculos desde la geometría combinada',
+    /muros\.forEach\(wl =>/.test(game) && /obstaculos\.forEach\(obs =>/.test(game));
+check('si falta roomConfig el render cae a los arrays del gameState (no se rompe)',
+    /cfgOk\s*\?.*combinarMapa/.test(game) && /\(gameState\.obstacles \|\| \[\]\)/.test(game));
+check('el cliente pide la config como mucho una vez (sin bucle)',
+    /configPedida = true/.test(game));
 
 console.log('\n' + (fallos === 0 ? '✔ Todo correcto' : '✖ ' + fallos + ' fallo(s)'));
 process.exit(fallos === 0 ? 0 : 1);

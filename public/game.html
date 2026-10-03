@@ -3176,6 +3176,41 @@
         // ESTADO MULTIJUGADOR GLOBAL
         let myPlayerId = null;
         let gameState = null;
+        // Geometría del mapa, separada del estado volátil. Llega una vez por
+        // partida en 'roomConfig' (server.js → configEstatica()). No cambia al
+        // dispararse ni al reubicarse las tiendas, así que no tiene sentido
+        // reenviarla 30 veces/s. El gameState solo trae el hp por id; el render
+        // junta ambas piezas (ver combinarMapa()).
+        let roomConfig = null;
+        // ¿Pedimos ya la geometría? Evita el bucle de reintentos si el servidor
+        // está en reversión (ROOMCONFIG_V2 = false) y nunca contesta.
+        let configPedida = false;
+
+        // Une geometría (roomConfig) + hp actual (gameState) en la lista de
+        // obstáculos y muros lista para dibujar.
+        //
+        // - Si hay roomConfig: la geometría es la de roomConfig y el hp el de
+        //   este frame. Si el hp aún no llegó, se asume intacto (maxHp) para no
+        //   hacer parpadear un muro entero el primer instante.
+        // - Si NO hay roomConfig (servidor en reversión, o el paquete se perdió):
+        //   se usa el array completo que viene en gameState. El juego sigue
+        //   funcionando igual; por eso esto no puede romperse en silencio.
+        function combinarMapa(geo, hp) {
+            if (!geo || !geo.length) return [];
+            return geo.map(g => {
+                const st = hp && hp[g.id];
+                const vivo = st === undefined ? true : st > 0;
+                if (!vivo) return null;
+                return {
+                    x: g.x, y: g.y, w: g.w, h: g.h, tipo: g.tipo,
+                    // maxHp es geometría (no cambia): lo trae roomConfig. El hp
+                    // es lo único volátil. Si aún no llegó, se dibuja intacto
+                    // para no hacer parpadear todo el mapa el primer frame.
+                    hp: st === undefined ? g.maxHp : st,
+                    maxHp: g.maxHp
+                };
+            }).filter(Boolean);
+        }
         // Caché de imágenes de skins (PNG/JPG/GIF)
         const skinImages = {};
         let shakeIntensity = 0;
@@ -3504,6 +3539,20 @@
         });
         socket.on('shake', (amt) => { triggerShake(amt); if (navigator.vibrate) navigator.vibrate(40); });
 
+        // Geometría del mapa: llega una vez por partida (o en cada reset). Se guarda
+        // aparte porque no cambia entre frames; el gameState solo trae el hp.
+        socket.on('roomConfig', (cfg) => {
+            if (!cfg || !cfg.obstacles) return;
+            // Un roomConfig de una versión anterior al gameState que ya tengo
+            // sería geometría vieja: se descarta y se espera el bueno.
+            if (roomConfig && gameState && gameState.configVersion !== undefined &&
+                cfg.v !== undefined && cfg.v < gameState.configVersion) {
+                socket.emit('pedirConfig');
+                return;
+            }
+            roomConfig = cfg;
+        });
+
         socket.on('gameState', (state) => {
             gameState = state;
             // Primer estado recibido = arranque completo (sumar() es idempotente)
@@ -3515,6 +3564,13 @@
                 return;
             }
             updateHUD();
+            // Si el gameState trae hp indexado es que la geometría viene por
+            // roomConfig; si aún no la tengo, la pido una vez (configPedida
+            // impide el bucle si el servidor está en reversión y no contesta).
+            if (!roomConfig && state.obstaculosHp && !configPedida) {
+                configPedida = true;                 // una sola petición: evita bucle
+                socket.emit('pedirConfig');
+            }
         });
 
         socket.on('gameOver', (data) => {
@@ -3943,6 +3999,19 @@
 
             const me = gameState.players[myPlayerId] || { x: 2500, y: 2500 };
 
+            // Fuente única de la geometría del mapa para el render. Si hay roomConfig se
+            // combina con el hp del frame; si no (reversión o paquete perdido) se
+            // usan los arrays completos del propio gameState.
+            const cfgOk = roomConfig && roomConfig.obstacles;
+            const obstaculos = cfgOk
+                ? combinarMapa(roomConfig.obstacles, gameState.obstaculosHp)
+                : (gameState.obstacles || []);
+            const muros = cfgOk
+                ? combinarMapa(roomConfig.walls, gameState.murosHp)
+                : (gameState.walls || []);
+            const turbos = cfgOk ? (roomConfig.speedPads || []) : (gameState.speedPads || []);
+            const banco = cfgOk ? (roomConfig.bankZone || gameState.bankZone) : gameState.bankZone;
+
             if (gameState.lobbyActive || !gameState.gameStarted) return;
 
             if (shakeIntensity > 0) shakeIntensity *= 0.9;
@@ -3986,7 +4055,7 @@
 
             // Speed Pads (turbo): sprite estático + chevrones animados encima.
             // Fallback: rectángulo con chevrones originales si el PNG no cargó.
-            (gameState.speedPads || []).forEach(pad => {
+            turbos.forEach(pad => {
                 const conSprite = drawSprite('turbo', pad.x + pad.w / 2, pad.y + pad.h / 2, pad.w + 16, pad.h + 6);
                 if (!conSprite) {
                     ctx.fillStyle = 'rgba(250, 204, 21, 0.16)';
@@ -4010,7 +4079,7 @@
             // Muros destructibles: sprite metálico escalado + tint rojizo con el
             // daño (fallback: rectángulo original). La barra de vida sigue igual.
             // Los muros FINOS (hp 15) se tiñen más oscuros para distinguirlos.
-            (gameState.walls || []).forEach(wl => {
+            muros.forEach(wl => {
                 if (wl.hp <= 0) return;
                 const pctW = (wl.hp || 0) / (wl.maxHp || 30);
                 const fino = wl.tipo === 'fino' || (wl.maxHp || 30) < 20;
@@ -4118,7 +4187,7 @@
             }
 
             // Banco Central (círculo de zona + icono del sprite)
-            const bankZone = gameState.bankZone;
+            const bankZone = banco;
             if (bankZone) {
                 ctx.beginPath(); ctx.arc(bankZone.x, bankZone.y, bankZone.radius, 0, Math.PI * 2);
                 ctx.fillStyle = 'rgba(34, 197, 94, 0.15)'; ctx.fill();
@@ -4188,7 +4257,7 @@
                 moto: { lleno: '#7c3aed', roto: '#5b21b6', borde: '#c4b5fd' },
                 barril: { lleno: '#b91c1c', roto: '#7f1d1d', borde: '#fca5a5' }
             };
-            (gameState.obstacles || []).forEach(obs => {
+            obstaculos.forEach(obs => {
                 if (obs.hp <= 0) return;
                 const tipo = OBSTACULOS_FALLBACK[obs.tipo] ? obs.tipo : 'roca'; // sin tipo = roca
                 const fb = OBSTACULOS_FALLBACK[tipo];
@@ -4402,9 +4471,13 @@
                 miniCtx.beginPath(); miniCtx.arc(sz.x * scale, sz.y * scale, 3, 0, Math.PI * 2); miniCtx.fill();
             });
 
-            if (gameState.bankZone) {
+            // El banco sale de roomConfig si lo hay; si no, del propio gameState
+            // (reversión de emergencia o paquete perdido). Mismo patrón que
+            // render(), pero aquí sin acceso a las variables locales de aquel.
+            const bancoMini = (roomConfig && roomConfig.bankZone) || gameState.bankZone;
+            if (bancoMini) {
                 miniCtx.fillStyle = '#22c55e';
-                miniCtx.beginPath(); miniCtx.arc(gameState.bankZone.x * scale, gameState.bankZone.y * scale, 5, 0, Math.PI * 2); miniCtx.fill();
+                miniCtx.beginPath(); miniCtx.arc(bancoMini.x * scale, bancoMini.y * scale, 5, 0, Math.PI * 2); miniCtx.fill();
             }
 
             miniCtx.fillStyle = '#eab308';
