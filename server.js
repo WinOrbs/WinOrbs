@@ -307,6 +307,11 @@ const adminFailuresByIP = {};          // rate-limit del panel admin
 
 if (ADMIN_PASSWORD === "admin123" && !process.env.ADMIN_PASSWORD) {
     console.warn('⚠️  ADMIN: usando la contraseña por defecto "admin123". Define ADMIN_PASSWORD como variable de entorno.');
+    // Aviso extra: esta clave está en el repo, o sea es pública para cualquiera
+    // que lea el código. Con ella se entra al panel (crear salas, tocar la
+    // configuración de pagos). No es un problema de código: se arregla en el
+    // panel de Render → Environment → ADMIN_PASSWORD.
+    console.warn('🔴 ADMIN: con esta contraseña POR DEFECTO cualquiera que lea el repo puede entrar al panel. Define ADMIN_PASSWORD en Render.');
 }
 
 async function telegramNotify(message) {
@@ -2949,5 +2954,8 @@ io.on('connection', (socket) => {
 
 const PORT = Number(process.env.PORT) || 3000;
 server.listen(PORT, '0.0.0.0', () => {
-    console.log('Servidor WinOrbs corriendo en http://localhost:' + PORT);
+    // El mensaje antes decía "localhost" fijo, que en Render (donde PORT lo
+    // inyecta la plataforma) daba a entender que escuchaba en local. Se imprime
+    // el puerto real para que el log diga la verdad.
+    console.log('Servidor WinOrbs escuchando en el puerto ' + PORT);
 });
