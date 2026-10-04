@@ -27,7 +27,7 @@ app.set('trust proxy', 1);
 const server = http.createServer(app);
 // ── CORS ────────────────────────────────────────────────────────────────────
 // Frontend en producción: https://winorbs.pages.dev (Cloudflare Pages)
-// Backend: https://winorbs.onrender.com (Render).
+// Backend: https://winorbs-api.onrender.com (Render).
 // - CORS_ORIGIN="*" (defecto, dev) → refleja cualquier origen.
 // - CORS_ORIGIN="https://winorbs.pages.dev,https://xxx..." → solo esos.
 // Sin esto el polling XHR de Socket.IO falla con:
