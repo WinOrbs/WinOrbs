@@ -509,7 +509,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-        import { getFirestore, collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, increment, setDoc, getDoc, query, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, setDoc, getDoc, query, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
         
 
         // Configuración de Firebase (config pública, seguridad vía Firestore Rules)
@@ -711,26 +711,9 @@ const colorTipo = esRetiro ? '#ef4444' : esPremio ? '#f59e0b' : '#22c55e';
             }, (e) => errorReglas("partidas", e));
         }
 
-        window.pagarPremioPendiente = async function (gameId, ganadorNick, neto) {
-            try {
-                const q = query(collection(db, "usuarios"), where("apodo", "==", ganadorNick));
-                const res = await getDocs(q);
-                if (res.empty) { alert("No hay usuario con el apodo '" + ganadorNick + "'. Créditalo manualmente desde la tabla de usuarios."); return; }
-                if (res.size > 1) { alert("Hay " + res.size + " usuarios con el apodo '" + ganadorNick + "'. Usa 'Vincular UID y pagar' para elegir al ganador correcto."); return; }
-                const uidGanador = res.docs[0].id;
-                const snap = await getDoc(doc(db, "usuarios", uidGanador));
-                const saldo = Number((snap.data() || {}).saldo || 0);
-                const snapPart = await getDoc(doc(db, "partidas", gameId));
-                const pdata = snapPart.data() || {};
-                if (pdata.estado === "pagada") { alert("Esta partida ya fue pagada."); return; }
-                await updateDoc(doc(db, "usuarios", uidGanador), { saldo: +(saldo + Number(neto || 0)).toFixed(2) });
-                // NOTA: la comisión YA se contabilizó al crear la partida en el
-                // servidor, así que aquí NO se vuelve a sumar (evita duplicarla).
-                const comisionPart = Number(pdata.comision || 0);
-                await updateDoc(doc(db, "partidas", gameId), { estado: "pagada", ganadorUid: uidGanador, pagadoPorAdmin: true });
-                notificarTelegram(`🏆 <b>PREMIO PAGADO (manual)</b>\nPartida: ${gameId}\nGanador: ${ganadorNick}\nNeto: $${Number(neto || 0).toFixed(2)} USD\nComisión casa: $${comisionPart.toFixed(2)} USD`);
-                alert("Premio pagado al ganador.");
-            } catch (e) { alert("Error al pagar premio: " + (e.message || e)); }
+        window.pagarPremioPendiente = function (gameId, ganadorNick, neto) {
+            // La liquidación se ejecuta en Node.js con una transacción atómica.
+            socket.emit('adminConciliarPremios');
         };
 
         // Conciliación automática bajo demanda: el servidor paga los pendientes
