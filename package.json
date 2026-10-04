@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "build": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true});fs.cpSync('public','dist',{recursive:true});console.log('dist/ listo (copia de public/)')\"",
-    "check": "node tests/check_scripts.js && node tests/check_game_js.js && node tests/test_validation.js && node tests/test_types.js && node tests/test_transport_validation.js && node tests/test_game_domain.js && node tests/test_score_domain.js && node tests/test_combat_domain.js && node tests/test_identity_domain.js,
+    "check": "node tests/check_scripts.js && node tests/check_game_js.js && node tests/test_validation.js && node tests/test_types.js && node tests/test_transport_validation.js && node tests/test_game_domain.js && node tests/test_score_domain.js && node tests/test_combat_domain.js && node tests/test_identity_domain.js && node tests/test_results_domain.js",
     "test": "node tests/test_config_tasa.js && node tests/test_html_scripts.js && node tests/test_red.js",
     "test:live": "node tests/run_live.js",
     "banda": "node tools/medir_ancho.js",
@@ -17,7 +17,7 @@
     "test:security": "node tests/test_security_config.js",
     "test:validation": "node tests/test_validation.js",
     "test:types": "node tests/test_types.js",
-    "test:game": "node tests/test_game_domain.js && node tests/test_score_domain.js && node tests/test_combat_domain.js && node tests/test_identity_domain.js"
+    "test:game": "node tests/test_game_domain.js && node tests/test_score_domain.js && node tests/test_combat_domain.js && node tests/test_identity_domain.js && node tests/test_results_domain.js"
   },
   "keywords": [],
   "author": "",
