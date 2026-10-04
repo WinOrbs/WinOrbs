@@ -2686,6 +2686,8 @@ io.on('connection', (socket) => {
                 const sU = await t.get(refU);
                 if (!sU.exists) return { ok: false, error: 'USUARIO_NO_EXISTE' };
                 const saldo = Number(sU.data().saldo || 0);
+                const comision = tipo === 'retiro' ? +(monto * 0.2).toFixed(2) : 0;
+                const neto = tipo === 'retiro' ? +(monto - comision).toFixed(2) : null;
 
                 if (estadoSolicitado === 'aprobado' && tipo === 'deposito') {
                     const nuevoSaldo = +(saldo + monto).toFixed(2);
@@ -2699,8 +2701,6 @@ io.on('connection', (socket) => {
                     if (saldo < monto) return { ok: false, error: 'SALDO_INSUFICIENTE' };
                     const nuevoSaldo = +(saldo - monto).toFixed(2);
                     t.update(refU, { saldo: nuevoSaldo });
-                    const comision = +(monto * 0.2).toFixed(2);
-                    const neto = +(monto - comision).toFixed(2);
                     t.set(FIREBASE_DB.collection('movimientos').doc('mov_' + idPago), {
                         usuarioId: uid, tipo: 'retiro', monto: -monto,
                         detalle: 'Retiro pagado (neto ' + neto + ', comisión ' + comision + ')', refId: idPago,
