@@ -24,7 +24,7 @@ assert.doesNotMatch(source, /Cobro\/premio los gestiona el cliente/);
 
 assert.doesNotMatch(walletHtml, /runTransaction/);
 assert.doesNotMatch(walletHtml, /updateDoc\([^)]*usuarios/);
-assert.doesNotMatch(walletHtml, /usuarios\/[^^\n]*saldo/);
+assert.doesNotMatch(walletHtml, /usuarios\/[^\n]*saldo/);
 
 assert.match(source, /socket\.on\('adminProcesarPago'/);
 assert.match(source, /socket\.on\('adminAjustarSaldo'/);
