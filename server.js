@@ -2077,12 +2077,12 @@ class GameRoom {
             p.reloadWeapon = 0;
             p.respawnTimer = 0;
             p.canRespawn = false;
-            if (p.charge > 0) {
+            const loss = applyDeathLoss(p);
+            if (loss.lost > 0) {
                 this.droppedEnergy.push({
                     id: 'e_' + randID(),
-                    x: p.x, y: p.y, val: p.charge
+                    x: p.x, y: p.y, val: loss.lost
                 });
-                p.charge = 0;
             }
             const ownerSocket = io.sockets.sockets.get(ownerId);
             if (ownerSocket) {
@@ -2103,12 +2103,12 @@ class GameRoom {
         p.reloadWeapon = 0;
         p.respawnTimer = 0;
         p.canRespawn = false;
-        if (p.charge > 0) {
+        const loss = applyDeathLoss(p);
+        if (loss.lost > 0) {
             this.droppedEnergy.push({
                 id: 'e_' + randID(),
-                x: p.x, y: p.y, val: p.charge
+                x: p.x, y: p.y, val: loss.lost
             });
-            p.charge = 0;
         }
         if (postKill) postKill();
     }
