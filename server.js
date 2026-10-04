@@ -75,7 +75,7 @@ app.get('/ping', (req, res) => res.json({ ok: true, ts: Date.now() }));
 app.get('/status', async (req, res) => {
     const r = {
         firebase: !!FIREBASE_ECONOMY,
-        modo: FIREBASE_ECONOMY ? 'ECONOMIA' : 'DEGRADADO',
+        modo: FIREBASE_ECONOMY ? 'ECONOMIA' : 'DESHABILITADA',
         proyecto: null,
         firestore: { ok: false, latenciaMs: null, error: null }
     };
@@ -109,9 +109,9 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 // Modo ECONOMÍA ACTIVA: si hay clave de servicio (serviceAccountKey.json o
 // GOOGLE_APPLICATION_CREDENTIALS), el SERVIDOR cobra entradas y paga premios con
 // Admin SDK → inmune a hacks del cliente. El cliente YA NO puede subir su saldo.
-// Modo DEGRADADO (sin clave): funciona con los parches de Fase 0 (premio por
-// aprobación del admin). Genera la clave en Firebase Console → Configuración del
-// proyecto → Cuentas de servicio → Generar clave privada → serviceAccountKey.json
+// Sin clave de servicio: la economía real queda DESHABILITADA. No existe un
+// modo degradado que confíe en el cliente. Las salas con entrada monetaria no
+// pueden aceptar jugadores hasta que el Admin SDK esté configurado.
 // ─────────────────────────────────────────────────────────────────────────────
 let firebaseAdmin = null;
 let FIREBASE_DB = null;
@@ -391,7 +391,7 @@ async function validarSkinCliente(skin, uid) {
         if (SKINS_BASICAS[nombre]) return { nombre, ...SKINS_BASICAS[nombre] }; // gratis
         const id = String(skin.id || '').replace(/[^\w-]/g, '').slice(0, 64);
         // Skins básicas equipadas desde la Tienda viajan con id 'bas-*' (gratis y
-        // sin Firestore: funcionan incluso en modo economía degradado)
+        // sin Firestore: estas funciones quedan fuera del camino de economía real
         const basicaPorId = /^bas-(cielo|fuego|neon|esmeralda)$/.exec(id);
         if (basicaPorId) return { id, nombre: basicaPorId[1], ...SKINS_BASICAS[basicaPorId[1]] };
         if (!id || !FIREBASE_ECONOMY || !FIREBASE_DB) return SKIN_FALLBACK;
@@ -2678,6 +2678,9 @@ io.on('connection', (socket) => {
         }
 
         const roomConfig = validation.room;
+        if (roomConfig.precioEntrada > 0 && (!FIREBASE_ECONOMY || !FIREBASE_DB)) {
+            return socket.emit('errorMsg', 'Las salas con entrada monetaria requieren economía server-side configurada.');
+        }
         if (rooms[roomConfig.id]) {
             return socket.emit('errorMsg', 'ID de sala inválido o ya existe.');
         }
@@ -2861,7 +2864,12 @@ io.on('connection', (socket) => {
             } catch (e) { /* sin colección/reglas: no se bloquea el acceso */ }
         }
 
-        // Cobro de entrada en el SERVIDOR (modo economía) — el cliente ya no decide
+        // Las salas de pago nunca funcionan sin economía server-side: no se permite
+        // convertir una entrada monetaria en una partida gratuita por falta de credenciales.
+        if (room.entryFee > 0 && (!FIREBASE_ECONOMY || !FIREBASE_DB)) {
+            return socket.emit('errorMsg', 'Esta sala de pago no está disponible temporalmente.');
+        }
+        // Cobro de entrada en el SERVIDOR — el cliente ya no decide.
         if (room.entryFee > 0 && FIREBASE_ECONOMY && !socket.__entradaCobrada) {
             if (!socket.verifiedUid) {
                 return socket.emit('errorMsg', 'Las salas de pago requieren iniciar sesión con cuenta verificada.');
