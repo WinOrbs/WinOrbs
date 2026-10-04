@@ -4344,19 +4344,29 @@
 
             // Caché de imágenes de skins (PNG/JPG/GIF) — precarga perezosa
             Object.values(gameState.players).forEach(p => {
-                if (p.skin && p.skin.imagenUrl && !skinImages[p.skin.imagenUrl]) {
+                const visual = p.skin && p.skin.progressionReward;
+                const imageUrls = [
+                    p.skin && p.skin.imagenUrl,
+                    visual && visual.imageUrl
+                ].filter(Boolean);
+                imageUrls.forEach((imageUrl) => {
+                    if (skinImages[imageUrl]) return;
                     const img = new Image();
                     try { img.referrerPolicy = 'no-referrer'; } catch (e) { }
-                    img.src = p.skin.imagenUrl;
-                    skinImages[p.skin.imagenUrl] = img;
-                }
+                    img.src = imageUrl;
+                    skinImages[imageUrl] = img;
+                });
             });
 
             // Barra de estado: cuántas fotos de skins faltan por cargar
             (function () {
                 const urls = new Set();
                 Object.values(gameState.players).forEach(p => {
-                    if (!p.isDead && p.skin && p.skin.imagenUrl) urls.add(p.skin.imagenUrl);
+                    if (p.isDead || !p.skin) return;
+                    if (p.skin.imagenUrl) urls.add(p.skin.imagenUrl);
+                    if (p.skin.progressionReward && p.skin.progressionReward.imageUrl) {
+                        urls.add(p.skin.progressionReward.imageUrl);
+                    }
                 });
                 const total = urls.size;
                 let listas = 0;
@@ -4393,15 +4403,19 @@
                 ctx.fillText(p.nick, p.x, topY - 8);
 
                 ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                const progressionReward = p.skin && p.skin.progressionReward;
+                const rewardIsSkin = progressionReward && progressionReward.type === 'skin';
                 // Skin: gradiente radial c1 → c2 con borde del color de la skin
-                const skC1 = (p.skin && p.skin.c1) ? p.skin.c1 : '#38bdf8';
-                const skC2 = (p.skin && p.skin.c2) ? p.skin.c2 : skC1;
-                const skBorder = (p.skin && p.skin.border) ? p.skin.border : '#fff';
+                const skC1 = rewardIsSkin ? progressionReward.c1 : (p.skin && p.skin.c1) ? p.skin.c1 : '#38bdf8';
+                const skC2 = rewardIsSkin ? progressionReward.c2 : (p.skin && p.skin.c2) ? p.skin.c2 : skC1;
+                const skBorder = rewardIsSkin ? progressionReward.border : (p.skin && p.skin.border) ? p.skin.border : '#fff';
                 // Si la skin tiene imagen LISTA (PNG/JPG/GIF), se pinta SOLO la imagen:
                 // sin fondo de color detrás, así la transparencia del PNG deja ver el
                 // mapa. El orbe de color queda solo como respaldo (sin imagen o mientras
                 // carga), para que ningún jugador quede invisible.
-                const skUrl = p.skin && p.skin.imagenUrl;
+                const skUrl = rewardIsSkin
+                    ? progressionReward.imageUrl
+                    : p.skin && p.skin.imagenUrl;
                 const skImg = skUrl ? skinImages[skUrl] : null;
                 const skinLista = !!(skImg && skImg.complete && skImg.naturalWidth > 0);
                 if (skinLista) {
@@ -4424,8 +4438,15 @@
                     ctx.fillStyle = gradOrbe;
                     ctx.fill();
                 }
-                const auraColor = p.skin && p.skin.aura && p.skin.aura.color;
-                if (typeof auraColor === 'string' && /^#[0-9a-f]{6}$/i.test(auraColor)) {
+                const auraColor = progressionReward && progressionReward.type === 'aura' && progressionReward.color;
+                const auraImage = auraColor && progressionReward.imageUrl && skinImages[progressionReward.imageUrl];
+                if (auraImage && auraImage.complete && auraImage.naturalWidth > 0) {
+                    ctx.save();
+                    const auraSize = p.radius * 3.2;
+                    ctx.globalAlpha = 0.85;
+                    ctx.drawImage(auraImage, p.x - auraSize / 2, p.y - auraSize / 2, auraSize, auraSize);
+                    ctx.restore();
+                } else if (typeof auraColor === 'string' && /^#[0-9a-f]{6}$/i.test(auraColor)) {
                     ctx.save();
                     ctx.globalAlpha = 0.72 + Math.sin(Date.now() / 240) * 0.18;
                     ctx.shadowBlur = 18;

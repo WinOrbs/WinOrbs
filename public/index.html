@@ -235,7 +235,9 @@
         .progression-reward-orb {
             flex: 0 0 auto; width: 17px; height: 17px; border-radius: 50%;
             border: 2px solid currentColor; box-shadow: 0 0 10px currentColor;
+            overflow: hidden;
         }
+        .progression-reward-orb img { width: 100%; height: 100%; object-fit: cover; }
         .progression-action {
             padding: 8px 11px; border: 1px solid var(--line-glow); border-radius: 9px;
             color: var(--cyan); background: rgba(56, 189, 248, .08); font: 600 12px var(--font-display);
@@ -835,13 +837,13 @@
                         <div class="progression-bar-fill" id="progresion-bar-fill"></div>
                     </div>
                     <p class="progression-xp" id="progresion-siguiente">150 XP para el nivel 2</p>
-                    <h3 style="margin-top:16px">Auras desbloqueables</h3>
+                    <h3 style="margin-top:16px">Apariencias desbloqueables</h3>
                     <ul class="progression-rewards" id="progresion-recompensas"></ul>
-                    <label for="progresion-aura" class="progression-xp">Aura equipada en tu personaje</label>
+                    <label for="progresion-aura" class="progression-xp">Apariencia de nivel equipada en tu personaje</label>
                     <select id="progresion-aura" class="progression-aura-select" disabled>
-                        <option value="">Sin aura</option>
+                        <option value="">Apariencia base</option>
                     </select>
-                    <button class="progression-action" id="progresion-equipar" type="button" disabled>Equipar aura</button>
+                    <button class="progression-action" id="progresion-equipar" type="button" disabled>Equipar apariencia</button>
                     <p class="progression-message" id="progresion-mensaje" aria-live="polite">Cargando tu progreso…</p>
                 </section>
 
@@ -890,20 +892,22 @@
             { id: 'top-three', description: 'Queda entre los 3 primeros', xp: 35, target: 1, stat: 'topThree' },
             { id: 'two-eliminations', description: 'Consigue 2 eliminaciones en el día', xp: 45, target: 2, stat: 'eliminations' }
         ];
-        const AURAS_BASE = [
+        const VISUAL_REWARDS_BASE = [
             [10, 'Pulso Cian', '#22d3ee'], [20, 'Brote Esmeralda', '#34d399'],
             [30, 'Vórtice Violeta', '#a78bfa'], [40, 'Llama Carmesí', '#fb7185'],
             [50, 'Corona Solar', '#fbbf24'], [60, 'Núcleo Glacial', '#7dd3fc'],
             [70, 'Pulso Magenta', '#e879f9'], [80, 'Energía Lima', '#a3e635'],
             [90, 'Luz Carmesí', '#f87171'], [100, 'Aura Prisma', '#f8fafc']
-        ].map(([level, name, color]) => ({ id: 'level-aura-' + level, level, name, color }));
+        ].map(([level, name, color]) => ({
+            id: 'level-aura-' + level, level, type: 'aura', name, color, imageUrl: '', c1: color, c2: color, border: color
+        }));
 
         window.__renderProgresion = function (progress) {
             progress = progress || {};
             window.__progresionActual = progress;
             const config = window.__progresionConfig || {};
             const missions = Array.isArray(config.dailyMissions) ? config.dailyMissions : MISIONES_BASE;
-            const auraRewards = Array.isArray(config.auraRewards) ? config.auraRewards : AURAS_BASE;
+            const visualRewards = Array.isArray(config.visualRewards) ? config.visualRewards : VISUAL_REWARDS_BASE;
             const xp = Math.max(0, Number(progress.xp) || 0);
             const maxLevel = Math.max(1, Number(config.maxLevel) || 100);
             let level = 1, xpAtLevel = 0;
@@ -955,49 +959,62 @@
                 missionList.appendChild(item);
             });
 
-            const unlocked = Array.isArray(progress.unlockedAuras) ? progress.unlockedAuras : [];
+            const unlocked = Array.isArray(progress.unlockedRewards)
+                ? progress.unlockedRewards
+                : (Array.isArray(progress.unlockedAuras) ? progress.unlockedAuras : []);
             const unlockedById = new Map(unlocked.map((aura) => [aura.id, aura]));
             const rewardList = document.getElementById('progresion-recompensas');
             rewardList.replaceChildren();
-            auraRewards.forEach((aura) => {
-                const owned = unlockedById.get(aura.id);
+            visualRewards.forEach((reward) => {
+                const owned = unlockedById.get(reward.id);
                 const item = document.createElement('li');
                 item.className = 'progression-reward' + (owned ? ' unlocked' : '');
                 const orb = document.createElement('span');
                 orb.className = 'progression-reward-orb';
-                if (owned && /^#[0-9a-f]{6}$/i.test(owned.color)) {
-                    orb.style.color = owned.color;
-                    orb.style.backgroundColor = owned.color;
+                const configuredImage = typeof reward.imageUrl === 'string' &&
+                    /^https:\/\/[^\s'"<>]{10,500}$/i.test(reward.imageUrl) ? reward.imageUrl : '';
+                const previousImage = owned && typeof owned.imageUrl === 'string' &&
+                    /^https:\/\/[^\s'"<>]{10,500}$/i.test(owned.imageUrl) ? owned.imageUrl : '';
+                const imageUrl = configuredImage || previousImage;
+                if (imageUrl) {
+                    const image = document.createElement('img');
+                    image.src = imageUrl;
+                    image.alt = '';
+                    image.loading = 'lazy';
+                    orb.appendChild(image);
+                } else if (/^#[0-9a-f]{6}$/i.test(reward.color)) {
+                    orb.style.color = reward.color;
+                    orb.style.backgroundColor = reward.color;
                 }
                 const label = document.createElement('span');
-                label.textContent = (owned ? owned.name : 'Aura') + ' · Nivel ' + aura.level;
+                label.textContent = (owned ? reward.name : (reward.type === 'skin' ? 'Skin' : 'Aura')) + ' · Nivel ' + reward.level;
                 item.append(orb, label);
                 rewardList.appendChild(item);
             });
 
-            const auraSelect = document.getElementById('progresion-aura');
-            const equipped = progress.equippedAura || '';
-            auraSelect.replaceChildren();
-            const noAura = document.createElement('option');
-            noAura.value = '';
-            noAura.textContent = 'Sin aura';
-            auraSelect.appendChild(noAura);
-            unlocked.forEach((aura) => {
+            const rewardSelect = document.getElementById('progresion-aura');
+            const equipped = progress.equippedReward || progress.equippedAura || '';
+            rewardSelect.replaceChildren();
+            const noReward = document.createElement('option');
+            noReward.value = '';
+            noReward.textContent = 'Apariencia base';
+            rewardSelect.appendChild(noReward);
+            unlocked.forEach((reward) => {
                 const option = document.createElement('option');
-                option.value = aura.id;
-                option.textContent = aura.name;
-                auraSelect.appendChild(option);
+                option.value = reward.id;
+                const configured = visualRewards.find((item) => item.id === reward.id) || reward;
+                option.textContent = (configured.type === 'skin' ? 'Skin: ' : 'Aura: ') + configured.name;
+                rewardSelect.appendChild(option);
             });
-            auraSelect.value = equipped;
-            auraSelect.disabled = unlocked.length === 0;
-            document.getElementById('progresion-equipar').disabled = unlocked.length === 0;
-
-            const selectedSkin = window.skinSeleccionada || {};
-            selectedSkin.auraId = equipped;
-            window.skinSeleccionada = selectedSkin;
-            try { localStorage.setItem('mi_skin_equipada', JSON.stringify(selectedSkin)); }
-            catch (e) { console.warn('No se pudo guardar el aura equipada localmente:', e.message); }
+            rewardSelect.value = equipped;
+            rewardSelect.disabled = false;
+            document.getElementById('progresion-equipar').disabled = false;
         };
+
+        socket.on('progressionConfigUpdated', (config) => {
+            window.__progresionConfig = config || {};
+            if (window.__progresionActual) window.__renderProgresion(window.__progresionActual);
+        });
 
         socket.on('rankingGlobal', (result) => {
             window.__rankingRequestPending = false;
@@ -1047,14 +1064,14 @@
                 : 'Tu posición aparecerá al completar tu primera misión.';
         });
 
-        socket.on('progressionAuraEquipped', (result) => {
+        socket.on('progressionRewardEquipped', (result) => {
             const button = document.getElementById('progresion-equipar');
             button.disabled = false;
             document.getElementById('progresion-mensaje').textContent = result && result.ok
-                ? 'Aura equipada. La verás en tu próximo personaje.'
+                ? 'Apariencia equipada. La verás en tu próximo personaje.'
                 : result && result.error === 'PROGRESSION_OFF'
                     ? 'El progreso no está disponible temporalmente.'
-                    : 'No se pudo equipar el aura. Comprueba que esté desbloqueada.';
+                    : 'No se pudo equipar. Comprueba que la recompensa esté desbloqueada.';
         });
 
         document.getElementById('progresion-actualizar-ranking').addEventListener('click', () => {
@@ -1078,9 +1095,9 @@
                 document.getElementById('progresion-mensaje').textContent = 'Inicia sesión para equipar el aura.';
                 return;
             }
-            socket.emit('equipProgressionAura', {
+            socket.emit('equipProgressionReward', {
                 token,
-                auraId: document.getElementById('progresion-aura').value || null
+                rewardId: document.getElementById('progresion-aura').value || null
             });
         });
 

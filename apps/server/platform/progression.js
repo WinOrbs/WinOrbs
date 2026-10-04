@@ -12,18 +12,44 @@ const DAILY_MISSIONS = Object.freeze([
     Object.freeze({ id: 'two-eliminations', description: 'Consigue 2 eliminaciones en el día', xp: 45, target: 2, stat: 'eliminations' })
 ]);
 
-const AURA_REWARDS = Object.freeze([
-    Object.freeze({ id: 'level-aura-10', level: 10, name: 'Pulso Cian', color: '#22d3ee' }),
-    Object.freeze({ id: 'level-aura-20', level: 20, name: 'Brote Esmeralda', color: '#34d399' }),
-    Object.freeze({ id: 'level-aura-30', level: 30, name: 'Vórtice Violeta', color: '#a78bfa' }),
-    Object.freeze({ id: 'level-aura-40', level: 40, name: 'Llama Carmesí', color: '#fb7185' }),
-    Object.freeze({ id: 'level-aura-50', level: 50, name: 'Corona Solar', color: '#fbbf24' }),
-    Object.freeze({ id: 'level-aura-60', level: 60, name: 'Núcleo Glacial', color: '#7dd3fc' }),
-    Object.freeze({ id: 'level-aura-70', level: 70, name: 'Pulso Magenta', color: '#e879f9' }),
-    Object.freeze({ id: 'level-aura-80', level: 80, name: 'Energía Lima', color: '#a3e635' }),
-    Object.freeze({ id: 'level-aura-90', level: 90, name: 'Luz Carmesí', color: '#f87171' }),
-    Object.freeze({ id: 'level-aura-100', level: 100, name: 'Aura Prisma', color: '#f8fafc' })
+const DEFAULT_VISUAL_REWARDS = Object.freeze([
+    Object.freeze({ id: 'level-aura-10', level: 10, type: 'aura', name: 'Pulso Cian', color: '#22d3ee', imageUrl: '' }),
+    Object.freeze({ id: 'level-aura-20', level: 20, type: 'aura', name: 'Brote Esmeralda', color: '#34d399', imageUrl: '' }),
+    Object.freeze({ id: 'level-aura-30', level: 30, type: 'aura', name: 'Vórtice Violeta', color: '#a78bfa', imageUrl: '' }),
+    Object.freeze({ id: 'level-aura-40', level: 40, type: 'aura', name: 'Llama Carmesí', color: '#fb7185', imageUrl: '' }),
+    Object.freeze({ id: 'level-aura-50', level: 50, type: 'aura', name: 'Corona Solar', color: '#fbbf24', imageUrl: '' }),
+    Object.freeze({ id: 'level-aura-60', level: 60, type: 'aura', name: 'Núcleo Glacial', color: '#7dd3fc', imageUrl: '' }),
+    Object.freeze({ id: 'level-aura-70', level: 70, type: 'aura', name: 'Pulso Magenta', color: '#e879f9', imageUrl: '' }),
+    Object.freeze({ id: 'level-aura-80', level: 80, type: 'aura', name: 'Energía Lima', color: '#a3e635', imageUrl: '' }),
+    Object.freeze({ id: 'level-aura-90', level: 90, type: 'aura', name: 'Luz Carmesí', color: '#f87171', imageUrl: '' }),
+    Object.freeze({ id: 'level-aura-100', level: 100, type: 'aura', name: 'Aura Prisma', color: '#f8fafc', imageUrl: '' })
 ]);
+
+function sanitizeVisualRewards(value) {
+    const source = Array.isArray(value) ? value : [];
+    return Object.freeze(DEFAULT_VISUAL_REWARDS.map((fallback) => {
+        const item = source.find((reward) => reward && reward.level === fallback.level) || {};
+        const imageUrl = typeof item.imageUrl === 'string' &&
+            /^https:\/\/[^\s'"<>]{10,500}$/i.test(item.imageUrl.trim()) &&
+            encodeURIComponent(item.imageUrl.trim()).length <= 260
+            ? item.imageUrl.trim()
+            : '';
+        const color = typeof item.color === 'string' && /^#[0-9a-f]{6}$/i.test(item.color)
+            ? item.color
+            : fallback.color;
+        return Object.freeze({
+            id: fallback.id,
+            level: fallback.level,
+            type: item.type === 'skin' ? 'skin' : 'aura',
+            name: String(item.name || fallback.name).replace(/[<>&"'`]/g, '').trim().slice(0, 32) || fallback.name,
+            color,
+            imageUrl,
+            c1: typeof item.c1 === 'string' && /^#[0-9a-f]{6}$/i.test(item.c1) ? item.c1 : color,
+            c2: typeof item.c2 === 'string' && /^#[0-9a-f]{6}$/i.test(item.c2) ? item.c2 : color,
+            border: typeof item.border === 'string' && /^#[0-9a-f]{6}$/i.test(item.border) ? item.border : color
+        });
+    }));
+}
 
 function normalizedXp(value) {
     const xp = Number(value);
@@ -81,9 +107,9 @@ function freshDailyProgress(date) {
     };
 }
 
-function applyMatch(progress, match, date = utcDay()) {
+function applyMatch(progress, match, date = utcDay(), visualRewards = DEFAULT_VISUAL_REWARDS) {
     if (!progress || typeof progress !== 'object' || !match || typeof match !== 'object') {
-        return { xpAwarded: 0, completedMissions: [], unlockedAuras: [] };
+        return { xpAwarded: 0, completedMissions: [], unlockedRewards: [] };
     }
 
     const daily = progress.daily && progress.daily.date === date
@@ -124,14 +150,18 @@ function applyMatch(progress, match, date = utcDay()) {
         progress.level = beforeLevel;
     }
 
-    const unlocked = Array.isArray(progress.unlockedAuras) ? progress.unlockedAuras : [];
-    const unlockedAuras = AURA_REWARDS.filter((reward) =>
+    const unlocked = Array.isArray(progress.unlockedRewards)
+        ? progress.unlockedRewards
+        : (Array.isArray(progress.unlockedAuras) ? progress.unlockedAuras : []);
+    const configuredRewards = sanitizeVisualRewards(visualRewards);
+    const unlockedRewards = configuredRewards.filter((reward) =>
         reward.level <= progress.level &&
         !unlocked.some((aura) => aura && aura.id === reward.id)
     );
-    progress.unlockedAuras = unlocked.concat(unlockedAuras);
+    progress.unlockedRewards = unlocked.concat(unlockedRewards);
+    progress.unlockedAuras = progress.unlockedRewards;
 
-    return { xpAwarded, completedMissions, unlockedAuras };
+    return { xpAwarded, completedMissions, unlockedRewards };
 }
 
 function rankEntries(entries, limit = 20) {
@@ -154,11 +184,12 @@ function rankEntries(entries, limit = 20) {
 module.exports = Object.freeze({
     MAX_LEVEL,
     DAILY_MISSIONS,
-    AURA_REWARDS,
+    DEFAULT_VISUAL_REWARDS,
     addXp,
     applyMatch,
     levelForXp,
     rankEntries,
+    sanitizeVisualRewards,
     snapshot,
     utcDay,
     xpForNextLevel

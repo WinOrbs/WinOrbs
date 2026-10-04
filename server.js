@@ -18,11 +18,12 @@ const { extractIdToken, canBindUid } = require('./apps/server/identity');
 const { lockResult } = require('./apps/server/game/results');
 const { createAuditEvent } = require('./apps/server/platform/audit');
 const {
-    AURA_REWARDS,
+    DEFAULT_VISUAL_REWARDS,
     DAILY_MISSIONS,
     MAX_LEVEL,
     applyMatch,
     rankEntries,
+    sanitizeVisualRewards,
     utcDay
 } = require('./apps/server/platform/progression');
 const crypto = require('crypto');
@@ -125,6 +126,7 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 let firebaseAdmin = null;
 let FIREBASE_DB = null;
 let FIREBASE_ECONOMY = false;
+let PROGRESSION_REWARDS = sanitizeVisualRewards(DEFAULT_VISUAL_REWARDS);
 try {
     firebaseAdmin = require('firebase-admin');
     // Busca la clave de servicio en varios sitios (local y Render):
@@ -207,6 +209,17 @@ try {
     if (sa) {
         FIREBASE_DB = firebaseAdmin.firestore();
         FIREBASE_ECONOMY = true;
+        FIREBASE_DB.collection('configuracion').doc('progresion').onSnapshot((snapshot) => {
+            if (!snapshot.exists) return;
+            PROGRESSION_REWARDS = sanitizeVisualRewards((snapshot.data() || {}).recompensas);
+            io.emit('progressionConfigUpdated', {
+                visualRewards: PROGRESSION_REWARDS,
+                dailyMissions: DAILY_MISSIONS,
+                maxLevel: MAX_LEVEL
+            });
+        }, (error) => {
+            console.error('[PROGRESSION] Could not watch visual reward configuration:', error.message);
+        });
         console.log('[FIREBASE] Modo economía SEGURA activado (Admin SDK). El servidor maneja entradas y premios.');
     } else {
         console.log('[FIREBASE] Sin clave de servicio: ECONOMÍA DESHABILITADA. Entradas y premios no se liquidan hasta configurar Admin SDK; el cliente nunca gestiona dinero.');
@@ -366,10 +379,19 @@ function sanitizeSkin(skin) {
         if (/^https:\/\/[^\s'"<>]{10,500}$/i.test(url) && encodeURIComponent(url).length <= 260) {
             out.imagenUrl = url;
         }
-        const aura = skin.aura;
-        const auraReward = aura && AURA_REWARDS.find((reward) => reward.id === aura.id);
-        if (auraReward) {
-            out.aura = { id: auraReward.id, color: auraReward.color };
+        const visual = skin.progressionReward;
+        const visualReward = visual && PROGRESSION_REWARDS.find((reward) => reward.id === visual.id);
+        if (visualReward) {
+            out.progressionReward = {
+                id: visualReward.id,
+                type: visualReward.type,
+                name: visualReward.name,
+                color: visualReward.color,
+                c1: visualReward.c1,
+                c2: visualReward.c2,
+                border: visualReward.border,
+                imageUrl: visualReward.imageUrl
+            };
         }
     }
     return Object.keys(out).length ? out : { c1: '#38bdf8', c2: '#0284c7', border: '#bae6fd' };
@@ -394,19 +416,32 @@ function sanitizeHex(v, fallback) {
 
 const SKIN_FALLBACK = { nombre: 'cielo', ...SKINS_BASICAS.cielo };
 
-async function auraProgresionEquipada(uid) {
+async function recompensaVisualEquipada(uid) {
     if (!uid || !FIREBASE_ECONOMY || !FIREBASE_DB) return null;
     try {
         const snap = await FIREBASE_DB.collection('progresion').doc(uid).get();
         const progress = snap.exists ? (snap.data() || {}) : {};
-        const reward = AURA_REWARDS.find((item) => item.id === progress.equippedAura);
+        const reward = PROGRESSION_REWARDS.find((item) =>
+            item.id === (progress.equippedReward || progress.equippedAura)
+        );
         if (!reward) return null;
-        const unlocked = Array.isArray(progress.unlockedAuras) &&
-            progress.unlockedAuras.some((aura) => aura && aura.id === reward.id);
+        const unlockedRewards = Array.isArray(progress.unlockedRewards)
+            ? progress.unlockedRewards
+            : (Array.isArray(progress.unlockedAuras) ? progress.unlockedAuras : []);
+        const unlocked = unlockedRewards.some((item) => item && item.id === reward.id);
         if (!unlocked || Number(progress.level) < reward.level) return null;
-        return { id: reward.id, color: reward.color };
+        return {
+            id: reward.id,
+            type: reward.type,
+            name: reward.name,
+            color: reward.color,
+            c1: reward.c1,
+            c2: reward.c2,
+            border: reward.border,
+            imageUrl: reward.imageUrl
+        };
     } catch (e) {
-        console.error('[PROGRESSION] Could not validate an equipped aura:', e.message);
+        console.error('[PROGRESSION] Could not validate equipped visual reward:', e.message);
         return null;
     }
 }
@@ -450,8 +485,8 @@ async function validarSkinCliente(skin, uid) {
             }
         }
         if (!validatedSkin) validatedSkin = SKIN_FALLBACK;
-        const aura = await auraProgresionEquipada(uid);
-        return aura ? Object.assign({}, validatedSkin, { aura }) : validatedSkin;
+        const progressionReward = await recompensaVisualEquipada(uid);
+        return progressionReward ? Object.assign({}, validatedSkin, { progressionReward }) : validatedSkin;
     } catch (e) {
         return SKIN_FALLBACK;
     }
@@ -642,9 +677,10 @@ async function servidorProcesarMisionDePartida(uid, match) {
                 xp: stored.xp,
                 level: stored.level,
                 daily: stored.daily,
+                unlockedRewards: stored.unlockedRewards,
                 unlockedAuras: Array.isArray(stored.unlockedAuras) ? stored.unlockedAuras : []
             };
-            const result = applyMatch(progress, match, utcDay(match.completedAt));
+            const result = applyMatch(progress, match, utcDay(match.completedAt), PROGRESSION_REWARDS);
             const profile = userSnap.data() || {};
             transaction.create(claimRef, {
                 gameId: String(match.gameId).slice(0, 160),
@@ -655,8 +691,9 @@ async function servidorProcesarMisionDePartida(uid, match) {
                 xp: progress.xp,
                 level: progress.level,
                 daily: progress.daily,
+                unlockedRewards: progress.unlockedRewards,
                 unlockedAuras: progress.unlockedAuras,
-                equippedAura: stored.equippedAura || null,
+                equippedReward: stored.equippedReward || stored.equippedAura || null,
                 apodo: sanitizeNick(profile.apodo || match.nickname),
                 updatedAt: firebaseAdmin.firestore.FieldValue.serverTimestamp()
             }, { merge: true });
@@ -664,7 +701,7 @@ async function servidorProcesarMisionDePartida(uid, match) {
                 ok: true,
                 xpAwarded: result.xpAwarded,
                 completedMissions: result.completedMissions,
-                unlockedAuras: result.unlockedAuras.map((aura) => aura.id)
+                unlockedRewards: result.unlockedRewards.map((reward) => reward.id)
             };
         });
     } catch (e) {
@@ -2694,7 +2731,11 @@ io.on('connection', (socket) => {
     socket.adminAuthenticatedAt = 0;
     socket.emit('serverConfig', {
         economy: FIREBASE_ECONOMY,
-        progression: { maxLevel: MAX_LEVEL, dailyMissions: DAILY_MISSIONS, auraRewards: AURA_REWARDS }
+        progression: {
+            maxLevel: MAX_LEVEL,
+            dailyMissions: DAILY_MISSIONS,
+            visualRewards: PROGRESSION_REWARDS
+        }
     });
     socket.emit('roomsList', Object.values(rooms).map(r => r.getSummary()));
 
@@ -2752,24 +2793,24 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('equipProgressionAura', async (payload = {}) => {
+    socket.on('equipProgressionReward', async (payload = {}) => {
         const now = Date.now();
         if (now - (socket.__auraEquipAt || 0) < 500) {
-            return socket.emit('progressionAuraEquipped', { ok: false, error: 'RATE_LIMIT' });
+            return socket.emit('progressionRewardEquipped', { ok: false, error: 'RATE_LIMIT' });
         }
         socket.__auraEquipAt = now;
         const request = payload && typeof payload === 'object' ? payload : {};
         const token = typeof request.token === 'string' ? request.token : '';
-        const auraId = request.auraId === null || request.auraId === '' ? null : request.auraId;
+        const rewardId = request.rewardId === null || request.rewardId === '' ? null : request.rewardId;
         if (!FIREBASE_ECONOMY || !FIREBASE_DB) {
-            return socket.emit('progressionAuraEquipped', { ok: false, error: 'PROGRESSION_OFF' });
+            return socket.emit('progressionRewardEquipped', { ok: false, error: 'PROGRESSION_OFF' });
         }
         if (!token || token.length > 8192) {
-            return socket.emit('progressionAuraEquipped', { ok: false, error: 'NO_AUTH' });
+            return socket.emit('progressionRewardEquipped', { ok: false, error: 'NO_AUTH' });
         }
-        const aura = auraId === null ? null : AURA_REWARDS.find((reward) => reward.id === auraId);
-        if (auraId !== null && !aura) {
-            return socket.emit('progressionAuraEquipped', { ok: false, error: 'INVALID_AURA' });
+        const reward = rewardId === null ? null : PROGRESSION_REWARDS.find((item) => item.id === rewardId);
+        if (rewardId !== null && !reward) {
+            return socket.emit('progressionRewardEquipped', { ok: false, error: 'INVALID_REWARD' });
         }
         try {
             const decoded = await firebaseAdmin.auth().verifyIdToken(token);
@@ -2778,21 +2819,23 @@ io.on('connection', (socket) => {
                 const progressSnap = await transaction.get(progressRef);
                 if (!progressSnap.exists) return { ok: false, error: 'NO_PROGRESS' };
                 const progress = progressSnap.data() || {};
-                const unlocked = Array.isArray(progress.unlockedAuras) &&
-                    progress.unlockedAuras.some((item) => item && item.id === auraId);
-                if (aura && (!unlocked || Number(progress.level) < aura.level)) {
-                    return { ok: false, error: 'AURA_LOCKED' };
+                const unlockedRewards = Array.isArray(progress.unlockedRewards)
+                    ? progress.unlockedRewards
+                    : (Array.isArray(progress.unlockedAuras) ? progress.unlockedAuras : []);
+                const unlocked = unlockedRewards.some((item) => item && item.id === rewardId);
+                if (reward && (!unlocked || Number(progress.level) < reward.level)) {
+                    return { ok: false, error: 'REWARD_LOCKED' };
                 }
                 transaction.update(progressRef, {
-                    equippedAura: auraId,
+                    equippedReward: rewardId,
                     updatedAt: firebaseAdmin.firestore.FieldValue.serverTimestamp()
                 });
-                return { ok: true, auraId };
+                return { ok: true, rewardId };
             });
-            socket.emit('progressionAuraEquipped', result);
+            socket.emit('progressionRewardEquipped', result);
         } catch (e) {
-            console.error('[PROGRESSION] Could not equip account aura:', e.message);
-            socket.emit('progressionAuraEquipped', { ok: false, error: 'SAVE_FAILED' });
+            console.error('[PROGRESSION] Could not equip account visual reward:', e.message);
+            socket.emit('progressionRewardEquipped', { ok: false, error: 'SAVE_FAILED' });
         }
     });
 
@@ -3260,8 +3303,8 @@ io.on('connection', (socket) => {
                 return socket.emit('errorMsg', 'Esa cuenta ya está jugando en esta sala.');
             }
             p.uid = socket.verifiedUid;
-            const aura = await auraProgresionEquipada(socket.verifiedUid);
-            p.skin = sanitizeSkin(Object.assign({}, p.skin, { aura }));
+            const progressionReward = await recompensaVisualEquipada(socket.verifiedUid);
+            p.skin = sanitizeSkin(Object.assign({}, p.skin, { progressionReward }));
         }
 
         // Cobro diferido: llegó el token después del join en una sala de pago

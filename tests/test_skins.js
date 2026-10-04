@@ -21,7 +21,12 @@ function check(nombre, cond) {
     if (cierre < 0) throw new Error('No se encontró el cierre de validarSkinCliente');
     const bloque = server.slice(ini, cierre + 2);
 
-    const sandbox = { FIREBASE_ECONOMY: false, FIREBASE_DB: null };
+    const sandbox = {
+        FIREBASE_ECONOMY: false,
+        FIREBASE_DB: null,
+        PROGRESSION_REWARDS: [],
+        recompensaVisualEquipada: async () => null
+    };
     vm.createContext(sandbox);
     vm.runInContext(bloque, sandbox, { filename: 'server.js#skins' });
     const validar = sandbox.validarSkinCliente;
@@ -151,6 +156,29 @@ function check(nombre, cond) {
         sanear({ c1: '#38bdf8', imagenUrl: 'https://example.com/' + 'a'.repeat(400) + '.png' }).imagenUrl === undefined);
     check('sanitizeSkin sigue bloqueando javascript:',
         sanear({ c1: '#38bdf8', imagenUrl: 'javascript:alert(1)' }).imagenUrl === undefined);
+    sandbox.PROGRESSION_REWARDS = [{
+        id: 'level-aura-10',
+        type: 'skin',
+        name: 'Skin de prueba',
+        color: '#22d3ee',
+        c1: '#22d3ee',
+        c2: '#0e7490',
+        border: '#cffafe',
+        imageUrl: urlCloudinary
+    }];
+    const skinRecompensa = sanear({
+        c1: '#38bdf8',
+        progressionReward: { id: 'level-aura-10', imageUrl: 'https://evil.example/forged.png' }
+    });
+    check('sanitizeSkin agrega apariencia de recompensa desde catálogo del servidor',
+        skinRecompensa.progressionReward?.type === 'skin' &&
+        skinRecompensa.progressionReward?.imageUrl === urlCloudinary);
+    check('admin permite cargar imagen de recompensa visual',
+        adminHtml.includes('subirImagenRecompensa') &&
+        adminHtml.includes("configuracion', 'progresion"));
+    check('game.html dibuja skin y aura de recompensa desbloqueada',
+        gameHtml.includes('progressionReward') &&
+        gameHtml.includes("type === 'skin'"));
     console.log(fallos ? ('\n' + fallos + ' test(s) FALLARON') : '\nTodos los tests pasaron');
     process.exit(fallos ? 1 : 0);
 })().catch((e) => { console.error('ERROR:', e.message); process.exit(1); });

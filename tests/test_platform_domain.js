@@ -2,7 +2,7 @@
 const assert = require('assert');
 const { hasItem, grantItem, consumeItem } = require('../apps/server/platform/inventory');
 const {
-    AURA_REWARDS,
+    DEFAULT_VISUAL_REWARDS,
     DAILY_MISSIONS,
     addXp,
     applyMatch,
@@ -35,7 +35,7 @@ assert.deepStrictEqual(
     {
         xpAwarded: 120,
         completedMissions: ['play-one', 'score-250', 'top-three', 'two-eliminations'],
-        unlockedAuras: []
+        unlockedRewards: []
     }
 );
 assert.strictEqual(daily.daily.matchesCompleted, 1);
@@ -45,12 +45,29 @@ assert.strictEqual(daily.xp, 150);
 assert.strictEqual(daily.daily.completed['play-three'], true);
 assert.strictEqual(applyMatch(daily, { score: 300, eliminations: 2, position: 1 }, '2026-10-05').xpAwarded, 120);
 assert.strictEqual(daily.daily.matchesCompleted, 1);
-const nearAuraUnlock = { xp: 1420, level: 9, unlockedAuras: [] };
+const nearAuraUnlock = { xp: 1420, level: 9, unlockedRewards: [] };
 const auraResult = applyMatch(nearAuraUnlock, { score: 300, eliminations: 2, position: 1 }, '2026-10-04');
 assert.strictEqual(nearAuraUnlock.level, 10);
-assert.deepStrictEqual(auraResult.unlockedAuras.map((aura) => aura.id), ['level-aura-10']);
+assert.deepStrictEqual(auraResult.unlockedRewards.map((reward) => reward.id), ['level-aura-10']);
 assert.deepStrictEqual(DAILY_MISSIONS.map((mission) => mission.xp), [15, 30, 25, 35, 45]);
-assert.deepStrictEqual(AURA_REWARDS.map((reward) => reward.level), [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]);
+assert.deepStrictEqual(DEFAULT_VISUAL_REWARDS.map((reward) => reward.level), [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]);
+const customRewards = DEFAULT_VISUAL_REWARDS.map((reward) => ({
+    ...reward,
+    type: reward.level === 10 ? 'skin' : reward.type,
+    imageUrl: reward.level === 10 ? 'https://res.cloudinary.com/demo/image/upload/skin.png' : reward.imageUrl
+}));
+const configuredRewards = require('../apps/server/platform/progression').sanitizeVisualRewards(customRewards);
+assert.strictEqual(configuredRewards[0].type, 'skin');
+assert.strictEqual(configuredRewards[0].imageUrl, customRewards[0].imageUrl);
+assert.strictEqual(configuredRewards[0].level, 10);
+assert.strictEqual(
+    require('../apps/server/platform/progression').sanitizeVisualRewards([{ level: 10, imageUrl: 'javascript:alert(1)' }])[0].imageUrl,
+    ''
+);
+const unlockSkin = { xp: 1420, unlockedRewards: [] };
+const unlockSkinResult = applyMatch(unlockSkin, { score: 300, eliminations: 2, position: 1 }, '2026-10-04', customRewards);
+assert.strictEqual(unlockSkinResult.unlockedRewards[0].type, 'skin');
+assert.strictEqual(unlockSkinResult.unlockedRewards[0].imageUrl, customRewards[0].imageUrl);
 
 const ranking = rankEntries([
     { nickname: 'Beto', xp: 305, uid: 'private-1' },

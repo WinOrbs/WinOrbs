@@ -66,6 +66,17 @@
         .toggle-switch { cursor: pointer; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
         .toggle-on { background-color: #22c55e; color: #000; }
         .toggle-off { background-color: #64748b; color: #fff; }
+        .rewards-admin-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:14px; margin-top:18px; }
+        .reward-admin-card { padding:16px; border:1px solid #334155; border-radius:12px; background:rgba(2,6,17,.5); }
+        .reward-admin-head { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; }
+        .reward-admin-head strong { color:#38bdf8; font:700 15px var(--font-display); letter-spacing:1px; }
+        .reward-admin-preview { width:52px; height:52px; flex:0 0 auto; object-fit:cover; border:1px solid #475569; border-radius:50%; background:#0f172a; }
+        .reward-admin-fields { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+        .reward-admin-fields .form-group { min-width:0; margin-bottom:8px; }
+        .reward-admin-fields .wide { grid-column:1/-1; }
+        .reward-admin-fields input[type="color"] { min-height:40px; padding:4px; }
+        .reward-upload-status { min-height:18px; color:#94a3b8; font-size:11px; }
+        @media (max-width:560px) { .rewards-admin-grid { grid-template-columns:1fr; } }
 
         /* Modal Styles */
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); justify-content: center; align-items: center; z-index: 1000; }
@@ -177,6 +188,7 @@
         <div class="menu-item" onclick="switchSection('pagos', this)">💳 Pagos & Tasa</div>
         <div class="menu-item" onclick="switchSection('salas', this)">⚙️ Gestión de Salas</div>
         <div class="menu-item" onclick="switchSection('skins', this)">🛒 Tienda de Skins</div>
+        <div class="menu-item" onclick="switchSection('progresion', this)">✨ Recompensas por Nivel</div>
         <div class="menu-item" onclick="switchSection('usuarios', this)">👥 Usuarios</div>
     </div>
 
@@ -459,6 +471,22 @@
             </div>
         </div>
 
+        <div id="sec-progresion" class="section">
+            <div class="form-container" style="max-width:none;">
+                <h3>Recompensas visuales de nivel</h3>
+                <p style="color:#94a3b8;max-width:850px;line-height:1.6;">
+                    Configura las recompensas de los niveles 10 a 100. Las auras se dibujan alrededor del personaje;
+                    las skins cambian la imagen del orbe. Todos los jugadores podrán verlas durante la partida.
+                    Para las auras, usa PNG transparente con el orbe centrado; las imágenes se suben a Cloudinary.
+                </p>
+                <div id="recompensas-progresion" class="rewards-admin-grid"></div>
+                <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:20px;">
+                    <button class="btn btn-primary" id="btn-guardar-recompensas" onclick="guardarRecompensasVisuales()">💾 Guardar recompensas</button>
+                    <small id="recompensas-estado" aria-live="polite" style="color:#94a3b8;"></small>
+                </div>
+            </div>
+        </div>
+
         <!-- 4. MÓDULO USUARIOS -->
         <div id="sec-usuarios" class="section">
             <div class="form-group" style="max-width: 400px;">
@@ -589,6 +617,7 @@
                 'pagos': 'Datos de Pago & Tasa del Dólar',
                 'salas': 'Gestor y Creador de Salas (Socket.io)',
                 'skins': 'Tienda y Gestor de Skins',
+                'progresion': 'Auras y Skins por Nivel',
                 'usuarios': 'Gestión de Usuarios y Moderación'
             };
             document.getElementById('section-title').innerText = titles[sectionId];
@@ -1011,6 +1040,7 @@ const colorTipo = esRetiro ? '#ef4444' : esPremio ? '#f59e0b' : '#22c55e';
             escucharUsuarios();
             escucharPremios();
             escucharConfigPagos(); // tasa del día + datos de pago móvil/transferencia/USDT
+            escucharRecompensasVisuales();
         }
 
         // ── CONFIG DE PAGOS & TASA (configuracion/pagos) ────────────────────────
@@ -1076,6 +1106,240 @@ const colorTipo = esRetiro ? '#ef4444' : esPremio ? '#f59e0b' : '#22c55e';
                 rellena('usdt-red', us.red); rellena('usdt-wallet', us.wallet); rellena('usdt-notas', us.notas);
             }, (e) => errorReglas('configuracion', e));
         }
+
+        const nivelesRecompensas = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+        const nombresRecompensas = ['Pulso Cian', 'Brote Esmeralda', 'Vórtice Violeta', 'Llama Carmesí',
+            'Corona Solar', 'Núcleo Glacial', 'Pulso Magenta', 'Energía Lima', 'Luz Carmesí', 'Aura Prisma'];
+        const coloresRecompensas = ['#22d3ee', '#34d399', '#a78bfa', '#fb7185', '#fbbf24',
+            '#7dd3fc', '#e879f9', '#a3e635', '#f87171', '#f8fafc'];
+        let recompensasVisuales = nivelesRecompensas.map((level, index) => ({
+            id: 'level-aura-' + level,
+            level,
+            type: 'aura',
+            name: nombresRecompensas[index],
+            color: coloresRecompensas[index],
+            c1: coloresRecompensas[index],
+            c2: coloresRecompensas[index],
+            border: coloresRecompensas[index],
+            imageUrl: ''
+        }));
+        let recompensasVisualesModificadas = false;
+
+        function crearCampoRecompensa(parent, labelText, control, wide) {
+            const group = document.createElement('div');
+            group.className = 'form-group' + (wide ? ' wide' : '');
+            const label = document.createElement('label');
+            label.textContent = labelText;
+            group.append(label, control);
+            parent.appendChild(group);
+        }
+
+        function renderRecompensasVisuales() {
+            const root = document.getElementById('recompensas-progresion');
+            root.replaceChildren();
+            recompensasVisuales.forEach((reward, index) => {
+                const card = document.createElement('article');
+                card.className = 'reward-admin-card';
+                const head = document.createElement('div');
+                head.className = 'reward-admin-head';
+                const title = document.createElement('strong');
+                title.textContent = 'NIVEL ' + reward.level;
+                const preview = document.createElement('img');
+                preview.className = 'reward-admin-preview';
+                preview.alt = 'Vista previa de la recompensa';
+                preview.src = reward.imageUrl || '';
+                preview.hidden = !reward.imageUrl;
+                preview.onerror = () => { preview.hidden = true; };
+                head.append(title, preview);
+                card.appendChild(head);
+
+                const fields = document.createElement('div');
+                fields.className = 'reward-admin-fields';
+                const type = document.createElement('select');
+                [['aura', 'Aura alrededor del personaje'], ['skin', 'Skin del personaje']].forEach(([value, labelText]) => {
+                    const option = document.createElement('option');
+                    option.value = value;
+                    option.textContent = labelText;
+                    type.appendChild(option);
+                });
+                type.value = reward.type === 'skin' ? 'skin' : 'aura';
+                type.addEventListener('change', () => {
+                    recompensasVisuales[index].type = type.value;
+                    recompensasVisualesModificadas = true;
+                });
+                crearCampoRecompensa(fields, 'Tipo de apariencia', type, true);
+
+                const name = document.createElement('input');
+                name.type = 'text';
+                name.maxLength = 32;
+                name.value = reward.name;
+                name.addEventListener('input', () => {
+                    recompensasVisuales[index].name = name.value;
+                    recompensasVisualesModificadas = true;
+                });
+                crearCampoRecompensa(fields, 'Nombre visible', name, true);
+
+                const colorFields = [['color', 'Color aura'], ['c1', 'Color principal'], ['c2', 'Color secundario'], ['border', 'Color de borde']];
+                colorFields.forEach(([key, labelText]) => {
+                    const colorInput = document.createElement('input');
+                    colorInput.type = 'color';
+                    colorInput.value = /^#[0-9a-f]{6}$/i.test(reward[key] || '') ? reward[key] : reward.color;
+                    colorInput.addEventListener('input', () => {
+                        recompensasVisuales[index][key] = colorInput.value;
+                        if (key === 'color') recompensasVisuales[index].color = colorInput.value;
+                        recompensasVisualesModificadas = true;
+                    });
+                    crearCampoRecompensa(fields, labelText, colorInput, false);
+                });
+
+                const imageUrl = document.createElement('input');
+                imageUrl.type = 'url';
+                imageUrl.maxLength = 500;
+                imageUrl.placeholder = 'https://res.cloudinary.com/...';
+                imageUrl.value = reward.imageUrl || '';
+                imageUrl.addEventListener('input', () => {
+                    recompensasVisuales[index].imageUrl = imageUrl.value.trim();
+                    preview.src = imageUrl.value.trim();
+                    preview.hidden = !imageUrl.value.trim();
+                    recompensasVisualesModificadas = true;
+                });
+                crearCampoRecompensa(fields, 'URL de imagen', imageUrl, true);
+
+                const file = document.createElement('input');
+                file.type = 'file';
+                file.accept = 'image/png,image/jpeg,image/gif,image/webp';
+                const upload = document.createElement('button');
+                upload.type = 'button';
+                upload.className = 'btn btn-primary';
+                upload.textContent = '⬆️ Subir imagen';
+                const status = document.createElement('div');
+                status.className = 'reward-upload-status';
+                upload.addEventListener('click', () => subirImagenRecompensa(index, file, imageUrl, preview, status));
+                const uploadGroup = document.createElement('div');
+                uploadGroup.className = 'form-group wide';
+                uploadGroup.append(file, upload, status);
+                fields.appendChild(uploadGroup);
+                card.appendChild(fields);
+                root.appendChild(card);
+            });
+        }
+
+        function escucharRecompensasVisuales() {
+            onSnapshot(doc(db, 'configuracion', 'progresion'), (snap) => {
+                if (!snap.exists() || recompensasVisualesModificadas) return;
+                const values = Array.isArray(snap.data().recompensas) ? snap.data().recompensas : [];
+                recompensasVisuales = nivelesRecompensas.map((level, index) => {
+                    const stored = values.find((reward) => reward && Number(reward.level) === level) || {};
+                    const fallbackColor = coloresRecompensas[index];
+                    return {
+                        id: 'level-aura-' + level,
+                        level,
+                        type: stored.type === 'skin' ? 'skin' : 'aura',
+                        name: String(stored.name || nombresRecompensas[index]).slice(0, 32),
+                        color: /^#[0-9a-f]{6}$/i.test(stored.color || '') ? stored.color : fallbackColor,
+                        c1: /^#[0-9a-f]{6}$/i.test(stored.c1 || '') ? stored.c1 : fallbackColor,
+                        c2: /^#[0-9a-f]{6}$/i.test(stored.c2 || '') ? stored.c2 : fallbackColor,
+                        border: /^#[0-9a-f]{6}$/i.test(stored.border || '') ? stored.border : fallbackColor,
+                        imageUrl: typeof stored.imageUrl === 'string' ? stored.imageUrl : ''
+                    };
+                });
+                renderRecompensasVisuales();
+                const status = document.getElementById('recompensas-estado');
+                status.textContent = 'Catálogo cargado. Las recompensas ya desbloqueadas conservan su acceso.';
+            }, (e) => errorReglas('configuracion/progresion', e));
+            renderRecompensasVisuales();
+        }
+
+        function subirImagenRecompensa(index, fileInput, urlInput, preview, status) {
+            const file = fileInput.files && fileInput.files[0];
+            const cfg = window.MEDIA_UPLOAD || {};
+            const maxBytes = Number(cfg.maxBytes) || 5 * 1024 * 1024;
+            if (!file) { status.textContent = 'Selecciona una imagen primero.'; return; }
+            if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(file.type)) {
+                status.textContent = 'Formato no permitido. Usa PNG, JPG, GIF o WebP.';
+                return;
+            }
+            if (file.size > maxBytes) {
+                status.textContent = 'La imagen supera el límite de 5 MB.';
+                return;
+            }
+            if (!cfg.cloudName || !cfg.preset || cfg.cloudName === 'TU_CLOUD_NAME') {
+                status.textContent = 'Falta configurar Cloudinary en media-config.js.';
+                return;
+            }
+            status.textContent = 'Subiendo imagen…';
+            const data = new FormData();
+            data.append('file', file);
+            data.append('upload_preset', cfg.preset);
+            data.append('folder', (cfg.carpetaSkins || 'winorbs/skins') + '/recompensas');
+            const request = new XMLHttpRequest();
+            request.open('POST', 'https://api.cloudinary.com/v1_1/' + cfg.cloudName + '/image/upload');
+            request.upload.onprogress = (event) => {
+                if (event.lengthComputable) status.textContent = 'Subiendo imagen… ' + Math.round(event.loaded / event.total * 100) + '%';
+            };
+            request.onerror = () => { status.textContent = 'Error de red al subir la imagen.'; };
+            request.onload = () => {
+                let response = {};
+                try { response = JSON.parse(request.responseText || '{}'); }
+                catch (e) { status.textContent = 'El host de imágenes devolvió una respuesta inválida.'; return; }
+                if (request.status < 200 || request.status >= 300 || !response.secure_url) {
+                    status.textContent = 'No se pudo subir la imagen: ' + String((response.error && response.error.message) || ('HTTP ' + request.status)).slice(0, 120);
+                    return;
+                }
+                const url = String(response.secure_url);
+                recompensasVisuales[index].imageUrl = url;
+                urlInput.value = url;
+                preview.src = url;
+                preview.hidden = false;
+                recompensasVisualesModificadas = true;
+                status.textContent = 'Imagen subida. Guarda las recompensas para publicarla.';
+            };
+            request.send(data);
+        }
+
+        window.guardarRecompensasVisuales = async function () {
+            const button = document.getElementById('btn-guardar-recompensas');
+            const status = document.getElementById('recompensas-estado');
+            const rewards = recompensasVisuales.map((reward) => ({
+                id: reward.id,
+                level: reward.level,
+                type: reward.type === 'skin' ? 'skin' : 'aura',
+                name: String(reward.name || '').trim().slice(0, 32),
+                color: reward.color,
+                c1: reward.c1,
+                c2: reward.c2,
+                border: reward.border,
+                imageUrl: String(reward.imageUrl || '').trim()
+            }));
+            if (rewards.some((reward) => !reward.name)) {
+                status.textContent = 'Cada recompensa necesita un nombre.';
+                return;
+            }
+            if (rewards.some((reward) => reward.imageUrl && !/^https:\/\/[^\s'"<>]{10,500}$/i.test(reward.imageUrl))) {
+                status.textContent = 'Una URL de imagen no es válida o supera los 500 caracteres.';
+                return;
+            }
+            if (!auth.currentUser) {
+                status.textContent = 'Inicia sesión como administrador para guardar.';
+                return;
+            }
+            button.disabled = true;
+            status.textContent = 'Guardando recompensas…';
+            try {
+                await setDoc(doc(db, 'configuracion', 'progresion'), {
+                    recompensas: rewards,
+                    actualizadoPor: auth.currentUser.email || '',
+                    actualizadoEn: serverTimestamp()
+                });
+                recompensasVisualesModificadas = false;
+                status.textContent = 'Guardado. El servidor actualizó el catálogo de recompensas.';
+            } catch (e) {
+                status.textContent = 'Error al guardar (' + (e.code || e.message) + ').';
+                errorReglas('configuracion/progresion', e);
+            } finally {
+                button.disabled = false;
+            }
+        };
 
         function errorReglas(coleccion, e) {
             const banner = document.getElementById("banner-reglas");
