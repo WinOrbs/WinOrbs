@@ -2781,9 +2781,15 @@ io.on('connection', (socket) => {
                 return socket.emit('errorMsg', 'Límite de conexiones desde tu red alcanzado en esta sala.');
             }
         }
-        // Un mismo UID verificado no puede ocupar 2 asientos en la misma sala
-        if (uid && typeof uid === 'string') {
-            const duplicado = Object.values(room.players).some(p => p.uid && p.uid === uid && p.id !== socket.id);
+        // Verificar identidad ANTES de aplicar reglas basadas en UID. Nunca se
+        // compara un UID crudo enviado por el cliente.
+        await verificarUidEnSala(socket, room, { token });
+
+        // Un mismo UID verificado no puede ocupar 2 asientos en la misma sala.
+        if (socket.verifiedUid) {
+            const duplicado = Object.values(room.players).some(p =>
+                p.uid && p.uid === socket.verifiedUid && p.id !== socket.id
+            );
             if (duplicado) {
                 return socket.emit('errorMsg', 'Ya tienes una sesión activa en esta sala.');
             }
