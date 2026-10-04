@@ -1,0 +1,48 @@
+name: One-off server syntax repair
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Repair only the corrupted tail
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path("server.js")
+          text = path.read_text(encoding="utf-8")
+          marker = "\n + neto.toFixed(2) + ')', refId: idPago,"
+          if marker not in text:
+              print("No corrupted tail found; nothing to repair.")
+              raise SystemExit(0)
+          repaired = text.split(marker, 1)[0].rstrip() + "\n"
+          path.write_text(repaired, encoding="utf-8")
+          print("Corrupted tail removed.")
+
+      - name: Validate JavaScript syntax
+        run: node --check server.js
+
+      - name: Commit repaired server
+        shell: bash
+        run: |
+          if git diff --quiet -- server.js; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server.js
+          git commit -m "fix(server): remove corrupted duplicate payment tail"
+          git push origin HEAD:main
