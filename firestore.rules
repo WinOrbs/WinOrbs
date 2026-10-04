@@ -120,6 +120,7 @@ service cloud.firestore {
       // Los premios son un efecto de la liquidación server-side y nunca los
       // crea el cliente.
       allow create: if request.auth != null
+                    && request.resource.data.keys().hasOnly(['usuario', 'usuarioId', 'tipo', 'metodo', 'datosCobro', 'referencia', 'comprobanteUrl', 'monto', 'estado', 'fecha'])
                     && request.resource.data.usuarioId == request.auth.uid
                     && request.resource.data.estado == 'pendiente'
                     && request.resource.data.tipo in ['deposito', 'retiro']
