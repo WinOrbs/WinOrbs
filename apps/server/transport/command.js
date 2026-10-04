@@ -84,6 +84,10 @@ function validateShopItem(payload) {
     return { ok: true, itemType };
 }
 
+function validateRequestId(value) {
+    return typeof value === 'string' && /^[A-Za-z0-9._:-]{8,128}$/.test(value);
+}
+
 function validateAdminRoom(payload) {
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
         return { ok: false, error: 'INVALID_ROOM' };
@@ -126,5 +130,6 @@ module.exports = Object.freeze({
     validateShoot,
     validateWeaponSelection,
     validateShopItem,
-    validateAdminRoom
+    validateAdminRoom,
+    validateRequestId
 });
