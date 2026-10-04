@@ -14,9 +14,6 @@ const changer = fs.readFileSync(path.join(root, 'tools/cambiar-servidor.js'), 'u
 const indexHtml = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
 const gameHtml = fs.readFileSync(path.join(root, 'public/game.html'), 'utf8');
 
-const backendUrl = 'https://winorbs-api.onrender.com';
-const frontendUrl = 'https://winorbs.pages.dev';
-
 assert.match(
     frontendConfig,
     /window\.SERVIDOR_URL\s*=\s*"https:\/\/winorbs-api\.onrender\.com";/,
