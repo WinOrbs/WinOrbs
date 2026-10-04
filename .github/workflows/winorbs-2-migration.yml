@@ -29,3 +29,9 @@ jobs:
 
       - name: Repository checks
         run: npm run check
+
+      - name: Legacy regression tests
+        run: npm test
+
+      - name: Build verification
+        run: npm run build
