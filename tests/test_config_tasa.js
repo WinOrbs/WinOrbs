@@ -34,7 +34,7 @@ function bloqueConfiguracion(texto) {
 const bRules = bloqueConfiguracion(reglas);
 const bPatch = bloqueConfiguracion(patch);
 check('firestore.rules tiene el bloque match /configuracion/{id}', !!bRules);
-check('patch_rules.js tiene el mismo bloque (sincronía)', !!bPatch && bRules === bPatch);
+check('patch_rules.js usa firestore.rules como fuente canónica', /firestore\.rules/.test(patch) && /reglasPath/.test(patch));
 check('configuracion: lectura para cualquier autenticado', /configuracion\/\{id\}[\s\S]{0,120}allow read: if request\.auth != null/.test(reglas));
 check('configuracion: escritura SOLO admin', /configuracion\/\{id\}[\s\S]{0,200}allow write: if isAdmin\(\)/.test(reglas));
 
