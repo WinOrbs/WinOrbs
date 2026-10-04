@@ -1,0 +1,37 @@
+name: WinOrbs 2.0 Migration Verification
+
+on:
+  push:
+    branches:
+      - winorbs-2.0-migration
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Security configuration test
+        run: npm run test:security
+
+      - name: Repository checks
+        run: npm run check
+
+      - name: Legacy regression tests
+        run: npm test
+
+      - name: Build verification
+        run: npm run build

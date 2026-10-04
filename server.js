@@ -1,6 +1,23 @@
 // Carga variables de entorno desde .env (si existe) — debe ir primero
 try { require('dotenv').config(); } catch (e) { /* dotenv no instalado: usar variables de entorno del sistema */ }
 
+const { corsRaw, corsAllowAll, isOriginAllowed, adminPassword } = require('./apps/server/config');
+const {
+    normalizeCommand,
+    validatePlayerInput,
+    validateShoot,
+    validateWeaponSelection,
+    validateShopItem,
+    validateAdminRoom
+} = require('./apps/server/transport/command');
+const { MATCH_STATUS, canTransition } = require('./apps/server/game/lifecycle');
+const { applyDeathLoss } = require('./apps/server/game/orbs');
+const { bankMatchOrbs, awardElimination } = require('./apps/server/game/score');
+const { applyDamage } = require('./apps/server/game/combat');
+const { extractIdToken, canBindUid } = require('./apps/server/identity');
+const { lockResult } = require('./apps/server/game/results');
+const { createAuditEvent } = require('./apps/server/platform/audit');
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -18,13 +35,8 @@ const server = http.createServer(app);
 // NOTA: ese error también aparece cuando Render devuelve 503 (servicio dormido/
 // caído) porque la respuesta la genera el proxy de Render, no Node. Por eso
 // además se corrige el puerto (process.env.PORT) más abajo.
-const CORS_RAW = (process.env.CORS_ORIGIN || '*').split(',').map((s) => s.trim()).filter(Boolean);
-const CORS_ALLOW_ALL = CORS_RAW.includes('*');
-function isOriginAllowed(origin) {
-    if (!origin) return true; // curl / health-checks / mismo origen sin header
-    if (CORS_ALLOW_ALL) return true;
-    return CORS_RAW.includes(origin);
-}
+const CORS_RAW = corsRaw;
+const CORS_ALLOW_ALL = corsAllowAll;
 app.use((req, res, next) => {
     const origin = req.headers.origin;
     if (isOriginAllowed(origin)) {
@@ -63,7 +75,7 @@ app.get('/ping', (req, res) => res.json({ ok: true, ts: Date.now() }));
 app.get('/status', async (req, res) => {
     const r = {
         firebase: !!FIREBASE_ECONOMY,
-        modo: FIREBASE_ECONOMY ? 'ECONOMIA' : 'DEGRADADO',
+        modo: FIREBASE_ECONOMY ? 'ECONOMIA' : 'DESHABILITADA',
         proyecto: null,
         firestore: { ok: false, latenciaMs: null, error: null }
     };
@@ -88,7 +100,8 @@ app.get('/status', async (req, res) => {
 const MAP_SIZE = 5000;
 const rooms = {};
 
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
+const ADMIN_PASSWORD = adminPassword;
+const ADMIN_SESSION_MS = 30 * 60 * 1000;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 
@@ -96,9 +109,9 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 // Modo ECONOMÍA ACTIVA: si hay clave de servicio (serviceAccountKey.json o
 // GOOGLE_APPLICATION_CREDENTIALS), el SERVIDOR cobra entradas y paga premios con
 // Admin SDK → inmune a hacks del cliente. El cliente YA NO puede subir su saldo.
-// Modo DEGRADADO (sin clave): funciona con los parches de Fase 0 (premio por
-// aprobación del admin). Genera la clave en Firebase Console → Configuración del
-// proyecto → Cuentas de servicio → Generar clave privada → serviceAccountKey.json
+// Sin clave de servicio: la economía real queda DESHABILITADA. No existe un
+// modo degradado que confíe en el cliente. Las salas con entrada monetaria no
+// pueden aceptar jugadores hasta que el Admin SDK esté configurado.
 // ─────────────────────────────────────────────────────────────────────────────
 let firebaseAdmin = null;
 let FIREBASE_DB = null;
@@ -187,7 +200,7 @@ try {
         FIREBASE_ECONOMY = true;
         console.log('[FIREBASE] Modo economía SEGURA activado (Admin SDK). El servidor maneja entradas y premios.');
     } else {
-        console.log('[FIREBASE] Sin clave de servicio (busqué en FIREBASE_SERVICE_ACCOUNT, /etc/secrets/ y ' + __dirname + '): modo DEGRADADO. Cobro/premio los gestiona el cliente (parches Fase 0).');
+        console.log('[FIREBASE] Sin clave de servicio: ECONOMÍA DESHABILITADA. Entradas y premios no se liquidan hasta configurar Admin SDK; el cliente nunca gestiona dinero.');
         console.log('[FIREBASE] FIX Render: Firebase Console → Cuentas de servicio → Generar clave privada → en Render crea un Secret File "serviceAccountKey.json" (o la env FIREBASE_SERVICE_ACCOUNT_B64 con el JSON en Base64) y reinicia el servicio. Verifica en GET /status.');
     }
 } catch (e) {
@@ -305,13 +318,8 @@ const KIT_LOOT_PROB = 0.65;     // probabilidad de botiquín al abrir un airdrop
 const ORBGUN_LOOT_PROB = 0.35;  // probabilidad de Lanza-Orbes al abrir un airdrop
 const adminFailuresByIP = {};          // rate-limit del panel admin
 
-if (ADMIN_PASSWORD === "admin123" && !process.env.ADMIN_PASSWORD) {
-    console.warn('⚠️  ADMIN: usando la contraseña por defecto "admin123". Define ADMIN_PASSWORD como variable de entorno.');
-    // Aviso extra: esta clave está en el repo, o sea es pública para cualquiera
-    // que lea el código. Con ella se entra al panel (crear salas, tocar la
-    // configuración de pagos). No es un problema de código: se arregla en el
-    // panel de Render → Environment → ADMIN_PASSWORD.
-    console.warn('🔴 ADMIN: con esta contraseña POR DEFECTO cualquiera que lea el repo puede entrar al panel. Define ADMIN_PASSWORD en Render.');
+if (!ADMIN_PASSWORD) {
+    console.warn('[SECURITY] ADMIN_PASSWORD no está configurada. El acceso por contraseña al panel administrativo queda deshabilitado.');
 }
 
 async function telegramNotify(message) {
@@ -383,7 +391,7 @@ async function validarSkinCliente(skin, uid) {
         if (SKINS_BASICAS[nombre]) return { nombre, ...SKINS_BASICAS[nombre] }; // gratis
         const id = String(skin.id || '').replace(/[^\w-]/g, '').slice(0, 64);
         // Skins básicas equipadas desde la Tienda viajan con id 'bas-*' (gratis y
-        // sin Firestore: funcionan incluso en modo economía degradado)
+        // sin Firestore: estas funciones quedan fuera del camino de economía real
         const basicaPorId = /^bas-(cielo|fuego|neon|esmeralda)$/.exec(id);
         if (basicaPorId) return { id, nombre: basicaPorId[1], ...SKINS_BASICAS[basicaPorId[1]] };
         if (!id || !FIREBASE_ECONOMY || !FIREBASE_DB) return SKIN_FALLBACK;
@@ -742,6 +750,7 @@ class GameRoom {
         this.pozoTotal = 0;            // bote estático fijado al arrancar la partida
         this.pendingStart = null;
         this.ending = false;
+        this.matchStatus = MATCH_STATUS.WAITING;
 
         this.initEnergy();
         this.startLoop();
@@ -1068,10 +1077,17 @@ class GameRoom {
 
     handleInput(socketId, inputData) {
         const p = this.players[socketId];
-        if (p && !p.isDead) {
-            p.inputs = inputData;
-            p.angle = inputData.angle || p.angle;
-        }
+        if (!p || p.isDead) return;
+        const validation = validatePlayerInput(inputData);
+        if (!validation.ok) return;
+        p.inputs = {
+            w: inputData.w === true,
+            a: inputData.a === true,
+            s: inputData.s === true,
+            d: inputData.d === true,
+            angle: typeof inputData.angle === 'number' ? inputData.angle : p.inputs.angle
+        };
+        if (typeof inputData.angle === 'number') p.angle = inputData.angle;
     }
 
     // Aviso de cargador vacío (rate-limit: ni el audio ni el banner se saturan)
@@ -1087,6 +1103,7 @@ class GameRoom {
 
     handleShoot(socketId, shootData) {
         const p = this.players[socketId];
+        if (!validateShoot(shootData).ok) return;
         if (!p || p.isDead || p.isReloading) return;
 
         // Anticheat: cooldown mínimo entre disparos por arma (mata el spam de balas)
@@ -1349,9 +1366,11 @@ class GameRoom {
                 if (playerCount < 2) {
                     this.lobbyActive = false;
                     this.countdown = 0;
+                    this.matchStatus = MATCH_STATUS.WAITING;
                     io.to(this.id).emit('announcement', '⚠️ Inicio cancelado: quedó un solo jugador en la sala.');
                 } else if (this.countdown <= 0) {
                     this.gameStarted = true;
+                    this.matchStatus = MATCH_STATUS.RUNNING;
                     this.lobbyActive = false;
                     // Botiquines iniciales repartidos por el mapa (antes solo caían
                     // al matar a alguien, así que la salud casi no se recuperaba).
@@ -1419,6 +1438,8 @@ class GameRoom {
     }
 
     startLobby() {
+        if (!canTransition(this.matchStatus, MATCH_STATUS.STARTING)) return false;
+        this.matchStatus = MATCH_STATUS.STARTING;
         this.lobbyActive = true;
         this.countdown = 5;
         this.pendingStart = null;
@@ -1598,12 +1619,15 @@ class GameRoom {
 
     endGame(opts = {}) {
         if (this.ending) return;
+        if (!canTransition(this.matchStatus, MATCH_STATUS.ENDING)) return;
+        this.matchStatus = MATCH_STATUS.ENDING;
         this.ending = true;
         const abandono = !!opts.abandono;
         this.soloTimer = null;
 
         const gameId = this.id + '_' + Date.now();
         const leaderboard = this.getLeaderboard();
+        this.resultLock = lockResult(leaderboard);
 
         // Modo economía: el SERVIDOR paga el premio vía Admin SDK
         if (FIREBASE_ECONOMY && FIREBASE_DB) {
@@ -1615,10 +1639,12 @@ class GameRoom {
         const pozo = +(this.pozoTotal || (leaderboard.length * this.entryFee)).toFixed(2);
         const premioNeto = +(pozo * 0.8).toFixed(2);
 
+        this.matchStatus = MATCH_STATUS.RESULT_LOCKED;
         io.to(this.id).emit('gameOver', {
             gameId: gameId,
             entryFee: this.entryFee,
             leaderboard: leaderboard,
+            resultChecksum: this.resultLock.checksum,
             abandono: abandono,
             premioNeto: premioNeto
         });
@@ -1641,6 +1667,7 @@ class GameRoom {
 
             // Vaciar jugadores y resetear la sala para nuevos registros
             this.players = {};
+            this.matchStatus = MATCH_STATUS.COMPLETED;
             this.resetForLobby();
             this.startLoop();
             emitirSalasPublicas();
@@ -1683,6 +1710,8 @@ class GameRoom {
         this.soloTimer = null;
         this.pozoTotal = 0;
         this.ending = false;
+        this.matchStatus = MATCH_STATUS.WAITING;
+        this.resultLock = null;
         this.initEnergy();
         // El mapa es NUEVO: sube la versión y se reenvía la geometría. Sin esto
         // el cliente emparejaría el hp de la partida anterior contra este mapa
@@ -1820,8 +1849,7 @@ class GameRoom {
 
             p.isExtracting = Math.hypot(p.x - this.bankZone.x, p.y - this.bankZone.y) < this.bankZone.radius;
             if (p.isExtracting && p.charge > 0) {
-                p.bankedScore += p.charge;
-                p.charge = 0;
+                bankMatchOrbs(p);
                 io.to(this.id).emit('playSound', 'pickup');
             }
 
@@ -2043,13 +2071,8 @@ class GameRoom {
     }
 
     damagePlayer(p, ownerId, damage, bullet) {
-        if (p.shield > 0) {
-            const absorbed = Math.min(p.shield, damage);
-            p.shield -= absorbed;
-            damage -= absorbed;
-            if (damage <= 0) return;
-        }
-        p.hp -= damage;
+        const result = applyDamage(p, damage);
+        if (!result.killed) return;
         if (p.hp <= 0) {
             p.hp = 0;
             p.isDead = true;
@@ -2058,18 +2081,18 @@ class GameRoom {
             p.reloadWeapon = 0;
             p.respawnTimer = 0;
             p.canRespawn = false;
-            if (p.charge > 0) {
+            const loss = applyDeathLoss(p);
+            if (loss.lost > 0) {
                 this.droppedEnergy.push({
                     id: 'e_' + randID(),
-                    x: p.x, y: p.y, val: p.charge
+                    x: p.x, y: p.y, val: loss.lost
                 });
-                p.charge = 0;
             }
             const ownerSocket = io.sockets.sockets.get(ownerId);
             if (ownerSocket) {
                 const owner = this.players[ownerId];
                 if (owner) {
-                    owner.bankedScore += 5;
+                    awardElimination(owner);
                 }
             }
         }
@@ -2084,12 +2107,12 @@ class GameRoom {
         p.reloadWeapon = 0;
         p.respawnTimer = 0;
         p.canRespawn = false;
-        if (p.charge > 0) {
+        const loss = applyDeathLoss(p);
+        if (loss.lost > 0) {
             this.droppedEnergy.push({
                 id: 'e_' + randID(),
-                x: p.x, y: p.y, val: p.charge
+                x: p.x, y: p.y, val: loss.lost
             });
-            p.charge = 0;
         }
         if (postKill) postKill();
     }
@@ -2190,7 +2213,8 @@ class GameRoom {
             // iniciada la partida: bote estático fijado al arrancar.
             pozoActual: iniciada ? this.pozoTotal : Object.keys(this.players).length * this.entryFee,
             esPrivada: this.isPrivate,
-            iniciada: iniciada
+            iniciada: iniciada,
+            matchStatus: this.matchStatus
         };
     }
 
@@ -2361,6 +2385,7 @@ class GameRoom {
             lobbyActive: this.lobbyActive,
             countdown: this.countdown,
             gameStarted: this.gameStarted,
+            matchStatus: this.matchStatus,
             pozoTotal: this.pozoTotal,
             maxPlayers: this.maxPlayers,
             entryFee: this.entryFee
@@ -2416,29 +2441,31 @@ function emitirSalasPublicas(immediate = false) {
     }, 250);
 }
 
-// Verifica la identidad de un socket (modo economía: valida el ID token de Firebase;
-// modo degradado: confía en el uid del cliente, límite del MVP).
+// Verifica la identidad de un socket.
+// Regla de seguridad: un UID enviado por el cliente NUNCA es una identidad
+// verificable. Solo un ID token validado por Firebase Auth puede vincular una
+// sesión con una cuenta. Sin Firebase/credenciales el servidor funciona como
+// invitado, pero no habilita operaciones que requieran identidad.
 async function verificarUidEnSala(socket, room, payload) {
-    let uidRaw = null;
-    let token = null;
-    if (typeof payload === 'string') {
-        uidRaw = payload;
-    } else if (payload && typeof payload === 'object') {
-        uidRaw = payload.uid;
-        token = payload.token;
+    const token = extractIdToken(payload);
+    socket.verifiedUid = null;
+
+    if (!FIREBASE_ECONOMY || !token) {
+        return;
     }
-    if (FIREBASE_ECONOMY && token && typeof token === 'string' && token.length < 6000) {
-        try {
-            const decoded = await firebaseAdmin.auth().verifyIdToken(token);
-            socket.verifiedUid = decoded.uid;
-            if (room && room.players && room.players[socket.id]) {
-                room.players[socket.id].uid = decoded.uid;
-            }
-        } catch (e) {
-            // token inválido: se queda sin verificación
+
+    try {
+        const decoded = await firebaseAdmin.auth().verifyIdToken(token);
+        const currentPlayer = room && room.players && room.players[socket.id];
+        if (currentPlayer && !canBindUid(currentPlayer.uid, decoded.uid)) {
+            return;
         }
-    } else if (!FIREBASE_ECONOMY && uidRaw && typeof uidRaw === 'string') {
-        socket.verifiedUid = uidRaw.slice(0, 128);
+        socket.verifiedUid = decoded.uid;
+        if (currentPlayer) {
+            currentPlayer.uid = decoded.uid;
+        }
+    } catch (e) {
+        // Token inválido/expirado: la conexión permanece como invitado.
     }
 }
 
@@ -2525,6 +2552,22 @@ if (FIREBASE_ECONOMY && FIREBASE_DB) {
 // dirección directa del handshake. Sin esto, tras el balanceador de Render
 // TODOS los jugadores comparten la IP del proxy: el límite por IP bloquearía a
 // partir del 4º jugador y el rate-limit del panel se volvería global.
+function registrarAuditoria(tipo, actor, data) {
+    const event = createAuditEvent(tipo, actor, data);
+    console.log('[AUDIT]', JSON.stringify(event));
+    return event;
+}
+
+function adminAutorizado(socket) {
+    if (!socket || socket.isAdmin !== true || !socket.adminAuthenticatedAt) return false;
+    if (Date.now() - socket.adminAuthenticatedAt >= ADMIN_SESSION_MS) {
+        socket.isAdmin = false;
+        socket.adminAuthenticatedAt = 0;
+        return false;
+    }
+    return true;
+}
+
 function ipDeSocket(socket) {
     const reenviada = socket.handshake?.headers['x-forwarded-for'];
     if (reenviada) return String(reenviada).split(',')[0].trim();
@@ -2533,6 +2576,7 @@ function ipDeSocket(socket) {
 
 io.on('connection', (socket) => {
     socket.isAdmin = false;
+    socket.adminAuthenticatedAt = 0;
     socket.emit('serverConfig', { economy: FIREBASE_ECONOMY });
     socket.emit('roomsList', Object.values(rooms).map(r => r.getSummary()));
 
@@ -2553,8 +2597,11 @@ io.on('connection', (socket) => {
     socket.on('latProbe', (t0, cb) => { if (typeof cb === 'function') cb(t0); });
 
     // Rate-limit del panel admin por IP (5 fallos → bloqueo 60 s)
-    socket.on('adminAuth', ({ password }) => {
+    socket.on('adminAuth', ({ password } = {}) => {
         const ip = ipDeSocket(socket);
+        if (!ADMIN_PASSWORD) {
+            return socket.emit('adminAuthed', false);
+        }
         const now = Date.now();
         const rec = (adminFailuresByIP[ip] = adminFailuresByIP[ip] || { fail: 0, until: 0 });
         if (rec.until > now) {
@@ -2562,7 +2609,9 @@ io.on('connection', (socket) => {
         }
         if (password === ADMIN_PASSWORD) {
             socket.isAdmin = true;
+            socket.adminAuthenticatedAt = now;
             rec.fail = 0;
+            registrarAuditoria('ADMIN_LOGIN', socket.id, { ip });
             socket.emit('adminAuthed', true);
         } else {
             rec.fail++;
@@ -2575,13 +2624,13 @@ io.on('connection', (socket) => {
     });
 
     socket.on('notifyTelegram', (message) => {
-        if (!socket.isAdmin) return;
+        if (!adminAutorizado(socket)) return;
         telegramNotify(message);
     });
 
     // Notificaciones de jugadores (solicitudes de wallet): validadas y con límite de tasa
     socket.on('notifyPlayerTelegram', (message) => {
-        if (socket.isAdmin) return; // el admin usa el evento notifyTelegram
+        if (adminAutorizado(socket)) return; // el admin usa el evento notifyTelegram
         if (typeof message !== 'string') return;
         const texto = message.trim();
         if (!texto || texto.length > 400) return;
@@ -2604,9 +2653,59 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Admin: vincular un pendiente a un UID concreto (respaldo manual)
+    // Operaciones financieras del panel: el cliente solo solicita; el servidor liquida.
+    socket.on('adminProcesarPago', async (payload) => {
+        if (!adminAutorizado(socket)) return socket.emit('pagoProcesado', { ok: false, error: 'NO_ADMIN' });
+        if (!FIREBASE_ECONOMY || !FIREBASE_DB) return socket.emit('pagoProcesado', { ok: false, error: 'ECONOMY_OFF' });
+        const idPago = String(payload && payload.idPago || '').trim();
+        const estadoSolicitado = String(payload && payload.estado || '').trim();
+        if (!idPago || !['aprobado', 'pagado', 'rechazado'].includes(estadoSolicitado)) {
+            return socket.emit('pagoProcesado', { ok: false, error: 'PARAMS' });
+        }
+        try {
+            const r = await FIREBASE_DB.runTransaction(async (t) => {
+                const refPago = FIREBASE_DB.collection('pagos').doc(idPago);
+                const snap = await t.get(refPago);
+                if (!snap.exists) return { ok: false, error: 'PAGO_NO_EXISTE' };
+                const p = snap.data() || {};
+                if (p.estado !== 'pendiente') return { ok: false, error: 'YA_PROCESADO', estado: p.estado };
+                const uid = String(p.usuarioId || '').trim();
+                const tipo = String(p.tipo || '').trim();
+                const monto = Number(p.monto || 0);
+                if (!uid || !['deposito', 'retiro'].includes(tipo) || !(monto > 0) || monto > 10000) {
+                    return { ok: false, error: 'SOLICITUD_INVALIDA' };
+                }
+                if (tipo === 'retiro' && estadoSolicitado !== 'pagado' && estadoSolicitado !== 'rechazado') {
+                    return { ok: false, error: 'ESTADO_RETIRO_INVALIDO' };
+                }
+                if (tipo === 'deposito' && estadoSolicitado !== 'aprobado' && estadoSolicitado !== 'rechazado') {
+                    return { ok: false, error: 'ESTADO_DEPOSITO_INVALIDO' };
+                }
+
+                const refU = FIREBASE_DB.collection('usuarios').doc(uid);
+                const sU = await t.get(refU);
+                if (!sU.exists) return { ok: false, error: 'USUARIO_NO_EXISTE' };
+                const saldo = Number(sU.data().saldo || 0);
+
+                if (estadoSolicitado === 'aprobado' && tipo === 'deposito') {
+                    const nuevoSaldo = +(saldo + monto).toFixed(2);
+                    t.update(refU, { saldo: nuevoSaldo });
+                    t.set(FIREBASE_DB.collection('movimientos').doc('mov_' + idPago), {
+                        usuarioId: uid, tipo: 'recarga', monto: +monto.toFixed(2),
+                        detalle: 'Recarga de saldo aprobada', refId: idPago,
+                        fecha: firebaseAdmin.firestore.FieldValue.serverTimestamp()
+                    });
+                } else if (estadoSolicitado === 'pagado' && tipo === 'retiro') {
+                    if (saldo < monto) return { ok: false, error: 'SALDO_INSUFICIENTE' };
+                    const nuevoSaldo = +(saldo - monto).toFixed(2);
+                    t.update(refU, { saldo: nuevoSaldo });
+                    const comision = +(monto * 0.2).toFixed(2);
+                    const neto = +(monto - comision).toFixed(2);
+                    t.set(FIREBASE_DB.collection('movimientos').doc('mov_' + idPago), {
+                        usuarioId: uid, tipo: 'retiro', monto: -monto,
+                        detalle: 'Retiro pagado (neto 
     socket.on('adminVincularPremio', async (payload) => {
-        if (!socket.isAdmin) return socket.emit('premioVinculado', { ok: false, error: 'NO_ADMIN' });
+        if (!adminAutorizado(socket)) return socket.emit('premioVinculado', { ok: false, error: 'NO_ADMIN' });
         const p = (payload && typeof payload === 'object') ? payload : {};
         if (!p.gameId || !p.uid) return socket.emit('premioVinculado', { ok: false, error: 'PARAMS' });
         const r = await servidorAcreditarPremioPendiente(String(p.gameId), String(p.uid), { manual: true, exigirMatchApodo: false });
@@ -2616,32 +2715,44 @@ io.on('connection', (socket) => {
 
     // Admin: forzar pasada de conciliación automática bajo demanda
     socket.on('adminConciliarPremios', async () => {
-        if (!socket.isAdmin) return socket.emit('premiosConciliados', { ok: false, error: 'NO_ADMIN' });
+        if (!adminAutorizado(socket)) return socket.emit('premiosConciliados', { ok: false, error: 'NO_ADMIN' });
         const r = await servidorConciliarPremiosPendientes('manual-admin');
         socket.emit('premiosConciliados', r);
         if (r.ok && (r.pagados || []).length > 0) io.emit('premiosActualizados', { n: r.pagados.length });
     });
 
     socket.on('adminCreateRoom', (roomData) => {
-        if (!socket.isAdmin) {
+        if (!adminAutorizado(socket)) {
             return socket.emit('errorMsg', 'No tienes permisos de administrador.');
         }
-        if (!roomData || !roomData.id || rooms[roomData.id]) {
+
+        const validation = validateAdminRoom(roomData);
+        if (!validation.ok) {
+            return socket.emit('errorMsg', 'Configuración de sala inválida.');
+        }
+
+        const roomConfig = validation.room;
+        if (roomConfig.precioEntrada > 0 && (!FIREBASE_ECONOMY || !FIREBASE_DB)) {
+            return socket.emit('errorMsg', 'Las salas con entrada monetaria requieren economía server-side configurada.');
+        }
+        if (rooms[roomConfig.id]) {
             return socket.emit('errorMsg', 'ID de sala inválido o ya existe.');
         }
-        rooms[roomData.id] = new GameRoom(
-            roomData.id,
-            sanitizeNick(roomData.nombre),
-            roomData.maxJugadores || 6,
-            roomData.precioEntrada || 0,
-            roomData.esPrivada || false,
-            roomData.password || ""
+
+        registrarAuditoria('ADMIN_CREATE_ROOM', socket.id, { roomId: roomConfig.id, maxPlayers: roomConfig.maxJugadores, entryFee: roomConfig.precioEntrada });
+        rooms[roomConfig.id] = new GameRoom(
+            roomConfig.id,
+            sanitizeNick(roomConfig.nombre),
+            roomConfig.maxJugadores,
+            roomConfig.precioEntrada,
+            roomConfig.esPrivada,
+            roomConfig.password
         );
         emitirSalasPublicas(true);
     });
 
     socket.on('adminDestroyRoom', async ({ roomId }) => {
-        if (!socket.isAdmin) {
+        if (!adminAutorizado(socket)) {
             return socket.emit('errorMsg', 'No tienes permisos de administrador.');
         }
         if (rooms[roomId]) {
@@ -2665,6 +2776,7 @@ io.on('connection', (socket) => {
                 });
             }).catch(() => { });
 
+            registrarAuditoria('ADMIN_DESTROY_ROOM', socket.id, { roomId });
             room.stopLoop();
             delete rooms[roomId];
             emitirSalasPublicas(true);
@@ -2720,9 +2832,24 @@ io.on('connection', (socket) => {
         // Ya registrado en esta misma sala: confirmar, y aprovechar para vincular token/uid tardíos
         if (socket.roomId === room.id && room.players[socket.id]) {
             await verificarUidEnSala(socket, room, { uid, token });
-            if (FIREBASE_ECONOMY && room.entryFee > 0 && socket.verifiedUid && !room.players[socket.id].pagoEntrada) {
-                const cobro = await servidorCobrarEntrada(socket.verifiedUid, room.id, room.entryFee);
-                if (cobro.ok) {
+            if (room.entryFee > 0) {
+                if (!FIREBASE_ECONOMY || !FIREBASE_DB) {
+                    return socket.emit('errorMsg', 'Esta sala de pago no está disponible temporalmente.');
+                }
+                if (!socket.verifiedUid) {
+                    return socket.emit('errorMsg', 'Las salas de pago requieren iniciar sesión con cuenta verificada.');
+                }
+                if (!room.players[socket.id].pagoEntrada) {
+                    const cobro = await servidorCobrarEntrada(socket.verifiedUid, room.id, room.entryFee);
+                    if (!cobro.ok) {
+                        if (cobro.error === 'SALDO_INSUFICIENTE') {
+                            return socket.emit('errorMsg', 'Saldo insuficiente para cubrir la entrada a esta sala.');
+                        }
+                        if (cobro.error === 'NO_PROFILE') {
+                            return socket.emit('errorMsg', 'No tienes perfil en la wallet. Regístrate antes de jugar en salas de pago.');
+                        }
+                        return socket.emit('errorMsg', 'No se pudo cobrar la entrada: ' + String(cobro.error || 'ERROR').slice(0, 120));
+                    }
                     socket.__entradaCobrada = { entradasId: cobro.entradasId, monto: room.entryFee, salaId: room.id };
                     room.players[socket.id].pagoEntrada = socket.__entradaCobrada;
                 }
@@ -2749,9 +2876,15 @@ io.on('connection', (socket) => {
                 return socket.emit('errorMsg', 'Límite de conexiones desde tu red alcanzado en esta sala.');
             }
         }
-        // Un mismo UID verificado no puede ocupar 2 asientos en la misma sala
-        if (uid && typeof uid === 'string') {
-            const duplicado = Object.values(room.players).some(p => p.uid && p.uid === uid && p.id !== socket.id);
+        // Verificar identidad ANTES de aplicar reglas basadas en UID. Nunca se
+        // compara un UID crudo enviado por el cliente.
+        await verificarUidEnSala(socket, room, { token });
+
+        // Un mismo UID verificado no puede ocupar 2 asientos en la misma sala.
+        if (socket.verifiedUid) {
+            const duplicado = Object.values(room.players).some(p =>
+                p.uid && p.uid === socket.verifiedUid && p.id !== socket.id
+            );
             if (duplicado) {
                 return socket.emit('errorMsg', 'Ya tienes una sesión activa en esta sala.');
             }
@@ -2800,7 +2933,12 @@ io.on('connection', (socket) => {
             } catch (e) { /* sin colección/reglas: no se bloquea el acceso */ }
         }
 
-        // Cobro de entrada en el SERVIDOR (modo economía) — el cliente ya no decide
+        // Las salas de pago nunca funcionan sin economía server-side: no se permite
+        // convertir una entrada monetaria en una partida gratuita por falta de credenciales.
+        if (room.entryFee > 0 && (!FIREBASE_ECONOMY || !FIREBASE_DB)) {
+            return socket.emit('errorMsg', 'Esta sala de pago no está disponible temporalmente.');
+        }
+        // Cobro de entrada en el SERVIDOR — el cliente ya no decide.
         if (room.entryFee > 0 && FIREBASE_ECONOMY && !socket.__entradaCobrada) {
             if (!socket.verifiedUid) {
                 return socket.emit('errorMsg', 'Las salas de pago requieren iniciar sesión con cuenta verificada.');
@@ -2825,8 +2963,8 @@ io.on('connection', (socket) => {
         // ya montado cuando empiece a dibujar.
         room.emitirConfig(socket);
         // Anticheat de skins: si la skin no es básica ni está en el inventario del jugador → básica
-        const skinValidada = await validarSkinCliente(skin, socket.verifiedUid || (typeof uid === 'string' ? uid.slice(0, 128) : null));
-        room.addPlayer(socket.id, nickFinal, skinValidada, socket.verifiedUid || (typeof uid === 'string' ? uid.slice(0, 128) : null));
+        const skinValidada = await validarSkinCliente(skin, socket.verifiedUid);
+        room.addPlayer(socket.id, nickFinal, skinValidada, socket.verifiedUid);
         const nuevoP = room.players[socket.id];
         nuevoP.__ip = ip;
         if (socket.__entradaCobrada) nuevoP.pagoEntrada = socket.__entradaCobrada;
@@ -2843,7 +2981,16 @@ io.on('connection', (socket) => {
 
         await verificarUidEnSala(socket, room, data);
         const p = room.players[socket.id];
-        if (socket.verifiedUid) p.uid = socket.verifiedUid;
+        if (socket.verifiedUid) {
+            const duplicado = Object.values(room.players).some(other =>
+                other.id !== socket.id && other.uid && other.uid === socket.verifiedUid
+            );
+            if (duplicado) {
+                socket.verifiedUid = null;
+                return socket.emit('errorMsg', 'Esa cuenta ya está jugando en esta sala.');
+            }
+            p.uid = socket.verifiedUid;
+        }
 
         // Cobro diferido: llegó el token después del join en una sala de pago
         if (FIREBASE_ECONOMY && room.entryFee > 0 && socket.verifiedUid && !p.pagoEntrada) {
@@ -2862,16 +3009,20 @@ io.on('connection', (socket) => {
 
     socket.on('playerInput', (inputData) => {
         if (!socket.roomId || !rooms[socket.roomId]) return;
+        const command = normalizeCommand(null, 'PLAYER_MOVE', inputData);
+        if (!validatePlayerInput(command.payload).ok) return;
         // Anti-spam: descarta inputs más rápidos que el tick del cliente
         const ahora = Date.now();
         if (ahora - (socket.__lastInput || 0) < INPUT_MIN_INTERVAL) return;
         socket.__lastInput = ahora;
-        rooms[socket.roomId].handleInput(socket.id, inputData);
+        rooms[socket.roomId].handleInput(socket.id, command.payload);
     });
 
     socket.on('playerShoot', (shootData) => {
+        if (!validateShoot(shootData).ok) return;
         if (socket.roomId && rooms[socket.roomId]) {
-            rooms[socket.roomId].handleShoot(socket.id, shootData);
+            const command = normalizeCommand(null, 'PLAYER_SHOOT', shootData);
+            rooms[socket.roomId].handleShoot(socket.id, command.payload);
         }
     });
 
@@ -2888,8 +3039,11 @@ io.on('connection', (socket) => {
     });
 
     socket.on('switchWeapon', (data) => {
+        const validation = validateWeaponSelection(data);
+        if (!validation.ok) return;
         if (socket.roomId && rooms[socket.roomId]) {
-            rooms[socket.roomId].handleSwitchWeapon(socket.id, data);
+            const command = normalizeCommand(null, 'SWITCH_WEAPON', data);
+            rooms[socket.roomId].handleSwitchWeapon(socket.id, command.payload);
         }
     });
 
@@ -2900,8 +3054,11 @@ io.on('connection', (socket) => {
     });
 
     socket.on('buyShopItem', (itemType) => {
+        const validation = validateShopItem(itemType);
+        if (!validation.ok) return;
         if (socket.roomId && rooms[socket.roomId]) {
-            rooms[socket.roomId].handleBuyItem(socket.id, itemType);
+            const command = normalizeCommand(null, 'BUY_SHOP_ITEM', { itemType: validation.itemType });
+            rooms[socket.roomId].handleBuyItem(socket.id, command.payload.itemType);
         }
     });
 
@@ -2920,7 +3077,464 @@ io.on('connection', (socket) => {
     });
 
     socket.on('startGame', ({ roomId }) => {
-        if (!socket.isAdmin) {
+        if (!adminAutorizado(socket)) {
+            return socket.emit('errorMsg', 'No tienes permisos de administrador.');
+        }
+        const room = rooms[roomId];
+        if (!room) {
+            return socket.emit('errorMsg', 'La sala no existe.');
+        }
+        if (!room.startGame()) {
+            return socket.emit('errorMsg', 'No se puede iniciar la partida (necesita al menos 2 jugadores).');
+        }
+        io.to(roomId).emit('playSound', 'explosion');
+    });
+
+    socket.on('leaveRoom', async () => {
+        if (socket.roomId && rooms[socket.roomId]) {
+            const room = rooms[socket.roomId];
+            await salirDeSala(socket, room);
+            socket.leave(socket.roomId);
+            delete socket.roomId;
+            emitirSalasPublicas();
+        }
+    });
+
+    socket.on('disconnect', async () => {
+        if (socket.roomId && rooms[socket.roomId]) {
+            const room = rooms[socket.roomId];
+            await salirDeSala(socket, room);
+            emitirSalasPublicas();
+        }
+    });
+});
+
+const PORT = Number(process.env.PORT) || 3000;
+server.listen(PORT, '0.0.0.0', () => {
+    // El mensaje antes decía "localhost" fijo, que en Render (donde PORT lo
+    // inyecta la plataforma) daba a entender que escuchaba en local. Se imprime
+    // el puerto real para que el log diga la verdad.
+    console.log('Servidor WinOrbs escuchando en el puerto ' + PORT);
+});
+ + neto.toFixed(2) + ')', refId: idPago,
+                        fecha: firebaseAdmin.firestore.FieldValue.serverTimestamp()
+                    });
+                    t.set(FIREBASE_DB.collection('metricas').doc('casa'), {
+                        comisionesAcumuladas: firebaseAdmin.firestore.FieldValue.increment(comision)
+                    }, { merge: true });
+                    t.update(refPago, { estado: 'pagado', comision, neto, procesadoEn: firebaseAdmin.firestore.FieldValue.serverTimestamp() });
+                    return { ok: true, estado: 'pagado', saldo: nuevoSaldo, comision, neto };
+                }
+
+                t.update(refPago, { estado: estadoSolicitado, procesadoEn: firebaseAdmin.firestore.FieldValue.serverTimestamp() });
+                return { ok: true, estado: estadoSolicitado, saldo: estadoSolicitado === 'aprobado' ? +(saldo + monto).toFixed(2) : saldo };
+            });
+            if (r.ok) registrarAuditoria('ADMIN_PROCESAR_PAGO', socket.id, { idPago, estado: r.estado });
+            socket.emit('pagoProcesado', Object.assign({ idPago }, r));
+        } catch (e) {
+            socket.emit('pagoProcesado', { ok: false, error: String(e.message || 'ERROR').slice(0, 160) });
+        }
+    });
+
+    socket.on('adminAjustarSaldo', async (payload) => {
+        if (!adminAutorizado(socket)) return socket.emit('saldoAjustado', { ok: false, error: 'NO_ADMIN' });
+        if (!FIREBASE_ECONOMY || !FIREBASE_DB) return socket.emit('saldoAjustado', { ok: false, error: 'ECONOMY_OFF' });
+        const uid = String(payload && payload.uid || '').trim();
+        const monto = Number(payload && payload.monto);
+        if (!uid || !Number.isFinite(monto) || monto === 0 || Math.abs(monto) > 10000) return socket.emit('saldoAjustado', { ok: false, error: 'PARAMS' });
+        try {
+            const r = await FIREBASE_DB.runTransaction(async (t) => {
+                const refU = FIREBASE_DB.collection('usuarios').doc(uid);
+                const snap = await t.get(refU);
+                if (!snap.exists) return { ok: false, error: 'USUARIO_NO_EXISTE' };
+                const saldo = Number(snap.data().saldo || 0);
+                const nuevoSaldo = +(saldo + monto).toFixed(2);
+                if (nuevoSaldo < 0) return { ok: false, error: 'SALDO_RESULTANTE_NEGATIVO' };
+                t.update(refU, { saldo: nuevoSaldo });
+                return { ok: true, saldo: nuevoSaldo };
+            });
+            if (r.ok) registrarAuditoria('ADMIN_AJUSTAR_SALDO', socket.id, { uid, monto: +monto.toFixed(2), saldo: r.saldo });
+            socket.emit('saldoAjustado', Object.assign({ uid }, r));
+        } catch (e) {
+            socket.emit('saldoAjustado', { ok: false, error: String(e.message || 'ERROR').slice(0, 160) });
+        }
+    });
+
+    // Admin: vincular un pendiente a un UID concreto (respaldo manual)
+    socket.on('adminVincularPremio', async (payload) => {
+        if (!adminAutorizado(socket)) return socket.emit('premioVinculado', { ok: false, error: 'NO_ADMIN' });
+        const p = (payload && typeof payload === 'object') ? payload : {};
+        if (!p.gameId || !p.uid) return socket.emit('premioVinculado', { ok: false, error: 'PARAMS' });
+        const r = await servidorAcreditarPremioPendiente(String(p.gameId), String(p.uid), { manual: true, exigirMatchApodo: false });
+        socket.emit('premioVinculado', Object.assign({ gameId: p.gameId }, r));
+        if (r.ok) io.emit('premiosActualizados', { gameId: p.gameId });
+    });
+
+    // Admin: forzar pasada de conciliación automática bajo demanda
+    socket.on('adminConciliarPremios', async () => {
+        if (!adminAutorizado(socket)) return socket.emit('premiosConciliados', { ok: false, error: 'NO_ADMIN' });
+        const r = await servidorConciliarPremiosPendientes('manual-admin');
+        socket.emit('premiosConciliados', r);
+        if (r.ok && (r.pagados || []).length > 0) io.emit('premiosActualizados', { n: r.pagados.length });
+    });
+
+    socket.on('adminCreateRoom', (roomData) => {
+        if (!adminAutorizado(socket)) {
+            return socket.emit('errorMsg', 'No tienes permisos de administrador.');
+        }
+
+        const validation = validateAdminRoom(roomData);
+        if (!validation.ok) {
+            return socket.emit('errorMsg', 'Configuración de sala inválida.');
+        }
+
+        const roomConfig = validation.room;
+        if (roomConfig.precioEntrada > 0 && (!FIREBASE_ECONOMY || !FIREBASE_DB)) {
+            return socket.emit('errorMsg', 'Las salas con entrada monetaria requieren economía server-side configurada.');
+        }
+        if (rooms[roomConfig.id]) {
+            return socket.emit('errorMsg', 'ID de sala inválido o ya existe.');
+        }
+
+        registrarAuditoria('ADMIN_CREATE_ROOM', socket.id, { roomId: roomConfig.id, maxPlayers: roomConfig.maxJugadores, entryFee: roomConfig.precioEntrada });
+        rooms[roomConfig.id] = new GameRoom(
+            roomConfig.id,
+            sanitizeNick(roomConfig.nombre),
+            roomConfig.maxJugadores,
+            roomConfig.precioEntrada,
+            roomConfig.esPrivada,
+            roomConfig.password
+        );
+        emitirSalasPublicas(true);
+    });
+
+    socket.on('adminDestroyRoom', async ({ roomId }) => {
+        if (!adminAutorizado(socket)) {
+            return socket.emit('errorMsg', 'No tienes permisos de administrador.');
+        }
+        if (rooms[roomId]) {
+            const room = rooms[roomId];
+
+            // Reembolsar entradas solo si la partida aún no arrancó
+            if (FIREBASE_ECONOMY && !room.gameStarted && !room.lobbyActive) {
+                Object.values(room.players).forEach(p => {
+                    if (p.pagoEntrada && p.uid) {
+                        servidorReembolsar(p.uid, p.pagoEntrada.entradasId, p.pagoEntrada.monto);
+                    }
+                });
+            }
+
+            // Notificar y expulsar a todos los jugadores antes de cerrar la sala
+            io.to(roomId).emit('roomClosed', { reason: 'La sala fue cerrada por el administrador.' });
+            io.in(roomId).fetchSockets().then(sockets => {
+                sockets.forEach(s => {
+                    s.leave(roomId);
+                    delete s.roomId;
+                });
+            }).catch(() => { });
+
+            registrarAuditoria('ADMIN_DESTROY_ROOM', socket.id, { roomId });
+            room.stopLoop();
+            delete rooms[roomId];
+            emitirSalasPublicas(true);
+        }
+    });
+
+    // ── Tienda de skins ──────────────────────────────────────────
+    // Lista de skins activas (respaldo para la tienda si Firestore directo falla)
+    socket.on('tiendaSkins', async () => {
+        try {
+            if (!FIREBASE_ECONOMY || !FIREBASE_DB) return socket.emit('tiendaList', []);
+            const snap = await FIREBASE_DB.collection('skins').where('activo', '==', true).limit(100).get();
+            socket.emit('tiendaList', snap.docs.map(d => {
+                const dta = d.data();
+                return {
+                    id: d.id,
+                    nombre: sanitizeNick(String(dta.nombre || 'Skin')),
+                    precio: Number(dta.precio || 0),
+                    c1: sanitizeHex(dta.c1, '#38bdf8'),
+                    c2: sanitizeHex(dta.c2, '#0284c7'),
+                    border: sanitizeHex(dta.border, '#bae6fd'),
+                    imagenUrl: typeof dta.imagenUrl === 'string' ? dta.imagenUrl.slice(0, 500) : ''
+                };
+            }));
+        } catch (e) {
+            socket.emit('tiendaList', []);
+        }
+    });
+
+    // Compra de skin: valida identidad (token) y cobra server-side
+    socket.on('comprarSkin', async (data) => {
+        const p = (data && typeof data === 'object') ? data : {};
+        try {
+            await verificarUidEnSala(socket, null, p);
+        } catch (e) { /* token inválido: queda sin verificación */ }
+        const res = await servidorComprarSkin(socket.verifiedUid, p.skinId);
+        socket.emit('skinResult', res);
+        if (res.ok) {
+            telegramNotify('🛒 <b>Compra de skin</b>\nUID: ' + socket.verifiedUid + '\nSkin: ' + (p.skinId || '?'));
+        }
+    });
+
+    socket.on('joinRoom', async ({ roomId, password, nick, skin, uid, token }) => {
+        const room = rooms[roomId];
+
+        if (!room) {
+            return socket.emit('errorMsg', 'La sala especificada no existe.');
+        }
+        // La contraseña se valida primero (incluso si ya está en la sala)
+        if (room.isPrivate && room.password !== password) {
+            return socket.emit('errorMsg', 'Contraseña de sala incorrecta.');
+        }
+        // Ya registrado en esta misma sala: confirmar, y aprovechar para vincular token/uid tardíos
+        if (socket.roomId === room.id && room.players[socket.id]) {
+            await verificarUidEnSala(socket, room, { uid, token });
+            if (room.entryFee > 0) {
+                if (!FIREBASE_ECONOMY || !FIREBASE_DB) {
+                    return socket.emit('errorMsg', 'Esta sala de pago no está disponible temporalmente.');
+                }
+                if (!socket.verifiedUid) {
+                    return socket.emit('errorMsg', 'Las salas de pago requieren iniciar sesión con cuenta verificada.');
+                }
+                if (!room.players[socket.id].pagoEntrada) {
+                    const cobro = await servidorCobrarEntrada(socket.verifiedUid, room.id, room.entryFee);
+                    if (!cobro.ok) {
+                        if (cobro.error === 'SALDO_INSUFICIENTE') {
+                            return socket.emit('errorMsg', 'Saldo insuficiente para cubrir la entrada a esta sala.');
+                        }
+                        if (cobro.error === 'NO_PROFILE') {
+                            return socket.emit('errorMsg', 'No tienes perfil en la wallet. Regístrate antes de jugar en salas de pago.');
+                        }
+                        return socket.emit('errorMsg', 'No se pudo cobrar la entrada: ' + String(cobro.error || 'ERROR').slice(0, 120));
+                    }
+                    socket.__entradaCobrada = { entradasId: cobro.entradasId, monto: room.entryFee, salaId: room.id };
+                    room.players[socket.id].pagoEntrada = socket.__entradaCobrada;
+                }
+            }
+            return socket.emit('joinedSuccess', { playerId: socket.id, roomId: room.id });
+        }
+        if (room.gameStarted) {
+            return socket.emit('errorMsg', 'La partida ya ha comenzado.');
+        }
+        // Cupo: no aplicar a quien ya ocupa un lugar en esta sala
+        const yaEstaAqui = socket.roomId === room.id;
+        if (!yaEstaAqui && Object.keys(room.players).length >= room.maxPlayers) {
+            return socket.emit('errorMsg', 'La sala está llena.');
+        }
+
+        const ip = ipDeSocket(socket);
+        // Anti multi-cuenta: límite de sockets por IP en salas de pago
+        if (room.entryFee > 0 && !yaEstaAqui) {
+            let mismaIp = 0;
+            for (const p of Object.values(room.players)) {
+                if (p.__ip && p.__ip === ip) mismaIp++;
+            }
+            if (mismaIp >= MAX_SOCKETS_PER_IP) {
+                return socket.emit('errorMsg', 'Límite de conexiones desde tu red alcanzado en esta sala.');
+            }
+        }
+        // Verificar identidad ANTES de aplicar reglas basadas en UID. Nunca se
+        // compara un UID crudo enviado por el cliente.
+        await verificarUidEnSala(socket, room, { token });
+
+        // Un mismo UID verificado no puede ocupar 2 asientos en la misma sala.
+        if (socket.verifiedUid) {
+            const duplicado = Object.values(room.players).some(p =>
+                p.uid && p.uid === socket.verifiedUid && p.id !== socket.id
+            );
+            if (duplicado) {
+                return socket.emit('errorMsg', 'Ya tienes una sesión activa en esta sala.');
+            }
+        }
+
+        // Cambio de sala: salir automáticamente de la sala anterior (con reembolso si aplica)
+        if (socket.roomId && rooms[socket.roomId] && socket.roomId !== room.id) {
+            await salirDeSala(socket, rooms[socket.roomId]);
+        }
+
+        // Verificar identidad (modo economía: ID token de Firebase)
+        await verificarUidEnSala(socket, room, { uid, token });
+
+        // Apodo ÚNICO en juego: si el socket trae UID verificado y el apodo que
+        // escribió NO coincide con el registrado en su perfil, se usa el del
+        // perfil. Así nadie puede suplantar el apodo de otro dentro de la sala
+        // (y el ganadorNick del premio siempre es el dueño real).
+        // Además se rechaza el nick si OTRO jugador de la sala ya lo usa
+        // (comparación insensible a mayúsculas), para que no haya 2 iguales
+        // ni siquiera entre invitados sin UID.
+        let nickFinal = nick;
+        if (socket.verifiedUid && FIREBASE_DB) {
+            try {
+                const snapPerfil = await FIREBASE_DB.collection('usuarios').doc(socket.verifiedUid).get();
+                const apodoReal = snapPerfil.exists ? String((snapPerfil.data() || {}).apodo || '').trim() : '';
+                if (apodoReal) nickFinal = apodoReal;
+            } catch (e) { /* si falla la lectura, se usa el nick enviado */ }
+        }
+        const claveNick = String(nickFinal || '').trim().toLowerCase();
+        const nickOcupado = Object.values(room.players).some((p) =>
+            p.id !== socket.id && String(p.nick || '').trim().toLowerCase() === claveNick);
+        if (claveNick && nickOcupado) {
+            return socket.emit('errorMsg', 'Ese apodo ya está en uso en esta sala. Cambia tu apodo en Mi Perfil.');
+        }
+
+        // Anti-suplantación GLOBAL: un socket sin UID verificado (invitado o
+        // navegador sin token) no puede jugar con un apodo que ya pertenece a una
+        // cuenta registrada (reserva apodos/{clave}). Así nadie puede hacerse
+        // pasar por otro jugador y desviar la conciliación de su premio.
+        if (!socket.verifiedUid && FIREBASE_DB && claveNick) {
+            try {
+                const snapAp = await FIREBASE_DB.collection('apodos').doc(claveNick).get();
+                if (snapAp.exists && (snapAp.data() || {}).uid) {
+                    return socket.emit('errorMsg', 'Ese apodo pertenece a una cuenta registrada. Inicia sesión con tu cuenta o elige otro apodo.');
+                }
+            } catch (e) { /* sin colección/reglas: no se bloquea el acceso */ }
+        }
+
+        // Las salas de pago nunca funcionan sin economía server-side: no se permite
+        // convertir una entrada monetaria en una partida gratuita por falta de credenciales.
+        if (room.entryFee > 0 && (!FIREBASE_ECONOMY || !FIREBASE_DB)) {
+            return socket.emit('errorMsg', 'Esta sala de pago no está disponible temporalmente.');
+        }
+        // Cobro de entrada en el SERVIDOR — el cliente ya no decide.
+        if (room.entryFee > 0 && FIREBASE_ECONOMY && !socket.__entradaCobrada) {
+            if (!socket.verifiedUid) {
+                return socket.emit('errorMsg', 'Las salas de pago requieren iniciar sesión con cuenta verificada.');
+            }
+            const cobro = await servidorCobrarEntrada(socket.verifiedUid, room.id, room.entryFee);
+            if (!cobro.ok) {
+                if (cobro.error === 'SALDO_INSUFICIENTE') {
+                    return socket.emit('errorMsg', 'Saldo insuficiente para cubrir la entrada a esta sala.');
+                }
+                if (cobro.error === 'NO_PROFILE') {
+                    return socket.emit('errorMsg', 'No tienes perfil en la wallet. Regístrate antes de jugar en salas de pago.');
+                }
+                return socket.emit('errorMsg', 'No se pudo cobrar la entrada: ' + String(cobro.error || 'ERROR').slice(0, 120));
+            }
+            socket.__entradaCobrada = { entradasId: cobro.entradasId, monto: room.entryFee, salaId: room.id };
+        }
+
+        socket.join(room.id);
+        socket.roomId = room.id;
+        // Geometría del mapa para este cliente concreto (recién unido o
+        // reconectado). Va antes que nada de gameState para que tenga el mapa
+        // ya montado cuando empiece a dibujar.
+        room.emitirConfig(socket);
+        // Anticheat de skins: si la skin no es básica ni está en el inventario del jugador → básica
+        const skinValidada = await validarSkinCliente(skin, socket.verifiedUid);
+        room.addPlayer(socket.id, nickFinal, skinValidada, socket.verifiedUid);
+        const nuevoP = room.players[socket.id];
+        nuevoP.__ip = ip;
+        if (socket.__entradaCobrada) nuevoP.pagoEntrada = socket.__entradaCobrada;
+
+        socket.emit('joinedSuccess', { playerId: socket.id, roomId: room.id });
+        emitirSalasPublicas();
+    });
+
+    // El cliente vincula su UID/token de Firebase si llegó después del join
+    // Acepta {uid, token} (nuevo) o string (legacy).
+    socket.on('setUid', async (data) => {
+        const room = rooms[socket.roomId];
+        if (!room || !room.players[socket.id]) return;
+
+        await verificarUidEnSala(socket, room, data);
+        const p = room.players[socket.id];
+        if (socket.verifiedUid) {
+            const duplicado = Object.values(room.players).some(other =>
+                other.id !== socket.id && other.uid && other.uid === socket.verifiedUid
+            );
+            if (duplicado) {
+                socket.verifiedUid = null;
+                return socket.emit('errorMsg', 'Esa cuenta ya está jugando en esta sala.');
+            }
+            p.uid = socket.verifiedUid;
+        }
+
+        // Cobro diferido: llegó el token después del join en una sala de pago
+        if (FIREBASE_ECONOMY && room.entryFee > 0 && socket.verifiedUid && !p.pagoEntrada) {
+            const cobro = await servidorCobrarEntrada(socket.verifiedUid, room.id, room.entryFee);
+            if (cobro.ok) {
+                socket.__entradaCobrada = { entradasId: cobro.entradasId, monto: room.entryFee, salaId: room.id };
+                p.pagoEntrada = socket.__entradaCobrada;
+            } else if (cobro.error === 'SALDO_INSUFICIENTE') {
+                socket.emit('errorMsg', 'Saldo insuficiente para la entrada. Serás retirado de la sala.');
+                room.removePlayer(socket.id);
+                socket.leave(room.id);
+                delete socket.roomId;
+            }
+        }
+    });
+
+    socket.on('playerInput', (inputData) => {
+        if (!socket.roomId || !rooms[socket.roomId]) return;
+        const command = normalizeCommand(null, 'PLAYER_MOVE', inputData);
+        if (!validatePlayerInput(command.payload).ok) return;
+        // Anti-spam: descarta inputs más rápidos que el tick del cliente
+        const ahora = Date.now();
+        if (ahora - (socket.__lastInput || 0) < INPUT_MIN_INTERVAL) return;
+        socket.__lastInput = ahora;
+        rooms[socket.roomId].handleInput(socket.id, command.payload);
+    });
+
+    socket.on('playerShoot', (shootData) => {
+        if (!validateShoot(shootData).ok) return;
+        if (socket.roomId && rooms[socket.roomId]) {
+            const command = normalizeCommand(null, 'PLAYER_SHOOT', shootData);
+            rooms[socket.roomId].handleShoot(socket.id, command.payload);
+        }
+    });
+
+    socket.on('playerDash', () => {
+        if (socket.roomId && rooms[socket.roomId]) {
+            rooms[socket.roomId].handleDash(socket.id);
+        }
+    });
+
+    socket.on('playerBomb', () => {
+        if (socket.roomId && rooms[socket.roomId]) {
+            rooms[socket.roomId].handleBomb(socket.id);
+        }
+    });
+
+    socket.on('switchWeapon', (data) => {
+        const validation = validateWeaponSelection(data);
+        if (!validation.ok) return;
+        if (socket.roomId && rooms[socket.roomId]) {
+            const command = normalizeCommand(null, 'SWITCH_WEAPON', data);
+            rooms[socket.roomId].handleSwitchWeapon(socket.id, command.payload);
+        }
+    });
+
+    socket.on('playerReload', () => {
+        if (socket.roomId && rooms[socket.roomId]) {
+            rooms[socket.roomId].handleReload(socket.id);
+        }
+    });
+
+    socket.on('buyShopItem', (itemType) => {
+        const validation = validateShopItem(itemType);
+        if (!validation.ok) return;
+        if (socket.roomId && rooms[socket.roomId]) {
+            const command = normalizeCommand(null, 'BUY_SHOP_ITEM', { itemType: validation.itemType });
+            rooms[socket.roomId].handleBuyItem(socket.id, command.payload.itemType);
+        }
+    });
+
+    socket.on('requestRespawn', () => {
+        if (socket.roomId && rooms[socket.roomId]) {
+            rooms[socket.roomId].handleRespawn(socket.id);
+        }
+    });
+
+    socket.on('pedirConfig', () => {
+        const room = rooms[socket.roomId];
+        // El cliente lo pide cuando le falta la geometría o su configVersion no
+        // cuadra con la del gameState (mapas tras un reset). Es idempotente y
+        // barata; no filtra nada porque solo devuelve la sala del propio socket.
+        if (room) room.emitirConfig(socket);
+    });
+
+    socket.on('startGame', ({ roomId }) => {
+        if (!adminAutorizado(socket)) {
             return socket.emit('errorMsg', 'No tienes permisos de administrador.');
         }
         const room = rooms[roomId];

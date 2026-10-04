@@ -254,9 +254,7 @@
       collection,
       addDoc,
       query,
-      where,
-      runTransaction,
-      serverTimestamp
+      where,      serverTimestamp
     } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
     import { firebaseConfig } from "./js/firebase-config.js";
 
@@ -567,7 +565,9 @@
       $("btn-deposito").disabled = false;
     });
 
-    // ── RETIRO (transacción: valida y descuenta el saldo atómicamente; la casa retiene 20%) ──
+    // ── RETIRO: el cliente solo crea la solicitud pendiente.
+    // Nunca modifica usuarios.saldo. La reserva/débito y el pago final deben
+    // ejecutarse en una operación server-side/admin, con validación del saldo.
     $("btn-retiro").addEventListener("click", async () => {
       if (!uid || !perfil) return msg("Espera: cargando tu sesión…", "err");
       const monto = parseFloat($("ret-monto").value);
@@ -582,37 +582,22 @@
 
       $("btn-retiro").disabled = true;
       try {
-        await runTransaction(db, async (t) => {
-          const refUsuario = doc(db, "usuarios", uid);
-          const snap = await t.get(refUsuario);
-          const saldoActual = Number((snap.data() || {}).saldo || 0);
-          if (saldoActual < monto) throw new Error("SALDO_INSUFICIENTE");
-          t.update(refUsuario, { saldo: saldoActual - monto });
-          t.set(doc(collection(db, "pagos")), {
-            usuario: perfil.apodo || "Jugador",
-            usuarioId: uid,
-            tipo: "retiro",
-            metodo: metodo,
-            datosCobro: datos,
-            referencia: "—",
-            monto: monto,
-            comision: comision,
-            neto: neto,
-            estado: "pendiente",
-            fecha: serverTimestamp()
-          });
+        await addDoc(collection(db, "pagos"), {
+          usuario: perfil.apodo || "Jugador",
+          usuarioId: uid,
+          tipo: "retiro",
+          metodo: metodo,
+          datosCobro: datos,
+          referencia: "—",
+          monto: monto,
+          estado: "pendiente",
+          fecha: serverTimestamp()
         });
-        socket.emit("notifyPlayerTelegram",
-          "💸 NUEVO RETIRO — " + (perfil.apodo || "Jugador") + " — $" + monto.toFixed(2) + " USD (neto $" + neto.toFixed(2) + ") — " + metodo);
-        msg("Solicitud enviada. El monto queda reservado hasta que el admin la revise.", "ok");
+        msg("Solicitud enviada. El saldo será validado y reservado por el servidor/admin antes del pago.", "ok");
         $("ret-monto").value = "";
         renderComision();
       } catch (e) {
-        if (e.message === "SALDO_INSUFICIENTE" || (e.code || "").includes("aborted")) {
-          msg("No tienes saldo suficiente para ese retiro.", "err");
-        } else {
-          msg("No se pudo enviar: " + (e.code || e.message), "err");
-        }
+        msg("No se pudo enviar: " + (e.code || e.message), "err");
       }
       $("btn-retiro").disabled = false;
     });

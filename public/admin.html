@@ -509,7 +509,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-        import { getFirestore, collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, increment, setDoc, getDoc, query, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, doc, updateDoc, deleteDoc, onSnapshot, setDoc, getDoc, query, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
         
 
         // Configuración de Firebase (config pública, seguridad vía Firestore Rules)
@@ -659,42 +659,14 @@ const colorTipo = esRetiro ? '#ef4444' : esPremio ? '#f59e0b' : '#22c55e';
         }
 
         window.procesarPago = async function(idPago, idUsuario, monto, nuevoEstado, esRetiro = false, comision = 0, neto = 0, esPremio = false) {
-            try {
-                await updateDoc(doc(db, "pagos", idPago), { estado: nuevoEstado });
-
-                // Historial de movimientos (ID determinista: re-procesar no duplica)
-                const tipoMov = (!esRetiro && !esPremio && nuevoEstado === 'aprobado') ? 'recarga'
-                    : (esRetiro && nuevoEstado === 'pagado') ? 'retiro' : null;
-                if (idUsuario && tipoMov) {
-                    const esRecarga = tipoMov === 'recarga';
-                    await setDoc(doc(db, "movimientos", "mov_" + idPago), {
-                        usuarioId: idUsuario, tipo: tipoMov,
-                        monto: esRecarga ? +Number(monto).toFixed(2) : -Number(monto).toFixed(2),
-                        detalle: esRecarga ? 'Recarga de saldo aprobada' : 'Retiro pagado (neto $' + Number(neto > 0 ? neto : monto - comision).toFixed(2) + ')',
-                        refId: idPago,
-                        fecha: serverTimestamp()
-                    });
-                }
-
-                if(nuevoEstado === 'aprobado' && idUsuario && esPremio) {
-                    // Premio: acredita el neto al ganador y acumula la comisión de la casa (20%)
-                    await updateDoc(doc(db, "usuarios", idUsuario), { saldo: increment(monto) });
-                    const comisionPremio = Number(comision) > 0 ? Number(comision) : +(Number(monto) * 0.25).toFixed(2);
-                    await setDoc(doc(db, "metricas", "casa"), { comisionesAcumuladas: increment(comisionPremio) }, { merge: true });
-                } else if(nuevoEstado === 'aprobado' && idUsuario && !esRetiro && !esPremio) {
-                    await updateDoc(doc(db, "usuarios", idUsuario), { saldo: increment(monto) });
-                } else if(nuevoEstado === 'rechazado' && idUsuario && esRetiro) {
-                    await updateDoc(doc(db, "usuarios", idUsuario), { saldo: increment(monto) });
-                } else if(nuevoEstado === 'pagado' && esRetiro) {
-                    // La casa retiene su comisión (20%) del retiro — métrica acumulativa
-                    const comisionNum = Number(comision) > 0 ? Number(comision) : +(Number(monto) * 0.2).toFixed(2);
-                    await setDoc(doc(db, "metricas", "casa"), { comisionesAcumuladas: increment(comisionNum) }, { merge: true });
-                }
-
-                notificarTelegram(`🔔 <b>PAGO ACTUALIZADO</b>\nID: ${idPago}\nNuevo Estado: <b>${nuevoEstado.toUpperCase()}</b>\nMonto: $${monto} USD${(nuevoEstado === 'pagado' && esRetiro) ? `\nNeto a pagar: $${Number(neto > 0 ? neto : Number(monto) - Number(comision)).toFixed(2)} USD · Comisión casa: $${Number(comision > 0 ? comision : Number(monto) * 0.2).toFixed(2)} USD` : ''}`);
-                alert(`Solicitud actualizada a: ${nuevoEstado}`);
-            } catch(e) { alert("Error al procesar: " + e.message); }
+            if (!idPago) return alert("Solicitud inválida.");
+            socket.emit('adminProcesarPago', { idPago, estado: nuevoEstado });
         };
+
+        socket.on('pagoProcesado', (r) => {
+            if (!r || !r.ok) return alert("No se pudo procesar: " + ((r && r.error) || "error"));
+            alert("Solicitud actualizada a: " + r.estado);
+        });
 
         // Premios que quedaron pendientes (ganador sin UID vinculado al jugar)
         function escucharPremios() {
@@ -739,26 +711,9 @@ const colorTipo = esRetiro ? '#ef4444' : esPremio ? '#f59e0b' : '#22c55e';
             }, (e) => errorReglas("partidas", e));
         }
 
-        window.pagarPremioPendiente = async function (gameId, ganadorNick, neto) {
-            try {
-                const q = query(collection(db, "usuarios"), where("apodo", "==", ganadorNick));
-                const res = await getDocs(q);
-                if (res.empty) { alert("No hay usuario con el apodo '" + ganadorNick + "'. Créditalo manualmente desde la tabla de usuarios."); return; }
-                if (res.size > 1) { alert("Hay " + res.size + " usuarios con el apodo '" + ganadorNick + "'. Usa 'Vincular UID y pagar' para elegir al ganador correcto."); return; }
-                const uidGanador = res.docs[0].id;
-                const snap = await getDoc(doc(db, "usuarios", uidGanador));
-                const saldo = Number((snap.data() || {}).saldo || 0);
-                const snapPart = await getDoc(doc(db, "partidas", gameId));
-                const pdata = snapPart.data() || {};
-                if (pdata.estado === "pagada") { alert("Esta partida ya fue pagada."); return; }
-                await updateDoc(doc(db, "usuarios", uidGanador), { saldo: +(saldo + Number(neto || 0)).toFixed(2) });
-                // NOTA: la comisión YA se contabilizó al crear la partida en el
-                // servidor, así que aquí NO se vuelve a sumar (evita duplicarla).
-                const comisionPart = Number(pdata.comision || 0);
-                await updateDoc(doc(db, "partidas", gameId), { estado: "pagada", ganadorUid: uidGanador, pagadoPorAdmin: true });
-                notificarTelegram(`🏆 <b>PREMIO PAGADO (manual)</b>\nPartida: ${gameId}\nGanador: ${ganadorNick}\nNeto: $${Number(neto || 0).toFixed(2)} USD\nComisión casa: $${comisionPart.toFixed(2)} USD`);
-                alert("Premio pagado al ganador.");
-            } catch (e) { alert("Error al pagar premio: " + (e.message || e)); }
+        window.pagarPremioPendiente = function (gameId, ganadorNick, neto) {
+            // La liquidación se ejecuta en Node.js con una transacción atómica.
+            socket.emit('adminConciliarPremios');
         };
 
         // Conciliación automática bajo demanda: el servidor paga los pendientes
@@ -1195,10 +1150,15 @@ const colorTipo = esRetiro ? '#ef4444' : esPremio ? '#f59e0b' : '#22c55e';
         };
 
         window.modificarSaldo = async function(userId, monto) {
-            try {
-                await updateDoc(doc(db, "usuarios", userId), { saldo: increment(monto) });
-            } catch(e) { alert("Error al modificar saldo: " + e.message); }
+            const valor = Number(monto);
+            if (!userId || !Number.isFinite(valor) || valor === 0) return alert("Monto inválido.");
+            socket.emit('adminAjustarSaldo', { uid: userId, monto: valor });
         };
+
+        socket.on('saldoAjustado', (r) => {
+            if (!r || !r.ok) return alert("No se pudo ajustar el saldo: " + ((r && r.error) || "error"));
+            cerrarModalSaldo();
+        });
 
         window.abrirModalSaldo = function(userId, apodo) {
             usuarioSeleccionadoId = userId;
