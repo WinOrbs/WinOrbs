@@ -5,6 +5,7 @@ const firestore = fs.readFileSync(require.resolve('../firestore.rules'), 'utf8')
 const storage = fs.readFileSync(require.resolve('../storage.rules'), 'utf8');
 
 assert.match(firestore, /match \/inventarios\/\{uid\}/);
+assert.match(firestore, /hasOnly\(\['apodo', 'displayName', 'avatarId', 'bio', 'country'\]\)/);
 assert.match(firestore, /match \/progresion\/\{uid\}/);
 assert.match(firestore, /match \/recompensas\/\{uid\}/);
 assert.match(firestore, /match \/pagos\/\{id\}/);
