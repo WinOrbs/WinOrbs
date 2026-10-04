@@ -35,8 +35,7 @@ service firebase.storage {
     match /skins/{fileName} {
       allow read: if request.auth != null;
       allow create, update, delete: if request.auth != null
-                            && (request.auth.uid == "2TRnwllarqhaggRR8so48rSVzji1"
-                                || request.auth.token.email == "winorbs@admins.com")
+                            && (request.auth.token.email == "winorbs@admins.com")
                             && request.resource.size < 5 * 1024 * 1024
                             && request.resource.contentType.matches('image/.*');
     }
