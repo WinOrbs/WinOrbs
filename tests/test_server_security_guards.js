@@ -2,6 +2,9 @@
 const assert = require('assert');
 const fs = require('fs');
 const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
+const indexHtml = fs.readFileSync(require.resolve('../public/index.html'), 'utf8');
+const walletHtml = fs.readFileSync(require.resolve('../public/wallet.html'), 'utf8');
+
 
 assert.ok(!source.includes('process.env.ADMIN_PASSWORD || "admin123"'));
 assert.ok(!source.includes('process.env.ADMIN_PASSWORD || \'admin123\''));
