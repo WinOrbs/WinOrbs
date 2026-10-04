@@ -21,4 +21,8 @@ assert.match(source, /salas con entrada monetaria requieren economía server-sid
 assert.match(source, /Esta sala de pago no está disponible temporalmente/);
 assert.doesNotMatch(source, /Cobro\/premio los gestiona el cliente/);
 
+assert.doesNotMatch(walletHtml, /runTransaction/);
+assert.doesNotMatch(walletHtml, /updateDoc\([^)]*usuarios/);
+assert.doesNotMatch(walletHtml, /usuarios\/[^\n]*saldo/);
+
 console.log('OK security: server does not trust raw UID or fallback admin credentials.');
