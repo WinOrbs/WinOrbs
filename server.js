@@ -1612,6 +1612,8 @@ class GameRoom {
 
     endGame(opts = {}) {
         if (this.ending) return;
+        if (!canTransition(this.matchStatus, MATCH_STATUS.ENDING)) return;
+        this.matchStatus = MATCH_STATUS.ENDING;
         this.ending = true;
         const abandono = !!opts.abandono;
         this.soloTimer = null;
@@ -1629,6 +1631,7 @@ class GameRoom {
         const pozo = +(this.pozoTotal || (leaderboard.length * this.entryFee)).toFixed(2);
         const premioNeto = +(pozo * 0.8).toFixed(2);
 
+        this.matchStatus = MATCH_STATUS.RESULT_LOCKED;
         io.to(this.id).emit('gameOver', {
             gameId: gameId,
             entryFee: this.entryFee,
@@ -1655,6 +1658,7 @@ class GameRoom {
 
             // Vaciar jugadores y resetear la sala para nuevos registros
             this.players = {};
+            this.matchStatus = MATCH_STATUS.COMPLETED;
             this.resetForLobby();
             this.startLoop();
             emitirSalasPublicas();
@@ -1697,6 +1701,7 @@ class GameRoom {
         this.soloTimer = null;
         this.pozoTotal = 0;
         this.ending = false;
+        this.matchStatus = MATCH_STATUS.WAITING;
         this.initEnergy();
         // El mapa es NUEVO: sube la versión y se reenvía la geometría. Sin esto
         // el cliente emparejaría el hp de la partida anterior contra este mapa
