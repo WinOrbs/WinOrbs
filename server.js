@@ -2,6 +2,7 @@
 try { require('dotenv').config(); } catch (e) { /* dotenv no instalado: usar variables de entorno del sistema */ }
 
 const { isProduction, corsRaw, corsAllowAll, isOriginAllowed, adminPassword } = require('./apps/server/config');
+const { normalizeCommand, validatePlayerInput, validateShoot } = require('./apps/server/transport/command');
 
 const express = require('express');
 const http = require('http');
@@ -1060,10 +1061,17 @@ class GameRoom {
 
     handleInput(socketId, inputData) {
         const p = this.players[socketId];
-        if (p && !p.isDead) {
-            p.inputs = inputData;
-            p.angle = inputData.angle || p.angle;
-        }
+        if (!p || p.isDead) return;
+        const validation = validatePlayerInput(inputData);
+        if (!validation.ok) return;
+        p.inputs = {
+            w: inputData.w === true,
+            a: inputData.a === true,
+            s: inputData.s === true,
+            d: inputData.d === true,
+            angle: typeof inputData.angle === 'number' ? inputData.angle : p.inputs.angle
+        };
+        if (typeof inputData.angle === 'number') p.angle = inputData.angle;
     }
 
     // Aviso de cargador vacío (rate-limit: ni el audio ni el banner se saturan)
@@ -1079,6 +1087,7 @@ class GameRoom {
 
     handleShoot(socketId, shootData) {
         const p = this.players[socketId];
+        if (!validateShoot(shootData).ok) return;
         if (!p || p.isDead || p.isReloading) return;
 
         // Anticheat: cooldown mínimo entre disparos por arma (mata el spam de balas)
@@ -2857,16 +2866,20 @@ io.on('connection', (socket) => {
 
     socket.on('playerInput', (inputData) => {
         if (!socket.roomId || !rooms[socket.roomId]) return;
+        const command = normalizeCommand(null, 'PLAYER_MOVE', inputData);
+        if (!validatePlayerInput(command.payload).ok) return;
         // Anti-spam: descarta inputs más rápidos que el tick del cliente
         const ahora = Date.now();
         if (ahora - (socket.__lastInput || 0) < INPUT_MIN_INTERVAL) return;
         socket.__lastInput = ahora;
-        rooms[socket.roomId].handleInput(socket.id, inputData);
+        rooms[socket.roomId].handleInput(socket.id, command.payload);
     });
 
     socket.on('playerShoot', (shootData) => {
+        if (!validateShoot(shootData).ok) return;
         if (socket.roomId && rooms[socket.roomId]) {
-            rooms[socket.roomId].handleShoot(socket.id, shootData);
+            const command = normalizeCommand(null, 'PLAYER_SHOOT', shootData);
+            rooms[socket.roomId].handleShoot(socket.id, command.payload);
         }
     });
 
