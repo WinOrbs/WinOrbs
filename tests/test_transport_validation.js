@@ -6,7 +6,8 @@ const {
     validatePlayerInput,
     validateShoot,
     validateWeaponSelection,
-    validateShopItem
+    validateShopItem,
+    validateAdminRoom
 } = require('../apps/server/transport/command');
 
 const cmd = normalizeCommand(' abc ', 'PLAYER_MOVE', { w: true, angle: 0 });
