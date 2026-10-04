@@ -2,7 +2,16 @@
 try { require('dotenv').config(); } catch (e) { /* dotenv no instalado: usar variables de entorno del sistema */ }
 
 const { corsRaw, corsAllowAll, isOriginAllowed, adminPassword } = require('./apps/server/config');
-const {\n    normalizeCommand,\n    validatePlayerInput,\n    validateShoot,\n    validateWeaponSelection,\n    validateShopItem\n} = require('./apps/server/transport/command');
+const {
+    normalizeCommand,
+    validatePlayerInput,
+    validateShoot,
+    validateWeaponSelection,
+    validateShopItem,
+    validateAdminRoom
+} = require('./apps/server/transport/command');
+const { MATCH_STATUS, canTransition } = require('./apps/server/game/lifecycle');
+const { applyDeathLoss } = require('./apps/server/game/orbs');
 
 const express = require('express');
 const http = require('http');
