@@ -10,11 +10,11 @@ rules_version = '2';
 // 3) Pégalo abajo en ADMIN_UID y publica las reglas.
 //
 // ECONOMÍA:
-// - Modo economía (servidor con serviceAccountKey.json): el servidor escribe
-//   entradas/premios/partidas vía Admin SDK (bypasa estas reglas). El cliente
-//   JAMÁS sube su saldo: solo el admin o el servidor pueden hacerlo.
-// - Modo degradado (sin clave): el cliente crea marcadores (partidas/entradas)
-//   y solicitudes 'premio' que el admin acredita MANUALMENTE.
+// - El servidor escribe entradas/premios/partidas vía Admin SDK (bypasa estas
+//   reglas). El cliente JAMÁS crea marcadores de entrada/partida ni controla
+//   premios o saldo.
+// - Sin credenciales de servidor, las funciones de dinero deben permanecer
+//   deshabilitadas; no existe un "modo degradado" que confíe en el cliente.
 // ─────────────────────────────────────────────────────────────
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -99,23 +99,16 @@ service cloud.firestore {
     match /pagos/{id} {
       allow read: if request.auth != null && (isAdmin() || resource.data.usuarioId == request.auth.uid);
 
-      // Crear: solo para sí mismo, siempre 'pendiente', monto con tope de sanidad.
-      // Un 'premio' solo es válido si referencia una partida marcada donde el
-      // solicitante ES el ganador y el monto coincide exactamente con su neto.
+      // El cliente solo puede crear solicitudes de depósito/retiro.
+      // Los premios son un efecto de la liquidación server-side y nunca los
+      // crea el cliente.
       allow create: if request.auth != null
                     && request.resource.data.usuarioId == request.auth.uid
                     && request.resource.data.estado == 'pendiente'
-                    && request.resource.data.tipo in ['deposito', 'retiro', 'premio']
+                    && request.resource.data.tipo in ['deposito', 'retiro']
                     && request.resource.data.monto is number
                     && request.resource.data.monto > 0
-                    && request.resource.data.monto <= 10000
-                    && (request.resource.data.tipo in ['deposito', 'retiro']
-                        || (request.resource.data.tipo == 'premio'
-                            && request.resource.data.partidaId is string
-                            && get(/databases/$(database)/documents/partidas/$(request.resource.data.partidaId)).data.ganadorUid == request.auth.uid
-                            && get(/databases/$(database)/documents/partidas/$(request.resource.data.partidaId)).data.estado in ['pagada', 'premio_pendiente_admin']
-                            && request.resource.data.monto >= get(/databases/$(database)/documents/partidas/$(request.resource.data.partidaId)).data.neto - 0.01
-                            && request.resource.data.monto <= get(/databases/$(database)/documents/partidas/$(request.resource.data.partidaId)).data.neto + 0.01));
+                    && request.resource.data.monto <= 10000;
 
       // El admin mueve el estado (aprobado/pagado/rechazado) y acredita el saldo.
       allow update: if isAdmin();
@@ -145,45 +138,19 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // ── Partidas: marcador atómico del premio. No mueven dinero por sí mismas.
-    // Modo degradado: el cliente crea el marcador (creadoPorUid == auth.uid).
-    // Modo economía: el servidor lo crea vía Admin SDK.
+    // ── Partidas: liquidación server-side.
+    // El cliente solo puede leer su propio resultado. El servidor las crea
+    // mediante Admin SDK; el cliente no puede fabricar un resultado.
     match /partidas/{gameId} {
       allow read: if request.auth != null && (isAdmin() || resource.data.ganadorUid == request.auth.uid);
-      allow create: if (request.auth != null && isAdmin())
-                    || (request.auth != null
-                        && request.resource.data.gameId is string
-                        && request.resource.data.salaId is string
-                        && request.resource.data.pozo is number
-                        && request.resource.data.pozo > 0
-                        && request.resource.data.pozo <= 100000
-                        && request.resource.data.comision is number
-                        && request.resource.data.neto is number
-                        && request.resource.data.comision >= request.resource.data.pozo * 0.2 - 0.01
-                        && request.resource.data.comision <= request.resource.data.pozo * 0.2 + 0.01
-                        && request.resource.data.neto >= request.resource.data.pozo * 0.8 - 0.01
-                        && request.resource.data.neto <= request.resource.data.pozo * 0.8 + 0.01
-                        && request.resource.data.comision + request.resource.data.neto <= request.resource.data.pozo + 0.01
-                        && request.resource.data.estado in ['pagada', 'premio_pendiente_admin']
-                        && request.resource.data.creadoPorUid == request.auth.uid
-                        && request.resource.data.ganadorUid == request.auth.uid);
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
+      allow create, update, delete: if isAdmin();
     }
 
     // ── Entradas pagadas (auditoría del cobro) ──
     match /entradas/{id} {
       allow read: if request.auth != null && (isAdmin() || resource.data.usuarioId == request.auth.uid);
-      // Modo degradado: el jugador registra su propia entrada cobrada.
-      allow create: if request.auth != null
-                    && request.resource.data.usuarioId == request.auth.uid
-                    && request.resource.data.salaId is string
-                    && request.resource.data.estado == 'cobrada'
-                    && request.resource.data.monto is number
-                    && request.resource.data.monto > 0
-                    && request.resource.data.monto <= 10000;
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
+      // Solo el servidor puede crear/modificar una entrada liquidada.
+      allow create, update, delete: if isAdmin();
     }
 
     // ── Historial de movimientos de saldo (últimos 10 en la wallet) ──
