@@ -10,7 +10,7 @@ const original = {
 
 delete process.env.ADMIN_PASSWORD;
 process.env.NODE_ENV = 'production';
-delete process.env.CORS_ORIGIN;
+process.env.CORS_ORIGIN = 'https://allowed.example';
 
 const configPath = require.resolve('../apps/server/config');
 delete require.cache[configPath];
@@ -22,10 +22,10 @@ assert.strictEqual(
     '',
     'ADMIN_PASSWORD must not have a source-code fallback'
 );
-assert.strictEqual(
-    config.corsRaw.length,
-    0,
-    'production CORS must require explicit configuration'
+assert.deepStrictEqual(
+    config.corsRaw,
+    ['https://allowed.example'],
+    'production CORS must use the explicitly configured origin'
 );
 assert.strictEqual(
     config.isOriginAllowed('https://example.com'),
