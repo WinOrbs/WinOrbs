@@ -15,6 +15,7 @@ const { applyDeathLoss } = require('./apps/server/game/orbs');
 const { bankMatchOrbs, awardElimination } = require('./apps/server/game/score');
 const { applyDamage } = require('./apps/server/game/combat');
 const { extractIdToken } = require('./apps/server/identity');
+const { lockResult } = require('./apps/server/game/results');
 
 const express = require('express');
 const http = require('http');
@@ -1624,6 +1625,7 @@ class GameRoom {
 
         const gameId = this.id + '_' + Date.now();
         const leaderboard = this.getLeaderboard();
+        this.resultLock = lockResult(leaderboard);
 
         // Modo economía: el SERVIDOR paga el premio vía Admin SDK
         if (FIREBASE_ECONOMY && FIREBASE_DB) {
@@ -1640,6 +1642,7 @@ class GameRoom {
             gameId: gameId,
             entryFee: this.entryFee,
             leaderboard: leaderboard,
+            resultChecksum: this.resultLock.checksum,
             abandono: abandono,
             premioNeto: premioNeto
         });
