@@ -7,6 +7,8 @@ assert.ok(!source.includes('process.env.ADMIN_PASSWORD || "admin123"'));
 assert.ok(!source.includes('process.env.ADMIN_PASSWORD || \'admin123\''));
 assert.match(source, /extractIdToken/);
 assert.match(source, /socket\.verifiedUid/);
+assert.match(source, /canBindUid/);
+assert.match(source, /Esa cuenta ya está jugando en esta sala/);
 assert.doesNotMatch(source, /socket\.verifiedUid\s*=\s*uidRaw/);
 assert.match(source, /validatePlayerInput/);
 assert.match(source, /validateShoot/);
