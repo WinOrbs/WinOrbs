@@ -2831,8 +2831,8 @@ io.on('connection', (socket) => {
         // ya montado cuando empiece a dibujar.
         room.emitirConfig(socket);
         // Anticheat de skins: si la skin no es básica ni está en el inventario del jugador → básica
-        const skinValidada = await validarSkinCliente(skin, socket.verifiedUid || (typeof uid === 'string' ? uid.slice(0, 128) : null));
-        room.addPlayer(socket.id, nickFinal, skinValidada, socket.verifiedUid || (typeof uid === 'string' ? uid.slice(0, 128) : null));
+        const skinValidada = await validarSkinCliente(skin, socket.verifiedUid);
+        room.addPlayer(socket.id, nickFinal, skinValidada, socket.verifiedUid);
         const nuevoP = room.players[socket.id];
         nuevoP.__ip = ip;
         if (socket.__entradaCobrada) nuevoP.pagoEntrada = socket.__entradaCobrada;
