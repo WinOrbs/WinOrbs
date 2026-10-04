@@ -659,42 +659,14 @@ const colorTipo = esRetiro ? '#ef4444' : esPremio ? '#f59e0b' : '#22c55e';
         }
 
         window.procesarPago = async function(idPago, idUsuario, monto, nuevoEstado, esRetiro = false, comision = 0, neto = 0, esPremio = false) {
-            try {
-                await updateDoc(doc(db, "pagos", idPago), { estado: nuevoEstado });
-
-                // Historial de movimientos (ID determinista: re-procesar no duplica)
-                const tipoMov = (!esRetiro && !esPremio && nuevoEstado === 'aprobado') ? 'recarga'
-                    : (esRetiro && nuevoEstado === 'pagado') ? 'retiro' : null;
-                if (idUsuario && tipoMov) {
-                    const esRecarga = tipoMov === 'recarga';
-                    await setDoc(doc(db, "movimientos", "mov_" + idPago), {
-                        usuarioId: idUsuario, tipo: tipoMov,
-                        monto: esRecarga ? +Number(monto).toFixed(2) : -Number(monto).toFixed(2),
-                        detalle: esRecarga ? 'Recarga de saldo aprobada' : 'Retiro pagado (neto $' + Number(neto > 0 ? neto : monto - comision).toFixed(2) + ')',
-                        refId: idPago,
-                        fecha: serverTimestamp()
-                    });
-                }
-
-                if(nuevoEstado === 'aprobado' && idUsuario && esPremio) {
-                    // Premio: acredita el neto al ganador y acumula la comisión de la casa (20%)
-                    await updateDoc(doc(db, "usuarios", idUsuario), { saldo: increment(monto) });
-                    const comisionPremio = Number(comision) > 0 ? Number(comision) : +(Number(monto) * 0.25).toFixed(2);
-                    await setDoc(doc(db, "metricas", "casa"), { comisionesAcumuladas: increment(comisionPremio) }, { merge: true });
-                } else if(nuevoEstado === 'aprobado' && idUsuario && !esRetiro && !esPremio) {
-                    await updateDoc(doc(db, "usuarios", idUsuario), { saldo: increment(monto) });
-                } else if(nuevoEstado === 'rechazado' && idUsuario && esRetiro) {
-                    await updateDoc(doc(db, "usuarios", idUsuario), { saldo: increment(monto) });
-                } else if(nuevoEstado === 'pagado' && esRetiro) {
-                    // La casa retiene su comisión (20%) del retiro — métrica acumulativa
-                    const comisionNum = Number(comision) > 0 ? Number(comision) : +(Number(monto) * 0.2).toFixed(2);
-                    await setDoc(doc(db, "metricas", "casa"), { comisionesAcumuladas: increment(comisionNum) }, { merge: true });
-                }
-
-                notificarTelegram(`🔔 <b>PAGO ACTUALIZADO</b>\nID: ${idPago}\nNuevo Estado: <b>${nuevoEstado.toUpperCase()}</b>\nMonto: $${monto} USD${(nuevoEstado === 'pagado' && esRetiro) ? `\nNeto a pagar: $${Number(neto > 0 ? neto : Number(monto) - Number(comision)).toFixed(2)} USD · Comisión casa: $${Number(comision > 0 ? comision : Number(monto) * 0.2).toFixed(2)} USD` : ''}`);
-                alert(`Solicitud actualizada a: ${nuevoEstado}`);
-            } catch(e) { alert("Error al procesar: " + e.message); }
+            if (!idPago) return alert("Solicitud inválida.");
+            socket.emit('adminProcesarPago', { idPago, estado: nuevoEstado });
         };
+
+        socket.on('pagoProcesado', (r) => {
+            if (!r || !r.ok) return alert("No se pudo procesar: " + ((r && r.error) || "error"));
+            alert("Solicitud actualizada a: " + r.estado);
+        });
 
         // Premios que quedaron pendientes (ganador sin UID vinculado al jugar)
         function escucharPremios() {
@@ -1195,10 +1167,15 @@ const colorTipo = esRetiro ? '#ef4444' : esPremio ? '#f59e0b' : '#22c55e';
         };
 
         window.modificarSaldo = async function(userId, monto) {
-            try {
-                await updateDoc(doc(db, "usuarios", userId), { saldo: increment(monto) });
-            } catch(e) { alert("Error al modificar saldo: " + e.message); }
+            const valor = Number(monto);
+            if (!userId || !Number.isFinite(valor) || valor === 0) return alert("Monto inválido.");
+            socket.emit('adminAjustarSaldo', { uid: userId, monto: valor });
         };
+
+        socket.on('saldoAjustado', (r) => {
+            if (!r || !r.ok) return alert("No se pudo ajustar el saldo: " + ((r && r.error) || "error"));
+            cerrarModalSaldo();
+        });
 
         window.abrirModalSaldo = function(userId, apodo) {
             usuarioSeleccionadoId = userId;
