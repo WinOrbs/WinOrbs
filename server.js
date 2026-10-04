@@ -12,6 +12,7 @@ const {
 } = require('./apps/server/transport/command');
 const { MATCH_STATUS, canTransition } = require('./apps/server/game/lifecycle');
 const { applyDeathLoss } = require('./apps/server/game/orbs');
+const { bankMatchOrbs, awardElimination } = require('./apps/server/game/score');
 
 const express = require('express');
 const http = require('http');
@@ -1840,8 +1841,7 @@ class GameRoom {
 
             p.isExtracting = Math.hypot(p.x - this.bankZone.x, p.y - this.bankZone.y) < this.bankZone.radius;
             if (p.isExtracting && p.charge > 0) {
-                p.bankedScore += p.charge;
-                p.charge = 0;
+                bankMatchOrbs(p);
                 io.to(this.id).emit('playSound', 'pickup');
             }
 
@@ -2089,7 +2089,7 @@ class GameRoom {
             if (ownerSocket) {
                 const owner = this.players[ownerId];
                 if (owner) {
-                    owner.bankedScore += 5;
+                    awardElimination(owner);
                 }
             }
         }
