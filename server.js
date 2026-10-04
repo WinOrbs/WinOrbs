@@ -2417,29 +2417,31 @@ function emitirSalasPublicas(immediate = false) {
     }, 250);
 }
 
-// Verifica la identidad de un socket (modo economía: valida el ID token de Firebase;
-// modo degradado: confía en el uid del cliente, límite del MVP).
+// Verifica la identidad de un socket.
+// Regla de seguridad: un UID enviado por el cliente NUNCA es una identidad
+// verificable. Solo un ID token validado por Firebase Auth puede vincular una
+// sesión con una cuenta. Sin Firebase/credenciales el servidor funciona como
+// invitado, pero no habilita operaciones que requieran identidad.
 async function verificarUidEnSala(socket, room, payload) {
-    let uidRaw = null;
     let token = null;
-    if (typeof payload === 'string') {
-        uidRaw = payload;
-    } else if (payload && typeof payload === 'object') {
-        uidRaw = payload.uid;
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
         token = payload.token;
     }
-    if (FIREBASE_ECONOMY && token && typeof token === 'string' && token.length < 6000) {
-        try {
-            const decoded = await firebaseAdmin.auth().verifyIdToken(token);
-            socket.verifiedUid = decoded.uid;
-            if (room && room.players && room.players[socket.id]) {
-                room.players[socket.id].uid = decoded.uid;
-            }
-        } catch (e) {
-            // token inválido: se queda sin verificación
+
+    socket.verifiedUid = null;
+
+    if (!FIREBASE_ECONOMY || !token || typeof token !== 'string' || token.length >= 6000) {
+        return;
+    }
+
+    try {
+        const decoded = await firebaseAdmin.auth().verifyIdToken(token);
+        socket.verifiedUid = decoded.uid;
+        if (room && room.players && room.players[socket.id]) {
+            room.players[socket.id].uid = decoded.uid;
         }
-    } else if (!FIREBASE_ECONOMY && uidRaw && typeof uidRaw === 'string') {
-        socket.verifiedUid = uidRaw.slice(0, 128);
+    } catch (e) {
+        // Token inválido/expirado: la conexión permanece como invitado.
     }
 }
 
