@@ -2703,7 +2703,34 @@ io.on('connection', (socket) => {
                     const neto = +(monto - comision).toFixed(2);
                     t.set(FIREBASE_DB.collection('movimientos').doc('mov_' + idPago), {
                         usuarioId: uid, tipo: 'retiro', monto: -monto,
-                        detalle: 'Retiro pagado (neto 
+                        detalle: 'Retiro pagado (neto ' + neto + ', comisión ' + comision + ')', refId: idPago,
+                        fecha: firebaseAdmin.firestore.FieldValue.serverTimestamp()
+                    });
+                } else if (estadoSolicitado === 'rechazado') {
+                    t.update(refPago, {
+                        estado: 'rechazado',
+                        procesadoAt: firebaseAdmin.firestore.FieldValue.serverTimestamp()
+                    });
+                    return { ok: true, estado: 'rechazado' };
+                }
+
+                t.update(refPago, {
+                    estado: estadoSolicitado,
+                    procesadoAt: firebaseAdmin.firestore.FieldValue.serverTimestamp()
+                });
+                return { ok: true, estado: estadoSolicitado, monto: +monto.toFixed(2), neto: tipo === 'retiro' ? neto : null, comision: tipo === 'retiro' ? comision : 0 };
+            });
+
+            socket.emit('pagoProcesado', r);
+            if (r.ok) {
+                telegramNotify('[WINORBS] Pago procesado: ' + idPago + ' → ' + estadoSolicitado);
+            }
+        } catch (e) {
+            console.error('[PAGOS] Error procesando pago:', e.message);
+            socket.emit('pagoProcesado', { ok: false, error: String(e.message || 'ERROR').slice(0, 160) });
+        }
+    });
+
     socket.on('adminVincularPremio', async (payload) => {
         if (!adminAutorizado(socket)) return socket.emit('premioVinculado', { ok: false, error: 'NO_ADMIN' });
         const p = (payload && typeof payload === 'object') ? payload : {};
