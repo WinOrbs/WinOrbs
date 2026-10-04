@@ -9,6 +9,7 @@ assert.match(firestore, /hasOnly\(\['apodo', 'displayName', 'avatarId', 'bio', '
 assert.match(firestore, /match \/progresion\/\{uid\}/);
 assert.match(firestore, /match \/recompensas\/\{uid\}/);
 assert.match(firestore, /match \/pagos\/\{id\}/);
+assert.match(firestore, /request\.resource\.data\.keys\(\)\.hasOnly\(\['usuario', 'usuarioId', 'tipo', 'metodo', 'datosCobro', 'referencia', 'comprobanteUrl', 'monto', 'estado', 'fecha'\]\)/);
 assert.match(firestore, /allow update: if isAdmin\(\);/);
 assert.doesNotMatch(storage, /2TRnwllarqhaggRR8so48rSVzji1/);
 
