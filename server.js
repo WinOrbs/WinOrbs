@@ -2782,9 +2782,24 @@ io.on('connection', (socket) => {
         // Ya registrado en esta misma sala: confirmar, y aprovechar para vincular token/uid tardíos
         if (socket.roomId === room.id && room.players[socket.id]) {
             await verificarUidEnSala(socket, room, { uid, token });
-            if (FIREBASE_ECONOMY && room.entryFee > 0 && socket.verifiedUid && !room.players[socket.id].pagoEntrada) {
-                const cobro = await servidorCobrarEntrada(socket.verifiedUid, room.id, room.entryFee);
-                if (cobro.ok) {
+            if (room.entryFee > 0) {
+                if (!FIREBASE_ECONOMY || !FIREBASE_DB) {
+                    return socket.emit('errorMsg', 'Esta sala de pago no está disponible temporalmente.');
+                }
+                if (!socket.verifiedUid) {
+                    return socket.emit('errorMsg', 'Las salas de pago requieren iniciar sesión con cuenta verificada.');
+                }
+                if (!room.players[socket.id].pagoEntrada) {
+                    const cobro = await servidorCobrarEntrada(socket.verifiedUid, room.id, room.entryFee);
+                    if (!cobro.ok) {
+                        if (cobro.error === 'SALDO_INSUFICIENTE') {
+                            return socket.emit('errorMsg', 'Saldo insuficiente para cubrir la entrada a esta sala.');
+                        }
+                        if (cobro.error === 'NO_PROFILE') {
+                            return socket.emit('errorMsg', 'No tienes perfil en la wallet. Regístrate antes de jugar en salas de pago.');
+                        }
+                        return socket.emit('errorMsg', 'No se pudo cobrar la entrada: ' + String(cobro.error || 'ERROR').slice(0, 120));
+                    }
                     socket.__entradaCobrada = { entradasId: cobro.entradasId, monto: room.entryFee, salaId: room.id };
                     room.players[socket.id].pagoEntrada = socket.__entradaCobrada;
                 }
