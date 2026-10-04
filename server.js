@@ -27,7 +27,7 @@ app.set('trust proxy', 1);
 const server = http.createServer(app);
 // ── CORS ────────────────────────────────────────────────────────────────────
 // Frontend en producción: https://winorbs.pages.dev (Cloudflare Pages)
-// Backend: https://winorbs-api.onrender.com (Render).
+// Backend: https://winorbs.onrender.com (Render).
 // - CORS_ORIGIN="*" (defecto, dev) → refleja cualquier origen.
 // - CORS_ORIGIN="https://winorbs.pages.dev,https://xxx..." → solo esos.
 // Sin esto el polling XHR de Socket.IO falla con:
@@ -2669,16 +2669,17 @@ io.on('connection', (socket) => {
                 if (!snap.exists) return { ok: false, error: 'PAGO_NO_EXISTE' };
                 const p = snap.data() || {};
                 if (p.estado !== 'pendiente') return { ok: false, error: 'YA_PROCESADO', estado: p.estado };
+
                 const uid = String(p.usuarioId || '').trim();
                 const tipo = String(p.tipo || '').trim();
                 const monto = Number(p.monto || 0);
                 if (!uid || !['deposito', 'retiro'].includes(tipo) || !(monto > 0) || monto > 10000) {
                     return { ok: false, error: 'SOLICITUD_INVALIDA' };
                 }
-                if (tipo === 'retiro' && estadoSolicitado !== 'pagado' && estadoSolicitado !== 'rechazado') {
+                if (tipo === 'retiro' && !['pagado', 'rechazado'].includes(estadoSolicitado)) {
                     return { ok: false, error: 'ESTADO_RETIRO_INVALIDO' };
                 }
-                if (tipo === 'deposito' && estadoSolicitado !== 'aprobado' && estadoSolicitado !== 'rechazado') {
+                if (tipo === 'deposito' && !['aprobado', 'rechazado'].includes(estadoSolicitado)) {
                     return { ok: false, error: 'ESTADO_DEPOSITO_INVALIDO' };
                 }
 
@@ -2686,47 +2687,63 @@ io.on('connection', (socket) => {
                 const sU = await t.get(refU);
                 if (!sU.exists) return { ok: false, error: 'USUARIO_NO_EXISTE' };
                 const saldo = Number(sU.data().saldo || 0);
-                const comision = tipo === 'retiro' ? +(monto * 0.2).toFixed(2) : 0;
-                const neto = tipo === 'retiro' ? +(monto - comision).toFixed(2) : null;
 
                 if (estadoSolicitado === 'aprobado' && tipo === 'deposito') {
                     const nuevoSaldo = +(saldo + monto).toFixed(2);
                     t.update(refU, { saldo: nuevoSaldo });
                     t.set(FIREBASE_DB.collection('movimientos').doc('mov_' + idPago), {
-                        usuarioId: uid, tipo: 'recarga', monto: +monto.toFixed(2),
-                        detalle: 'Recarga de saldo aprobada', refId: idPago,
+                        usuarioId: uid,
+                        tipo: 'recarga',
+                        monto: +monto.toFixed(2),
+                        detalle: 'Recarga de saldo aprobada',
+                        refId: idPago,
                         fecha: firebaseAdmin.firestore.FieldValue.serverTimestamp()
                     });
                 } else if (estadoSolicitado === 'pagado' && tipo === 'retiro') {
                     if (saldo < monto) return { ok: false, error: 'SALDO_INSUFICIENTE' };
                     const nuevoSaldo = +(saldo - monto).toFixed(2);
+                    const comision = +(monto * 0.2).toFixed(2);
+                    const neto = +(monto - comision).toFixed(2);
                     t.update(refU, { saldo: nuevoSaldo });
                     t.set(FIREBASE_DB.collection('movimientos').doc('mov_' + idPago), {
-                        usuarioId: uid, tipo: 'retiro', monto: -monto,
-                        detalle: 'Retiro pagado (neto ' + neto + ', comisión ' + comision + ')', refId: idPago,
+                        usuarioId: uid,
+                        tipo: 'retiro',
+                        monto: -monto,
+                        detalle: 'Retiro pagado (neto ' + neto.toFixed(2) + ')',
+                        refId: idPago,
                         fecha: firebaseAdmin.firestore.FieldValue.serverTimestamp()
                     });
+                    t.set(FIREBASE_DB.collection('metricas').doc('casa'), {
+                        comisionesAcumuladas: firebaseAdmin.firestore.FieldValue.increment(comision)
+                    }, { merge: true });
+                    t.update(refPago, {
+                        estado: 'pagado',
+                        comision,
+                        neto,
+                        procesadoEn: firebaseAdmin.firestore.FieldValue.serverTimestamp()
+                    });
+                    return { ok: true, estado: 'pagado', saldo: nuevoSaldo, comision, neto };
                 } else if (estadoSolicitado === 'rechazado') {
                     t.update(refPago, {
                         estado: 'rechazado',
-                        procesadoAt: firebaseAdmin.firestore.FieldValue.serverTimestamp()
+                        procesadoEn: firebaseAdmin.firestore.FieldValue.serverTimestamp()
                     });
                     return { ok: true, estado: 'rechazado' };
                 }
 
                 t.update(refPago, {
                     estado: estadoSolicitado,
-                    procesadoAt: firebaseAdmin.firestore.FieldValue.serverTimestamp()
+                    procesadoEn: firebaseAdmin.firestore.FieldValue.serverTimestamp()
                 });
-                return { ok: true, estado: estadoSolicitado, monto: +monto.toFixed(2), neto: tipo === 'retiro' ? neto : null, comision: tipo === 'retiro' ? comision : 0 };
+                return {
+                    ok: true,
+                    estado: estadoSolicitado,
+                    saldo: estadoSolicitado === 'aprobado' ? +(saldo + monto).toFixed(2) : saldo
+                };
             });
-
-            socket.emit('pagoProcesado', r);
-            if (r.ok) {
-                telegramNotify('[WINORBS] Pago procesado: ' + idPago + ' → ' + estadoSolicitado);
-            }
+            if (r.ok) registrarAuditoria('ADMIN_PROCESAR_PAGO', socket.id, { idPago, estado: r.estado });
+            socket.emit('pagoProcesado', Object.assign({ idPago }, r));
         } catch (e) {
-            console.error('[PAGOS] Error procesando pago:', e.message);
             socket.emit('pagoProcesado', { ok: false, error: String(e.message || 'ERROR').slice(0, 160) });
         }
     });
