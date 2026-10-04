@@ -95,6 +95,26 @@ service cloud.firestore {
                     && (resource.data.uid == request.auth.uid || isAdmin());
     }
 
+    // ── Inventario permanente: el cliente solo puede leer el suyo.
+    // Escrituras de concesión/consumo/equipamiento quedan server-side.
+    match /inventarios/{uid} {
+      allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ── Progresión permanente: lectura propia; XP/nivel solo server-side.
+    match /progresion/{uid} {
+      allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ── Recompensas/claims: el cliente puede leer las propias; el servidor
+    // registra claims para impedir dobles entregas.
+    match /recompensas/{uid} {
+      allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      allow create, update, delete: if isAdmin();
+    }
+
     // ── Solicitudes de depósito / retiro / premio ──
     match /pagos/{id} {
       allow read: if request.auth != null && (isAdmin() || resource.data.usuarioId == request.auth.uid);
