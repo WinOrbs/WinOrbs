@@ -28,7 +28,7 @@
 
 ## Verification
 - [x] Domain and security tests are registered in `npm run check`.
-- [x] GitHub Actions green on the final migration head (CI run #149, commit `18e17eec9c7411d0ac4c7b4306ad06343e9ab292`).
+- [x] GitHub Actions green on the current migration head (CI run #151, commit `a308a97a7a50dc3f83e97fb848aeece6cc107865`).
 - [ ] Production smoke test with Firebase staging credentials.
 - [ ] Client/server end-to-end match test.
 
