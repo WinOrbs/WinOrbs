@@ -14,7 +14,8 @@
     "rules": "node tools/patch_rules.js",
     "sprites": "node tools/gen_sprites.js",
     "servidor": "node tools/cambiar-servidor.js",
-    "test:security": "node tests/test_security_config.js"
+    "test:security": "node tests/test_security_config.js",
+    "test:validation": "node tests/test_validation.js"
   },
   "keywords": [],
   "author": "",
