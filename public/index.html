@@ -178,6 +178,81 @@
         }
 
         .panel-salas { display: flex; flex-direction: column; min-height: 520px; }
+        .panel-progression { grid-column: 1 / -1; }
+        .progression-grid {
+            display: grid;
+            grid-template-columns: minmax(220px, .8fr) minmax(300px, 1.2fr) minmax(240px, .9fr);
+            gap: 18px;
+        }
+        .progression-block {
+            min-width: 0; padding: 16px; border: 1px solid var(--line);
+            border-radius: 14px; background: rgba(2, 6, 17, .42);
+        }
+        .progression-block h3 {
+            margin: 0 0 12px; color: var(--cyan); font: 600 14px var(--font-display);
+            letter-spacing: .8px; text-transform: uppercase;
+        }
+        .progression-level { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+        .progression-level strong { font: 700 28px var(--font-display); color: #f8fafc; }
+        .progression-xp { color: var(--muted); font-size: 13px; text-align: right; }
+        .progression-bar {
+            height: 10px; margin: 10px 0 8px; overflow: hidden;
+            border-radius: 99px; background: rgba(148, 163, 184, .18);
+        }
+        .progression-bar-fill {
+            width: 0; height: 100%; border-radius: inherit;
+            background: linear-gradient(90deg, #22d3ee, #a78bfa);
+            box-shadow: 0 0 14px rgba(34, 211, 238, .45); transition: width .3s ease;
+        }
+        .progression-missions, .progression-ranking, .progression-rewards {
+            display: grid; gap: 8px; margin: 0; padding: 0; list-style: none;
+        }
+        .progression-mission, .progression-rank {
+            display: flex; justify-content: space-between; align-items: center; gap: 10px;
+            padding: 9px 10px; border-radius: 9px; background: rgba(15, 23, 42, .7);
+            font-size: 13px;
+        }
+        .progression-mission small, .progression-rank small { display: block; color: var(--muted); }
+        .progression-mission.done { border: 1px solid rgba(34, 197, 94, .32); color: #86efac; }
+        .progression-mission-xp { flex: 0 0 auto; color: #fbbf24; font-weight: 700; }
+        .progression-rank { justify-content: flex-start; }
+        .progression-rank-number { width: 28px; color: #fbbf24; font: 700 15px var(--font-display); }
+        .progression-rank-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .progression-rank-level { color: var(--cyan); white-space: nowrap; }
+        .progression-rank-self { margin: 10px 0 0; color: var(--muted); font-size: 13px; }
+        .progression-aura-select {
+            width: 100%; margin: 8px 0 12px; padding: 9px 10px;
+            color: var(--text); background: var(--surface-deep);
+            border: 1px solid var(--line); border-radius: 9px; font: inherit;
+        }
+        .progression-rewards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .progression-reward {
+            display: flex; align-items: center; gap: 8px; min-width: 0;
+            padding: 8px; border-radius: 9px; color: var(--muted);
+            background: rgba(15, 23, 42, .7); font-size: 12px;
+        }
+        .progression-reward.unlocked { color: #e2e8f0; border: 1px solid rgba(56, 189, 248, .28); }
+        .progression-reward-orb {
+            flex: 0 0 auto; width: 17px; height: 17px; border-radius: 50%;
+            border: 2px solid currentColor; box-shadow: 0 0 10px currentColor;
+        }
+        .progression-action {
+            padding: 8px 11px; border: 1px solid var(--line-glow); border-radius: 9px;
+            color: var(--cyan); background: rgba(56, 189, 248, .08); font: 600 12px var(--font-display);
+            cursor: pointer;
+        }
+        .progression-action:disabled { opacity: .5; cursor: default; }
+        .progression-message { min-height: 18px; margin: 8px 0 0; color: var(--muted); font-size: 12px; }
+        .progression-empty { color: var(--muted); font-size: 13px; }
+        @media (max-width: 1020px) {
+            .progression-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .progression-block:first-child { grid-column: 1 / -1; }
+        }
+        @media (max-width: 760px) {
+            .progression-grid { grid-template-columns: 1fr; }
+            .progression-block:first-child { grid-column: auto; }
+            .panel-progression { grid-column: 1; }
+        }
 
         /* ── Escudo (logo) del sidebar ── */
         .escudo-wrap {
@@ -744,6 +819,53 @@
             </ul>
             <p class="retiros-foot">💸 Cobros más grandes de la comunidad · en vivo</p>
         </aside>
+
+        <section class="panel panel-progression reveal" aria-labelledby="progresion-title">
+            <div class="panel-head">
+                <span class="panel-kicker" id="progresion-title">// Misiones y progresión</span>
+                <span class="live-badge"><span class="live-dot"></span>HASTA NIVEL 100</span>
+            </div>
+            <div class="progression-grid">
+                <section class="progression-block" aria-label="Tu nivel y recompensas">
+                    <div class="progression-level">
+                        <strong id="progresion-nivel">Nivel 1</strong>
+                        <span class="progression-xp" id="progresion-xp">0 XP</span>
+                    </div>
+                    <div class="progression-bar" role="progressbar" id="progresion-bar" aria-label="Experiencia hacia el siguiente nivel">
+                        <div class="progression-bar-fill" id="progresion-bar-fill"></div>
+                    </div>
+                    <p class="progression-xp" id="progresion-siguiente">150 XP para el nivel 2</p>
+                    <h3 style="margin-top:16px">Auras desbloqueables</h3>
+                    <ul class="progression-rewards" id="progresion-recompensas"></ul>
+                    <label for="progresion-aura" class="progression-xp">Aura equipada en tu personaje</label>
+                    <select id="progresion-aura" class="progression-aura-select" disabled>
+                        <option value="">Sin aura</option>
+                    </select>
+                    <button class="progression-action" id="progresion-equipar" type="button" disabled>Equipar aura</button>
+                    <p class="progression-message" id="progresion-mensaje" aria-live="polite">Cargando tu progreso…</p>
+                </section>
+
+                <section class="progression-block" aria-label="Misiones diarias">
+                    <h3>Misiones diarias · UTC</h3>
+                    <ul class="progression-missions" id="progresion-misiones">
+                        <li class="progression-empty">Cargando misiones…</li>
+                    </ul>
+                    <p class="progression-message">La experiencia se concede al completar objetivos verificados por el servidor.</p>
+                </section>
+
+                <section class="progression-block" aria-label="Ranking global">
+                    <div class="progression-level">
+                        <h3>Ranking global</h3>
+                        <button class="progression-action" id="progresion-actualizar-ranking" type="button">Actualizar</button>
+                    </div>
+                    <ol class="progression-ranking" id="progresion-ranking">
+                        <li class="progression-empty">Cargando ranking…</li>
+                    </ol>
+                    <p class="progression-rank-self" id="progresion-mi-posicion">Tu posición: —</p>
+                    <p class="progression-message" id="progresion-ranking-mensaje" aria-live="polite"></p>
+                </section>
+            </div>
+        </section>
     </main>
 
     <script>
@@ -751,11 +873,215 @@
         // transports:['websocket'] salta el handshake inicial por polling
         // (~2-3 s en rutas con latencia alta). El túnel soporta WebSocket directo.
         const socket = io(window.SERVIDOR_URL || undefined, { transports: ['websocket'] });
+        window.__lobbySocket = socket;
         const contenedorSalas = document.getElementById("lista-salas");
 
         socket.on('serverConfig', (cfg) => {
             // true = el servidor cobra entradas y paga premios vía Admin SDK
             window.__economyMode = !!(cfg && cfg.economy);
+            window.__progresionConfig = cfg && cfg.progression;
+            if (window.__progresionActual) window.__renderProgresion(window.__progresionActual);
+        });
+
+        const MISIONES_BASE = [
+            { id: 'play-one', description: 'Termina 1 partida', xp: 15, target: 1, stat: 'matchesCompleted' },
+            { id: 'play-three', description: 'Termina 3 partidas', xp: 30, target: 3, stat: 'matchesCompleted' },
+            { id: 'score-250', description: 'Consigue 250 puntos en una partida', xp: 25, target: 250, stat: 'bestScore' },
+            { id: 'top-three', description: 'Queda entre los 3 primeros', xp: 35, target: 1, stat: 'topThree' },
+            { id: 'two-eliminations', description: 'Consigue 2 eliminaciones en el día', xp: 45, target: 2, stat: 'eliminations' }
+        ];
+        const AURAS_BASE = [
+            [10, 'Pulso Cian', '#22d3ee'], [20, 'Brote Esmeralda', '#34d399'],
+            [30, 'Vórtice Violeta', '#a78bfa'], [40, 'Llama Carmesí', '#fb7185'],
+            [50, 'Corona Solar', '#fbbf24'], [60, 'Núcleo Glacial', '#7dd3fc'],
+            [70, 'Pulso Magenta', '#e879f9'], [80, 'Energía Lima', '#a3e635'],
+            [90, 'Luz Carmesí', '#f87171'], [100, 'Aura Prisma', '#f8fafc']
+        ].map(([level, name, color]) => ({ id: 'level-aura-' + level, level, name, color }));
+
+        window.__renderProgresion = function (progress) {
+            progress = progress || {};
+            window.__progresionActual = progress;
+            const config = window.__progresionConfig || {};
+            const missions = Array.isArray(config.dailyMissions) ? config.dailyMissions : MISIONES_BASE;
+            const auraRewards = Array.isArray(config.auraRewards) ? config.auraRewards : AURAS_BASE;
+            const xp = Math.max(0, Number(progress.xp) || 0);
+            const maxLevel = Math.max(1, Number(config.maxLevel) || 100);
+            let level = 1, xpAtLevel = 0;
+            while (level < maxLevel) {
+                const next = 150 + 5 * (level - 1);
+                if (xp - xpAtLevel < next) break;
+                xpAtLevel += next;
+                level++;
+            }
+            const xpForNext = level >= maxLevel ? 0 : 150 + 5 * (level - 1);
+            const xpIntoLevel = xp - xpAtLevel;
+            const percentage = xpForNext ? Math.min(100, Math.floor(xpIntoLevel / xpForNext * 100)) : 100;
+            document.getElementById('progresion-nivel').textContent = 'Nivel ' + level;
+            document.getElementById('progresion-xp').textContent = xp.toLocaleString('es-ES') + ' XP';
+            document.getElementById('progresion-siguiente').textContent = xpForNext
+                ? xpIntoLevel.toLocaleString('es-ES') + ' / ' + xpForNext + ' XP · ' + (xpForNext - xpIntoLevel) + ' para nivel ' + (level + 1)
+                : 'Nivel máximo · la XP sigue contando para el ranking';
+            document.getElementById('progresion-bar-fill').style.width = percentage + '%';
+            document.getElementById('progresion-bar').setAttribute('aria-valuenow', String(percentage));
+            document.getElementById('progresion-bar').setAttribute('aria-valuemin', '0');
+            document.getElementById('progresion-bar').setAttribute('aria-valuemax', '100');
+
+            const today = new Date().toISOString().slice(0, 10);
+            const daily = progress.daily && progress.daily.date === today
+                ? progress.daily
+                : { matchesCompleted: 0, eliminations: 0, bestScore: 0, topThree: 0, completed: {} };
+            const missionValues = {
+                matchesCompleted: daily.matchesCompleted || 0,
+                eliminations: daily.eliminations || 0,
+                bestScore: daily.bestScore || 0,
+                topThree: daily.topThree || 0
+            };
+            const missionList = document.getElementById('progresion-misiones');
+            missionList.replaceChildren();
+            missions.forEach((mission) => {
+                const item = document.createElement('li');
+                const isComplete = !!(daily.completed && daily.completed[mission.id]);
+                const value = Math.min(mission.target, Number(missionValues[mission.stat]) || 0);
+                item.className = 'progression-mission' + (isComplete ? ' done' : '');
+                const text = document.createElement('span');
+                text.textContent = mission.description;
+                const status = document.createElement('small');
+                status.textContent = isComplete ? 'Completada' : value + ' / ' + mission.target;
+                text.appendChild(status);
+                const reward = document.createElement('span');
+                reward.className = 'progression-mission-xp';
+                reward.textContent = '+' + mission.xp + ' XP';
+                item.append(text, reward);
+                missionList.appendChild(item);
+            });
+
+            const unlocked = Array.isArray(progress.unlockedAuras) ? progress.unlockedAuras : [];
+            const unlockedById = new Map(unlocked.map((aura) => [aura.id, aura]));
+            const rewardList = document.getElementById('progresion-recompensas');
+            rewardList.replaceChildren();
+            auraRewards.forEach((aura) => {
+                const owned = unlockedById.get(aura.id);
+                const item = document.createElement('li');
+                item.className = 'progression-reward' + (owned ? ' unlocked' : '');
+                const orb = document.createElement('span');
+                orb.className = 'progression-reward-orb';
+                if (owned && /^#[0-9a-f]{6}$/i.test(owned.color)) {
+                    orb.style.color = owned.color;
+                    orb.style.backgroundColor = owned.color;
+                }
+                const label = document.createElement('span');
+                label.textContent = (owned ? owned.name : 'Aura') + ' · Nivel ' + aura.level;
+                item.append(orb, label);
+                rewardList.appendChild(item);
+            });
+
+            const auraSelect = document.getElementById('progresion-aura');
+            const equipped = progress.equippedAura || '';
+            auraSelect.replaceChildren();
+            const noAura = document.createElement('option');
+            noAura.value = '';
+            noAura.textContent = 'Sin aura';
+            auraSelect.appendChild(noAura);
+            unlocked.forEach((aura) => {
+                const option = document.createElement('option');
+                option.value = aura.id;
+                option.textContent = aura.name;
+                auraSelect.appendChild(option);
+            });
+            auraSelect.value = equipped;
+            auraSelect.disabled = unlocked.length === 0;
+            document.getElementById('progresion-equipar').disabled = unlocked.length === 0;
+
+            const selectedSkin = window.skinSeleccionada || {};
+            selectedSkin.auraId = equipped;
+            window.skinSeleccionada = selectedSkin;
+            try { localStorage.setItem('mi_skin_equipada', JSON.stringify(selectedSkin)); }
+            catch (e) { console.warn('No se pudo guardar el aura equipada localmente:', e.message); }
+        };
+
+        socket.on('rankingGlobal', (result) => {
+            window.__rankingRequestPending = false;
+            const button = document.getElementById('progresion-actualizar-ranking');
+            button.disabled = false;
+            const message = document.getElementById('progresion-ranking-mensaje');
+            const list = document.getElementById('progresion-ranking');
+            list.replaceChildren();
+            if (!result || !result.ok) {
+                const errors = {
+                    NO_AUTH: 'Inicia sesión para consultar el ranking.',
+                    PROGRESSION_OFF: 'El progreso no está disponible temporalmente.',
+                    RATE_LIMIT: 'Espera unos segundos antes de actualizar.',
+                    UNAVAILABLE: 'No se pudo cargar el ranking. Inténtalo de nuevo.'
+                };
+                message.textContent = errors[(result && result.error) || ''] || 'No se pudo cargar el ranking.';
+                if (result && result.error === 'UNAVAILABLE') console.error('Ranking global no disponible.');
+                return;
+            }
+            message.textContent = '';
+            (result.entries || []).forEach((entry) => {
+                const item = document.createElement('li');
+                item.className = 'progression-rank';
+                const number = document.createElement('span');
+                number.className = 'progression-rank-number';
+                number.textContent = '#' + entry.rank;
+                const name = document.createElement('span');
+                name.className = 'progression-rank-name';
+                name.textContent = entry.nickname;
+                const rankLevel = document.createElement('span');
+                rankLevel.className = 'progression-rank-level';
+                rankLevel.textContent = 'Nv. ' + entry.level;
+                const rankXp = document.createElement('small');
+                rankXp.textContent = Number(entry.xp).toLocaleString('es-ES') + ' XP';
+                rankLevel.appendChild(rankXp);
+                item.append(number, name, rankLevel);
+                list.appendChild(item);
+            });
+            if (!result.entries || result.entries.length === 0) {
+                const empty = document.createElement('li');
+                empty.className = 'progression-empty';
+                empty.textContent = 'Aún no hay jugadores en el ranking.';
+                list.appendChild(empty);
+            }
+            document.getElementById('progresion-mi-posicion').textContent = result.ownRank
+                ? 'Tu posición global: #' + result.ownRank
+                : 'Tu posición aparecerá al completar tu primera misión.';
+        });
+
+        socket.on('progressionAuraEquipped', (result) => {
+            const button = document.getElementById('progresion-equipar');
+            button.disabled = false;
+            document.getElementById('progresion-mensaje').textContent = result && result.ok
+                ? 'Aura equipada. La verás en tu próximo personaje.'
+                : result && result.error === 'PROGRESSION_OFF'
+                    ? 'El progreso no está disponible temporalmente.'
+                    : 'No se pudo equipar el aura. Comprueba que esté desbloqueada.';
+        });
+
+        document.getElementById('progresion-actualizar-ranking').addEventListener('click', () => {
+            if (window.__cargarRankingGlobal) window.__cargarRankingGlobal();
+        });
+
+        document.getElementById('progresion-equipar').addEventListener('click', async () => {
+            const button = document.getElementById('progresion-equipar');
+            button.disabled = true;
+            const user = window.__firebaseAuth && window.__firebaseAuth.currentUser;
+            let token = '';
+            try { token = user ? await user.getIdToken() : ''; }
+            catch (e) {
+                button.disabled = false;
+                document.getElementById('progresion-mensaje').textContent = 'No se pudo autenticar el cambio de aura.';
+                console.error('No se pudo obtener el token para equipar el aura:', e.message);
+                return;
+            }
+            if (!token) {
+                button.disabled = false;
+                document.getElementById('progresion-mensaje').textContent = 'Inicia sesión para equipar el aura.';
+                return;
+            }
+            socket.emit('equipProgressionAura', {
+                token,
+                auraId: document.getElementById('progresion-aura').value || null
+            });
         });
 
         // El apodo ya no se pide aquí: se lee del perfil (window.apodoJugador)
@@ -1172,6 +1498,35 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
+        window.__firebaseAuth = auth;
+
+        window.__cargarRankingGlobal = async function () {
+            const button = document.getElementById('progresion-actualizar-ranking');
+            const message = document.getElementById('progresion-ranking-mensaje');
+            const user = auth.currentUser;
+            if (window.__rankingRequestPending) return;
+            if (!user) {
+                message.textContent = 'Inicia sesión para consultar el ranking.';
+                return;
+            }
+            window.__rankingRequestPending = true;
+            button.disabled = true;
+            message.textContent = 'Actualizando ranking…';
+            try {
+                const token = await user.getIdToken();
+                window.__lobbySocket.emit('pedirRankingGlobal', { token });
+            } catch (e) {
+                window.__rankingRequestPending = false;
+                button.disabled = false;
+                message.textContent = 'No se pudo autenticar la consulta del ranking.';
+                console.error('No se pudo obtener token para el ranking global:', e.message);
+            }
+        };
+
+        window.__lobbySocket.on('connect', () => {
+            window.__rankingRequestPending = false;
+            if (auth.currentUser) window.__cargarRankingGlobal();
+        });
 
         window.__saldo = null;
         window.__perfil = null;
@@ -1218,6 +1573,38 @@
                     alert("No se pudo leer tu saldo (" + (e.code || "") + ").\n\nPublica las reglas de firestore.rules con tu UID o email dentro de isAdmin().");
                 }
             });
+
+            window.__renderProgresion({
+                xp: 0,
+                level: 1,
+                unlockedAuras: [],
+                equippedAura: null,
+                daily: { date: '', matchesCompleted: 0, eliminations: 0, bestScore: 0, topThree: 0, completed: {} }
+            });
+            let observedProgressXp = 0;
+            let rankingRefreshTimer = null;
+            onSnapshot(doc(db, "progresion", user.uid), (snap) => {
+                const progress = snap.exists() ? snap.data() : {
+                    xp: 0,
+                    level: 1,
+                    unlockedAuras: [],
+                    equippedAura: null,
+                    daily: { date: '', matchesCompleted: 0, eliminations: 0, bestScore: 0, topThree: 0, completed: {} }
+                };
+                const currentXp = Math.max(0, Number(progress.xp) || 0);
+                const earnedXp = currentXp > observedProgressXp;
+                observedProgressXp = currentXp;
+                window.__renderProgresion(progress);
+                if (earnedXp) {
+                    clearTimeout(rankingRefreshTimer);
+                    rankingRefreshTimer = setTimeout(() => window.__cargarRankingGlobal(), 2200);
+                }
+            }, (e) => {
+                const message = document.getElementById('progresion-mensaje');
+                message.textContent = 'No se pudo leer tu progreso (' + (e.code || 'ERROR') + ').';
+                console.error('No se pudo leer la progresión de la cuenta:', e.message);
+            });
+            window.__cargarRankingGlobal();
 
             // Catálogo de skins de la tienda (para pintar las compradas en el lobby)
             onSnapshot(collection(db, "skins"), (snap) => {

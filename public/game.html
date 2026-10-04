@@ -4424,6 +4424,19 @@
                     ctx.fillStyle = gradOrbe;
                     ctx.fill();
                 }
+                const auraColor = p.skin && p.skin.aura && p.skin.aura.color;
+                if (typeof auraColor === 'string' && /^#[0-9a-f]{6}$/i.test(auraColor)) {
+                    ctx.save();
+                    ctx.globalAlpha = 0.72 + Math.sin(Date.now() / 240) * 0.18;
+                    ctx.shadowBlur = 18;
+                    ctx.shadowColor = auraColor;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.radius + 7, 0, Math.PI * 2);
+                    ctx.strokeStyle = auraColor;
+                    ctx.lineWidth = 3;
+                    ctx.stroke();
+                    ctx.restore();
+                }
                 // El borde de color solo se pinta en el orbe de color (respaldo) y en
                 // el dash. La skin con imagen va sin borde: solo la imagen.
                 if (!skinLista || p.isDashing) {

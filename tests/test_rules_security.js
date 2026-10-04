@@ -7,6 +7,7 @@ const storage = fs.readFileSync(require.resolve('../storage.rules'), 'utf8');
 assert.match(firestore, /match \/inventarios\/\{uid\}/);
 assert.match(firestore, /hasOnly\(\['apodo', 'displayName', 'avatarId', 'bio', 'country'\]\)/);
 assert.match(firestore, /match \/progresion\/\{uid\}/);
+assert.match(firestore, /match \/progresion\/\{uid\}\s*\{\s*allow read: if request\.auth != null && \(request\.auth\.uid == uid \|\| isAdmin\(\)\);\s*allow create, update, delete: if isAdmin\(\);/);
 assert.match(firestore, /match \/recompensas\/\{uid\}/);
 assert.match(firestore, /match \/pagos\/\{id\}/);
 assert.match(firestore, /request\.resource\.data\.keys\(\)\.hasOnly\(\['usuario', 'usuarioId', 'tipo', 'metodo', 'datosCobro', 'referencia', 'comprobanteUrl', 'monto', 'estado', 'fecha'\]\)/);

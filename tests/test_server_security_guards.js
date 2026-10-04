@@ -28,6 +28,15 @@ assert.doesNotMatch(walletHtml, /usuarios\/[^\n]*saldo/);
 
 assert.match(source, /socket\.on\('adminProcesarPago'/);
 assert.match(source, /socket\.on\('adminAjustarSaldo'/);
+assert.match(source, /function servidorProcesarMisionDePartida\(uid, match\)/);
+assert.match(source, /progressRef\.collection\('partidas'\)\.doc\(claimId\)/);
+assert.match(source, /transaction\.create\(claimRef/);
+assert.match(source, /socket\.on\('pedirRankingGlobal'/);
+assert.match(source, /firebaseAdmin\.auth\(\)\.verifyIdToken\(token\)/);
+assert.match(source, /socket\.on\('equipProgressionAura'/);
+assert.match(source, /unlockedAuras/);
+assert.match(source, /transaction\.set\(progressRef/);
+assert.doesNotMatch(indexHtml, /(?:setDoc|updateDoc)\(doc\(db,\s*["']progresion["']/);
 assert.doesNotMatch(adminHtml, /updateDoc\(doc\(db, "usuarios"[^\n]*saldo/);
 assert.doesNotMatch(adminHtml, /setDoc\(doc\(db, "movimientos"/);
 assert.doesNotMatch(adminHtml, /updateDoc\(doc\(db, "partidas"/);

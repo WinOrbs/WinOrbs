@@ -17,6 +17,15 @@ const { applyDamage } = require('./apps/server/game/combat');
 const { extractIdToken, canBindUid } = require('./apps/server/identity');
 const { lockResult } = require('./apps/server/game/results');
 const { createAuditEvent } = require('./apps/server/platform/audit');
+const {
+    AURA_REWARDS,
+    DAILY_MISSIONS,
+    MAX_LEVEL,
+    applyMatch,
+    rankEntries,
+    utcDay
+} = require('./apps/server/platform/progression');
+const crypto = require('crypto');
 
 const express = require('express');
 const http = require('http');
@@ -357,6 +366,11 @@ function sanitizeSkin(skin) {
         if (/^https:\/\/[^\s'"<>]{10,500}$/i.test(url) && encodeURIComponent(url).length <= 260) {
             out.imagenUrl = url;
         }
+        const aura = skin.aura;
+        const auraReward = aura && AURA_REWARDS.find((reward) => reward.id === aura.id);
+        if (auraReward) {
+            out.aura = { id: auraReward.id, color: auraReward.color };
+        }
     }
     return Object.keys(out).length ? out : { c1: '#38bdf8', c2: '#0284c7', border: '#bae6fd' };
 }
@@ -380,6 +394,23 @@ function sanitizeHex(v, fallback) {
 
 const SKIN_FALLBACK = { nombre: 'cielo', ...SKINS_BASICAS.cielo };
 
+async function auraProgresionEquipada(uid) {
+    if (!uid || !FIREBASE_ECONOMY || !FIREBASE_DB) return null;
+    try {
+        const snap = await FIREBASE_DB.collection('progresion').doc(uid).get();
+        const progress = snap.exists ? (snap.data() || {}) : {};
+        const reward = AURA_REWARDS.find((item) => item.id === progress.equippedAura);
+        if (!reward) return null;
+        const unlocked = Array.isArray(progress.unlockedAuras) &&
+            progress.unlockedAuras.some((aura) => aura && aura.id === reward.id);
+        if (!unlocked || Number(progress.level) < reward.level) return null;
+        return { id: reward.id, color: reward.color };
+    } catch (e) {
+        console.error('[PROGRESSION] Could not validate an equipped aura:', e.message);
+        return null;
+    }
+}
+
 // Devuelve la skin saneada si el cliente la posee (o es básica); si no, el básico
 async function validarSkinCliente(skin, uid) {
     try {
@@ -388,30 +419,39 @@ async function validarSkinCliente(skin, uid) {
         // 'Esmeralda' → 'esmeralda') para que las básicas coincidan siempre.
         const nombreRaw = String(skin.nombre || '').replace(/[<>&"'`]/g, '').trim().slice(0, 32);
         const nombre = nombreRaw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-        if (SKINS_BASICAS[nombre]) return { nombre, ...SKINS_BASICAS[nombre] }; // gratis
+        let validatedSkin;
+        if (SKINS_BASICAS[nombre]) {
+            validatedSkin = { nombre, ...SKINS_BASICAS[nombre] }; // gratis
+        }
         const id = String(skin.id || '').replace(/[^\w-]/g, '').slice(0, 64);
         // Skins básicas equipadas desde la Tienda viajan con id 'bas-*' (gratis y
         // sin Firestore: estas funciones quedan fuera del camino de economía real
         const basicaPorId = /^bas-(cielo|fuego|neon|esmeralda)$/.exec(id);
-        if (basicaPorId) return { id, nombre: basicaPorId[1], ...SKINS_BASICAS[basicaPorId[1]] };
-        if (!id || !FIREBASE_ECONOMY || !FIREBASE_DB) return SKIN_FALLBACK;
-        const refSkin = FIREBASE_DB.collection('skins').doc(id);
-        const refUser = FIREBASE_DB.collection('usuarios').doc(uid || '__nulo__');
-        const [snapSkin, snapUser] = await Promise.all([refSkin.get(), refUser.get()]);
-        if (!snapSkin.exists || !snapSkin.data().activo) return SKIN_FALLBACK;
-        const d = snapSkin.data();
-        const propietario = snapUser.exists && ((snapUser.data() || {}).skins_compradas || []).includes(id);
-        if (!(Number(d.precio || 0) > 0) || propietario) {
-            return {
-                id,
-                nombre: sanitizeNick(String(d.nombre || 'Skin')),
-                c1: sanitizeHex(d.c1, '#38bdf8'),
-                c2: sanitizeHex(d.c2, '#0284c7'),
-                border: sanitizeHex(d.border, '#bae6fd'),
-                imagenUrl: sanitizeSkin({ imagenUrl: d.imagenUrl }).imagenUrl || ''
-            };
+        if (!validatedSkin && basicaPorId) {
+            validatedSkin = { id, nombre: basicaPorId[1], ...SKINS_BASICAS[basicaPorId[1]] };
         }
-        return SKIN_FALLBACK;
+        if (!validatedSkin && id && FIREBASE_ECONOMY && FIREBASE_DB) {
+            const refSkin = FIREBASE_DB.collection('skins').doc(id);
+            const refUser = FIREBASE_DB.collection('usuarios').doc(uid || '__nulo__');
+            const [snapSkin, snapUser] = await Promise.all([refSkin.get(), refUser.get()]);
+            if (snapSkin.exists && snapSkin.data().activo) {
+                const d = snapSkin.data();
+                const propietario = snapUser.exists && ((snapUser.data() || {}).skins_compradas || []).includes(id);
+                if (!(Number(d.precio || 0) > 0) || propietario) {
+                    validatedSkin = {
+                        id,
+                        nombre: sanitizeNick(String(d.nombre || 'Skin')),
+                        c1: sanitizeHex(d.c1, '#38bdf8'),
+                        c2: sanitizeHex(d.c2, '#0284c7'),
+                        border: sanitizeHex(d.border, '#bae6fd'),
+                        imagenUrl: sanitizeSkin({ imagenUrl: d.imagenUrl }).imagenUrl || ''
+                    };
+                }
+            }
+        }
+        if (!validatedSkin) validatedSkin = SKIN_FALLBACK;
+        const aura = await auraProgresionEquipada(uid);
+        return aura ? Object.assign({}, validatedSkin, { aura }) : validatedSkin;
     } catch (e) {
         return SKIN_FALLBACK;
     }
@@ -576,6 +616,60 @@ async function servidorPagarPremio(room, gameId, abandono = false) {
         }
     } catch (e) {
         console.error('[FIREBASE] Error pagando premio:', e.message);
+    }
+}
+
+async function servidorProcesarMisionDePartida(uid, match) {
+    if (!FIREBASE_ECONOMY || !FIREBASE_DB || !uid || !match || !match.gameId) {
+        return { ok: false, error: 'ECONOMY_OFF' };
+    }
+    try {
+        const progressRef = FIREBASE_DB.collection('progresion').doc(uid);
+        const claimId = crypto.createHash('sha256').update(String(match.gameId)).digest('hex');
+        const claimRef = progressRef.collection('partidas').doc(claimId);
+        const userRef = FIREBASE_DB.collection('usuarios').doc(uid);
+        return await FIREBASE_DB.runTransaction(async (transaction) => {
+            const [claimSnap, progressSnap, userSnap] = await Promise.all([
+                transaction.get(claimRef),
+                transaction.get(progressRef),
+                transaction.get(userRef)
+            ]);
+            if (claimSnap.exists) return { ok: true, duplicate: true };
+            if (!userSnap.exists) return { ok: false, error: 'PROFILE_MISSING' };
+
+            const stored = progressSnap.exists ? (progressSnap.data() || {}) : {};
+            const progress = {
+                xp: stored.xp,
+                level: stored.level,
+                daily: stored.daily,
+                unlockedAuras: Array.isArray(stored.unlockedAuras) ? stored.unlockedAuras : []
+            };
+            const result = applyMatch(progress, match, utcDay(match.completedAt));
+            const profile = userSnap.data() || {};
+            transaction.create(claimRef, {
+                gameId: String(match.gameId).slice(0, 160),
+                date: progress.daily.date,
+                createdAt: firebaseAdmin.firestore.FieldValue.serverTimestamp()
+            });
+            transaction.set(progressRef, {
+                xp: progress.xp,
+                level: progress.level,
+                daily: progress.daily,
+                unlockedAuras: progress.unlockedAuras,
+                equippedAura: stored.equippedAura || null,
+                apodo: sanitizeNick(profile.apodo || match.nickname),
+                updatedAt: firebaseAdmin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+            return {
+                ok: true,
+                xpAwarded: result.xpAwarded,
+                completedMissions: result.completedMissions,
+                unlockedAuras: result.unlockedAuras.map((aura) => aura.id)
+            };
+        });
+    } catch (e) {
+        console.error('[PROGRESSION] Could not save match missions for account:', uid, e.message);
+        return { ok: false, error: 'SAVE_FAILED' };
     }
 }
 
@@ -1629,6 +1723,27 @@ class GameRoom {
         const leaderboard = this.getLeaderboard();
         this.resultLock = lockResult(leaderboard);
 
+        if (!abandono && FIREBASE_ECONOMY && FIREBASE_DB) {
+            const completedAt = Date.now();
+            this.resultLock.snapshot.forEach((player, index) => {
+                if (!player.uid) return;
+                void servidorProcesarMisionDePartida(player.uid, {
+                    gameId,
+                    completedAt,
+                    nickname: player.nick,
+                    score: player.score,
+                    eliminations: player.eliminations,
+                    position: index + 1
+                }).then((result) => {
+                    if (!result.ok) {
+                        console.error('[PROGRESSION] Match mission processing failed:', result.error, gameId);
+                    }
+                }).catch((error) => {
+                    console.error('[PROGRESSION] Unexpected match mission failure:', error.message, gameId);
+                });
+            });
+        }
+
         // Modo economía: el SERVIDOR paga el premio vía Admin SDK
         if (FIREBASE_ECONOMY && FIREBASE_DB) {
             servidorPagarPremio(this, gameId, abandono);
@@ -2577,7 +2692,10 @@ function ipDeSocket(socket) {
 io.on('connection', (socket) => {
     socket.isAdmin = false;
     socket.adminAuthenticatedAt = 0;
-    socket.emit('serverConfig', { economy: FIREBASE_ECONOMY });
+    socket.emit('serverConfig', {
+        economy: FIREBASE_ECONOMY,
+        progression: { maxLevel: MAX_LEVEL, dailyMissions: DAILY_MISSIONS, auraRewards: AURA_REWARDS }
+    });
     socket.emit('roomsList', Object.values(rooms).map(r => r.getSummary()));
 
     // Log de retiros: caché instantáneo + refresco en segundo plano
@@ -2595,6 +2713,88 @@ io.on('connection', (socket) => {
     // efectos en el juego ni en la economía. Lo usa test_latencia.js para medir
     // el RTT REAL del canal de juego (Socket.IO), no solo el de un GET.
     socket.on('latProbe', (t0, cb) => { if (typeof cb === 'function') cb(t0); });
+
+    socket.on('pedirRankingGlobal', async (payload = {}) => {
+        const now = Date.now();
+        if (now - (socket.__rankingRequestAt || 0) < 2000) {
+            return socket.emit('rankingGlobal', { ok: false, error: 'RATE_LIMIT' });
+        }
+        socket.__rankingRequestAt = now;
+        const request = payload && typeof payload === 'object' ? payload : {};
+        const token = typeof request.token === 'string' ? request.token : '';
+        if (!FIREBASE_ECONOMY || !FIREBASE_DB) {
+            return socket.emit('rankingGlobal', { ok: false, error: 'PROGRESSION_OFF' });
+        }
+        if (!token || token.length > 8192) {
+            return socket.emit('rankingGlobal', { ok: false, error: 'NO_AUTH' });
+        }
+        try {
+            const decoded = await firebaseAdmin.auth().verifyIdToken(token);
+            const collection = FIREBASE_DB.collection('progresion');
+            const [topSnap, ownSnap] = await Promise.all([
+                collection.orderBy('xp', 'desc').limit(100).get(),
+                collection.doc(decoded.uid).get()
+            ]);
+            const entries = rankEntries(topSnap.docs.map((doc) => {
+                const progress = doc.data() || {};
+                return { nickname: progress.apodo, xp: progress.xp };
+            }), 20);
+            let ownRank = null;
+            if (ownSnap.exists) {
+                const ownXp = Math.max(0, Number((ownSnap.data() || {}).xp) || 0);
+                const higherXp = await collection.where('xp', '>', ownXp).count().get();
+                ownRank = higherXp.data().count + 1;
+            }
+            socket.emit('rankingGlobal', { ok: true, entries, ownRank });
+        } catch (e) {
+            console.error('[PROGRESSION] Could not load global ranking:', e.message);
+            socket.emit('rankingGlobal', { ok: false, error: 'UNAVAILABLE' });
+        }
+    });
+
+    socket.on('equipProgressionAura', async (payload = {}) => {
+        const now = Date.now();
+        if (now - (socket.__auraEquipAt || 0) < 500) {
+            return socket.emit('progressionAuraEquipped', { ok: false, error: 'RATE_LIMIT' });
+        }
+        socket.__auraEquipAt = now;
+        const request = payload && typeof payload === 'object' ? payload : {};
+        const token = typeof request.token === 'string' ? request.token : '';
+        const auraId = request.auraId === null || request.auraId === '' ? null : request.auraId;
+        if (!FIREBASE_ECONOMY || !FIREBASE_DB) {
+            return socket.emit('progressionAuraEquipped', { ok: false, error: 'PROGRESSION_OFF' });
+        }
+        if (!token || token.length > 8192) {
+            return socket.emit('progressionAuraEquipped', { ok: false, error: 'NO_AUTH' });
+        }
+        const aura = auraId === null ? null : AURA_REWARDS.find((reward) => reward.id === auraId);
+        if (auraId !== null && !aura) {
+            return socket.emit('progressionAuraEquipped', { ok: false, error: 'INVALID_AURA' });
+        }
+        try {
+            const decoded = await firebaseAdmin.auth().verifyIdToken(token);
+            const progressRef = FIREBASE_DB.collection('progresion').doc(decoded.uid);
+            const result = await FIREBASE_DB.runTransaction(async (transaction) => {
+                const progressSnap = await transaction.get(progressRef);
+                if (!progressSnap.exists) return { ok: false, error: 'NO_PROGRESS' };
+                const progress = progressSnap.data() || {};
+                const unlocked = Array.isArray(progress.unlockedAuras) &&
+                    progress.unlockedAuras.some((item) => item && item.id === auraId);
+                if (aura && (!unlocked || Number(progress.level) < aura.level)) {
+                    return { ok: false, error: 'AURA_LOCKED' };
+                }
+                transaction.update(progressRef, {
+                    equippedAura: auraId,
+                    updatedAt: firebaseAdmin.firestore.FieldValue.serverTimestamp()
+                });
+                return { ok: true, auraId };
+            });
+            socket.emit('progressionAuraEquipped', result);
+        } catch (e) {
+            console.error('[PROGRESSION] Could not equip account aura:', e.message);
+            socket.emit('progressionAuraEquipped', { ok: false, error: 'SAVE_FAILED' });
+        }
+    });
 
     // Rate-limit del panel admin por IP (5 fallos → bloqueo 60 s)
     socket.on('adminAuth', ({ password } = {}) => {
@@ -2745,6 +2945,32 @@ io.on('connection', (socket) => {
             socket.emit('pagoProcesado', Object.assign({ idPago }, r));
         } catch (e) {
             socket.emit('pagoProcesado', { ok: false, error: String(e.message || 'ERROR').slice(0, 160) });
+        }
+    });
+
+    socket.on('adminAjustarSaldo', async (payload) => {
+        if (!adminAutorizado(socket)) return socket.emit('saldoAjustado', { ok: false, error: 'NO_ADMIN' });
+        if (!FIREBASE_ECONOMY || !FIREBASE_DB) return socket.emit('saldoAjustado', { ok: false, error: 'ECONOMY_OFF' });
+        const uid = String(payload && payload.uid || '').trim();
+        const monto = Number(payload && payload.monto);
+        if (!uid || !Number.isFinite(monto) || monto === 0 || Math.abs(monto) > 10000) {
+            return socket.emit('saldoAjustado', { ok: false, error: 'PARAMS' });
+        }
+        try {
+            const r = await FIREBASE_DB.runTransaction(async (t) => {
+                const refU = FIREBASE_DB.collection('usuarios').doc(uid);
+                const snap = await t.get(refU);
+                if (!snap.exists) return { ok: false, error: 'USUARIO_NO_EXISTE' };
+                const saldo = Number(snap.data().saldo || 0);
+                const nuevoSaldo = +(saldo + monto).toFixed(2);
+                if (nuevoSaldo < 0) return { ok: false, error: 'SALDO_RESULTANTE_NEGATIVO' };
+                t.update(refU, { saldo: nuevoSaldo });
+                return { ok: true, saldo: nuevoSaldo };
+            });
+            if (r.ok) registrarAuditoria('ADMIN_AJUSTAR_SALDO', socket.id, { uid, monto: +monto.toFixed(2), saldo: r.saldo });
+            socket.emit('saldoAjustado', Object.assign({ uid }, r));
+        } catch (e) {
+            socket.emit('saldoAjustado', { ok: false, error: String(e.message || 'ERROR').slice(0, 160) });
         }
     });
 
@@ -3034,6 +3260,8 @@ io.on('connection', (socket) => {
                 return socket.emit('errorMsg', 'Esa cuenta ya está jugando en esta sala.');
             }
             p.uid = socket.verifiedUid;
+            const aura = await auraProgresionEquipada(socket.verifiedUid);
+            p.skin = sanitizeSkin(Object.assign({}, p.skin, { aura }));
         }
 
         // Cobro diferido: llegó el token después del join en una sala de pago
