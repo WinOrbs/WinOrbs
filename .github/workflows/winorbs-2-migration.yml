@@ -6,9 +6,6 @@ on:
       - winorbs-2.0-migration
   pull_request:
     branches:
-      - winorbs-2.0-migration
-  pull_request:
-    branches:
       - main
 
 jobs:
