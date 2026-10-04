@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "build": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true});fs.cpSync('public','dist',{recursive:true});console.log('dist/ listo (copia de public/)')\"",
-    "check": "node tests/check_scripts.js && node tests/check_game_js.js && node tests/test_validation.js",
+    "check": "node tests/check_scripts.js && node tests/check_game_js.js && node tests/test_validation.js && node tests/test_types.js",
     "test": "node tests/test_config_tasa.js && node tests/test_html_scripts.js && node tests/test_red.js",
     "test:live": "node tests/run_live.js",
     "banda": "node tools/medir_ancho.js",
