@@ -14,7 +14,7 @@ assert.deepStrictEqual(
 );
 assert.strictEqual(validatePlayerInput({ w: true, angle: NaN }), null);
 assert.strictEqual(validatePlayerInput({ w: true, unexpected: true }), null);
-assert.strictEqual(validatePlayerInput({ w: 1 }), null === null ? false : true, 'boolean coercion is intentional');
+assert.strictEqual(validatePlayerInput({ w: 1 }), null);
 assert.deepStrictEqual(
     validateShootData({ angle: -2 }),
     { angle: -2 }
