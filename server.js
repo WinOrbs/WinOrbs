@@ -14,7 +14,7 @@ const { MATCH_STATUS, canTransition } = require('./apps/server/game/lifecycle');
 const { applyDeathLoss } = require('./apps/server/game/orbs');
 const { bankMatchOrbs, awardElimination } = require('./apps/server/game/score');
 const { applyDamage } = require('./apps/server/game/combat');
-const { extractIdToken } = require('./apps/server/identity');
+const { extractIdToken, canBindUid } = require('./apps/server/identity');
 const { lockResult } = require('./apps/server/game/results');
 const { createAuditEvent } = require('./apps/server/platform/audit');
 
@@ -2456,9 +2456,13 @@ async function verificarUidEnSala(socket, room, payload) {
 
     try {
         const decoded = await firebaseAdmin.auth().verifyIdToken(token);
+        const currentPlayer = room && room.players && room.players[socket.id];
+        if (currentPlayer && !canBindUid(currentPlayer.uid, decoded.uid)) {
+            return;
+        }
         socket.verifiedUid = decoded.uid;
-        if (room && room.players && room.players[socket.id]) {
-            room.players[socket.id].uid = decoded.uid;
+        if (currentPlayer) {
+            currentPlayer.uid = decoded.uid;
         }
     } catch (e) {
         // Token inválido/expirado: la conexión permanece como invitado.
@@ -2912,7 +2916,16 @@ io.on('connection', (socket) => {
 
         await verificarUidEnSala(socket, room, data);
         const p = room.players[socket.id];
-        if (socket.verifiedUid) p.uid = socket.verifiedUid;
+        if (socket.verifiedUid) {
+            const duplicado = Object.values(room.players).some(other =>
+                other.id !== socket.id && other.uid && other.uid === socket.verifiedUid
+            );
+            if (duplicado) {
+                socket.verifiedUid = null;
+                return socket.emit('errorMsg', 'Esa cuenta ya está jugando en esta sala.');
+            }
+            p.uid = socket.verifiedUid;
+        }
 
         // Cobro diferido: llegó el token después del join en una sala de pago
         if (FIREBASE_ECONOMY && room.entryFee > 0 && socket.verifiedUid && !p.pagoEntrada) {
