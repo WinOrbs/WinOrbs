@@ -2653,6 +2653,513 @@ io.on('connection', (socket) => {
         }
     });
 
+    // Operaciones financieras del panel: el cliente solo solicita; el servidor liquida.
+    socket.on('adminProcesarPago', async (payload) => {
+        if (!adminAutorizado(socket)) return socket.emit('pagoProcesado', { ok: false, error: 'NO_ADMIN' });
+        if (!FIREBASE_ECONOMY || !FIREBASE_DB) return socket.emit('pagoProcesado', { ok: false, error: 'ECONOMY_OFF' });
+        const idPago = String(payload && payload.idPago || '').trim();
+        const estadoSolicitado = String(payload && payload.estado || '').trim();
+        if (!idPago || !['aprobado', 'pagado', 'rechazado'].includes(estadoSolicitado)) {
+            return socket.emit('pagoProcesado', { ok: false, error: 'PARAMS' });
+        }
+        try {
+            const r = await FIREBASE_DB.runTransaction(async (t) => {
+                const refPago = FIREBASE_DB.collection('pagos').doc(idPago);
+                const snap = await t.get(refPago);
+                if (!snap.exists) return { ok: false, error: 'PAGO_NO_EXISTE' };
+                const p = snap.data() || {};
+                if (p.estado !== 'pendiente') return { ok: false, error: 'YA_PROCESADO', estado: p.estado };
+                const uid = String(p.usuarioId || '').trim();
+                const tipo = String(p.tipo || '').trim();
+                const monto = Number(p.monto || 0);
+                if (!uid || !['deposito', 'retiro'].includes(tipo) || !(monto > 0) || monto > 10000) {
+                    return { ok: false, error: 'SOLICITUD_INVALIDA' };
+                }
+                if (tipo === 'retiro' && estadoSolicitado !== 'pagado' && estadoSolicitado !== 'rechazado') {
+                    return { ok: false, error: 'ESTADO_RETIRO_INVALIDO' };
+                }
+                if (tipo === 'deposito' && estadoSolicitado !== 'aprobado' && estadoSolicitado !== 'rechazado') {
+                    return { ok: false, error: 'ESTADO_DEPOSITO_INVALIDO' };
+                }
+
+                const refU = FIREBASE_DB.collection('usuarios').doc(uid);
+                const sU = await t.get(refU);
+                if (!sU.exists) return { ok: false, error: 'USUARIO_NO_EXISTE' };
+                const saldo = Number(sU.data().saldo || 0);
+
+                if (estadoSolicitado === 'aprobado' && tipo === 'deposito') {
+                    const nuevoSaldo = +(saldo + monto).toFixed(2);
+                    t.update(refU, { saldo: nuevoSaldo });
+                    t.set(FIREBASE_DB.collection('movimientos').doc('mov_' + idPago), {
+                        usuarioId: uid, tipo: 'recarga', monto: +monto.toFixed(2),
+                        detalle: 'Recarga de saldo aprobada', refId: idPago,
+                        fecha: firebaseAdmin.firestore.FieldValue.serverTimestamp()
+                    });
+                } else if (estadoSolicitado === 'pagado' && tipo === 'retiro') {
+                    if (saldo < monto) return { ok: false, error: 'SALDO_INSUFICIENTE' };
+                    const nuevoSaldo = +(saldo - monto).toFixed(2);
+                    t.update(refU, { saldo: nuevoSaldo });
+                    const comision = +(monto * 0.2).toFixed(2);
+                    const neto = +(monto - comision).toFixed(2);
+                    t.set(FIREBASE_DB.collection('movimientos').doc('mov_' + idPago), {
+                        usuarioId: uid, tipo: 'retiro', monto: -monto,
+                        detalle: 'Retiro pagado (neto 
+    socket.on('adminVincularPremio', async (payload) => {
+        if (!adminAutorizado(socket)) return socket.emit('premioVinculado', { ok: false, error: 'NO_ADMIN' });
+        const p = (payload && typeof payload === 'object') ? payload : {};
+        if (!p.gameId || !p.uid) return socket.emit('premioVinculado', { ok: false, error: 'PARAMS' });
+        const r = await servidorAcreditarPremioPendiente(String(p.gameId), String(p.uid), { manual: true, exigirMatchApodo: false });
+        socket.emit('premioVinculado', Object.assign({ gameId: p.gameId }, r));
+        if (r.ok) io.emit('premiosActualizados', { gameId: p.gameId });
+    });
+
+    // Admin: forzar pasada de conciliación automática bajo demanda
+    socket.on('adminConciliarPremios', async () => {
+        if (!adminAutorizado(socket)) return socket.emit('premiosConciliados', { ok: false, error: 'NO_ADMIN' });
+        const r = await servidorConciliarPremiosPendientes('manual-admin');
+        socket.emit('premiosConciliados', r);
+        if (r.ok && (r.pagados || []).length > 0) io.emit('premiosActualizados', { n: r.pagados.length });
+    });
+
+    socket.on('adminCreateRoom', (roomData) => {
+        if (!adminAutorizado(socket)) {
+            return socket.emit('errorMsg', 'No tienes permisos de administrador.');
+        }
+
+        const validation = validateAdminRoom(roomData);
+        if (!validation.ok) {
+            return socket.emit('errorMsg', 'Configuración de sala inválida.');
+        }
+
+        const roomConfig = validation.room;
+        if (roomConfig.precioEntrada > 0 && (!FIREBASE_ECONOMY || !FIREBASE_DB)) {
+            return socket.emit('errorMsg', 'Las salas con entrada monetaria requieren economía server-side configurada.');
+        }
+        if (rooms[roomConfig.id]) {
+            return socket.emit('errorMsg', 'ID de sala inválido o ya existe.');
+        }
+
+        registrarAuditoria('ADMIN_CREATE_ROOM', socket.id, { roomId: roomConfig.id, maxPlayers: roomConfig.maxJugadores, entryFee: roomConfig.precioEntrada });
+        rooms[roomConfig.id] = new GameRoom(
+            roomConfig.id,
+            sanitizeNick(roomConfig.nombre),
+            roomConfig.maxJugadores,
+            roomConfig.precioEntrada,
+            roomConfig.esPrivada,
+            roomConfig.password
+        );
+        emitirSalasPublicas(true);
+    });
+
+    socket.on('adminDestroyRoom', async ({ roomId }) => {
+        if (!adminAutorizado(socket)) {
+            return socket.emit('errorMsg', 'No tienes permisos de administrador.');
+        }
+        if (rooms[roomId]) {
+            const room = rooms[roomId];
+
+            // Reembolsar entradas solo si la partida aún no arrancó
+            if (FIREBASE_ECONOMY && !room.gameStarted && !room.lobbyActive) {
+                Object.values(room.players).forEach(p => {
+                    if (p.pagoEntrada && p.uid) {
+                        servidorReembolsar(p.uid, p.pagoEntrada.entradasId, p.pagoEntrada.monto);
+                    }
+                });
+            }
+
+            // Notificar y expulsar a todos los jugadores antes de cerrar la sala
+            io.to(roomId).emit('roomClosed', { reason: 'La sala fue cerrada por el administrador.' });
+            io.in(roomId).fetchSockets().then(sockets => {
+                sockets.forEach(s => {
+                    s.leave(roomId);
+                    delete s.roomId;
+                });
+            }).catch(() => { });
+
+            registrarAuditoria('ADMIN_DESTROY_ROOM', socket.id, { roomId });
+            room.stopLoop();
+            delete rooms[roomId];
+            emitirSalasPublicas(true);
+        }
+    });
+
+    // ── Tienda de skins ──────────────────────────────────────────
+    // Lista de skins activas (respaldo para la tienda si Firestore directo falla)
+    socket.on('tiendaSkins', async () => {
+        try {
+            if (!FIREBASE_ECONOMY || !FIREBASE_DB) return socket.emit('tiendaList', []);
+            const snap = await FIREBASE_DB.collection('skins').where('activo', '==', true).limit(100).get();
+            socket.emit('tiendaList', snap.docs.map(d => {
+                const dta = d.data();
+                return {
+                    id: d.id,
+                    nombre: sanitizeNick(String(dta.nombre || 'Skin')),
+                    precio: Number(dta.precio || 0),
+                    c1: sanitizeHex(dta.c1, '#38bdf8'),
+                    c2: sanitizeHex(dta.c2, '#0284c7'),
+                    border: sanitizeHex(dta.border, '#bae6fd'),
+                    imagenUrl: typeof dta.imagenUrl === 'string' ? dta.imagenUrl.slice(0, 500) : ''
+                };
+            }));
+        } catch (e) {
+            socket.emit('tiendaList', []);
+        }
+    });
+
+    // Compra de skin: valida identidad (token) y cobra server-side
+    socket.on('comprarSkin', async (data) => {
+        const p = (data && typeof data === 'object') ? data : {};
+        try {
+            await verificarUidEnSala(socket, null, p);
+        } catch (e) { /* token inválido: queda sin verificación */ }
+        const res = await servidorComprarSkin(socket.verifiedUid, p.skinId);
+        socket.emit('skinResult', res);
+        if (res.ok) {
+            telegramNotify('🛒 <b>Compra de skin</b>\nUID: ' + socket.verifiedUid + '\nSkin: ' + (p.skinId || '?'));
+        }
+    });
+
+    socket.on('joinRoom', async ({ roomId, password, nick, skin, uid, token }) => {
+        const room = rooms[roomId];
+
+        if (!room) {
+            return socket.emit('errorMsg', 'La sala especificada no existe.');
+        }
+        // La contraseña se valida primero (incluso si ya está en la sala)
+        if (room.isPrivate && room.password !== password) {
+            return socket.emit('errorMsg', 'Contraseña de sala incorrecta.');
+        }
+        // Ya registrado en esta misma sala: confirmar, y aprovechar para vincular token/uid tardíos
+        if (socket.roomId === room.id && room.players[socket.id]) {
+            await verificarUidEnSala(socket, room, { uid, token });
+            if (room.entryFee > 0) {
+                if (!FIREBASE_ECONOMY || !FIREBASE_DB) {
+                    return socket.emit('errorMsg', 'Esta sala de pago no está disponible temporalmente.');
+                }
+                if (!socket.verifiedUid) {
+                    return socket.emit('errorMsg', 'Las salas de pago requieren iniciar sesión con cuenta verificada.');
+                }
+                if (!room.players[socket.id].pagoEntrada) {
+                    const cobro = await servidorCobrarEntrada(socket.verifiedUid, room.id, room.entryFee);
+                    if (!cobro.ok) {
+                        if (cobro.error === 'SALDO_INSUFICIENTE') {
+                            return socket.emit('errorMsg', 'Saldo insuficiente para cubrir la entrada a esta sala.');
+                        }
+                        if (cobro.error === 'NO_PROFILE') {
+                            return socket.emit('errorMsg', 'No tienes perfil en la wallet. Regístrate antes de jugar en salas de pago.');
+                        }
+                        return socket.emit('errorMsg', 'No se pudo cobrar la entrada: ' + String(cobro.error || 'ERROR').slice(0, 120));
+                    }
+                    socket.__entradaCobrada = { entradasId: cobro.entradasId, monto: room.entryFee, salaId: room.id };
+                    room.players[socket.id].pagoEntrada = socket.__entradaCobrada;
+                }
+            }
+            return socket.emit('joinedSuccess', { playerId: socket.id, roomId: room.id });
+        }
+        if (room.gameStarted) {
+            return socket.emit('errorMsg', 'La partida ya ha comenzado.');
+        }
+        // Cupo: no aplicar a quien ya ocupa un lugar en esta sala
+        const yaEstaAqui = socket.roomId === room.id;
+        if (!yaEstaAqui && Object.keys(room.players).length >= room.maxPlayers) {
+            return socket.emit('errorMsg', 'La sala está llena.');
+        }
+
+        const ip = ipDeSocket(socket);
+        // Anti multi-cuenta: límite de sockets por IP en salas de pago
+        if (room.entryFee > 0 && !yaEstaAqui) {
+            let mismaIp = 0;
+            for (const p of Object.values(room.players)) {
+                if (p.__ip && p.__ip === ip) mismaIp++;
+            }
+            if (mismaIp >= MAX_SOCKETS_PER_IP) {
+                return socket.emit('errorMsg', 'Límite de conexiones desde tu red alcanzado en esta sala.');
+            }
+        }
+        // Verificar identidad ANTES de aplicar reglas basadas en UID. Nunca se
+        // compara un UID crudo enviado por el cliente.
+        await verificarUidEnSala(socket, room, { token });
+
+        // Un mismo UID verificado no puede ocupar 2 asientos en la misma sala.
+        if (socket.verifiedUid) {
+            const duplicado = Object.values(room.players).some(p =>
+                p.uid && p.uid === socket.verifiedUid && p.id !== socket.id
+            );
+            if (duplicado) {
+                return socket.emit('errorMsg', 'Ya tienes una sesión activa en esta sala.');
+            }
+        }
+
+        // Cambio de sala: salir automáticamente de la sala anterior (con reembolso si aplica)
+        if (socket.roomId && rooms[socket.roomId] && socket.roomId !== room.id) {
+            await salirDeSala(socket, rooms[socket.roomId]);
+        }
+
+        // Verificar identidad (modo economía: ID token de Firebase)
+        await verificarUidEnSala(socket, room, { uid, token });
+
+        // Apodo ÚNICO en juego: si el socket trae UID verificado y el apodo que
+        // escribió NO coincide con el registrado en su perfil, se usa el del
+        // perfil. Así nadie puede suplantar el apodo de otro dentro de la sala
+        // (y el ganadorNick del premio siempre es el dueño real).
+        // Además se rechaza el nick si OTRO jugador de la sala ya lo usa
+        // (comparación insensible a mayúsculas), para que no haya 2 iguales
+        // ni siquiera entre invitados sin UID.
+        let nickFinal = nick;
+        if (socket.verifiedUid && FIREBASE_DB) {
+            try {
+                const snapPerfil = await FIREBASE_DB.collection('usuarios').doc(socket.verifiedUid).get();
+                const apodoReal = snapPerfil.exists ? String((snapPerfil.data() || {}).apodo || '').trim() : '';
+                if (apodoReal) nickFinal = apodoReal;
+            } catch (e) { /* si falla la lectura, se usa el nick enviado */ }
+        }
+        const claveNick = String(nickFinal || '').trim().toLowerCase();
+        const nickOcupado = Object.values(room.players).some((p) =>
+            p.id !== socket.id && String(p.nick || '').trim().toLowerCase() === claveNick);
+        if (claveNick && nickOcupado) {
+            return socket.emit('errorMsg', 'Ese apodo ya está en uso en esta sala. Cambia tu apodo en Mi Perfil.');
+        }
+
+        // Anti-suplantación GLOBAL: un socket sin UID verificado (invitado o
+        // navegador sin token) no puede jugar con un apodo que ya pertenece a una
+        // cuenta registrada (reserva apodos/{clave}). Así nadie puede hacerse
+        // pasar por otro jugador y desviar la conciliación de su premio.
+        if (!socket.verifiedUid && FIREBASE_DB && claveNick) {
+            try {
+                const snapAp = await FIREBASE_DB.collection('apodos').doc(claveNick).get();
+                if (snapAp.exists && (snapAp.data() || {}).uid) {
+                    return socket.emit('errorMsg', 'Ese apodo pertenece a una cuenta registrada. Inicia sesión con tu cuenta o elige otro apodo.');
+                }
+            } catch (e) { /* sin colección/reglas: no se bloquea el acceso */ }
+        }
+
+        // Las salas de pago nunca funcionan sin economía server-side: no se permite
+        // convertir una entrada monetaria en una partida gratuita por falta de credenciales.
+        if (room.entryFee > 0 && (!FIREBASE_ECONOMY || !FIREBASE_DB)) {
+            return socket.emit('errorMsg', 'Esta sala de pago no está disponible temporalmente.');
+        }
+        // Cobro de entrada en el SERVIDOR — el cliente ya no decide.
+        if (room.entryFee > 0 && FIREBASE_ECONOMY && !socket.__entradaCobrada) {
+            if (!socket.verifiedUid) {
+                return socket.emit('errorMsg', 'Las salas de pago requieren iniciar sesión con cuenta verificada.');
+            }
+            const cobro = await servidorCobrarEntrada(socket.verifiedUid, room.id, room.entryFee);
+            if (!cobro.ok) {
+                if (cobro.error === 'SALDO_INSUFICIENTE') {
+                    return socket.emit('errorMsg', 'Saldo insuficiente para cubrir la entrada a esta sala.');
+                }
+                if (cobro.error === 'NO_PROFILE') {
+                    return socket.emit('errorMsg', 'No tienes perfil en la wallet. Regístrate antes de jugar en salas de pago.');
+                }
+                return socket.emit('errorMsg', 'No se pudo cobrar la entrada: ' + String(cobro.error || 'ERROR').slice(0, 120));
+            }
+            socket.__entradaCobrada = { entradasId: cobro.entradasId, monto: room.entryFee, salaId: room.id };
+        }
+
+        socket.join(room.id);
+        socket.roomId = room.id;
+        // Geometría del mapa para este cliente concreto (recién unido o
+        // reconectado). Va antes que nada de gameState para que tenga el mapa
+        // ya montado cuando empiece a dibujar.
+        room.emitirConfig(socket);
+        // Anticheat de skins: si la skin no es básica ni está en el inventario del jugador → básica
+        const skinValidada = await validarSkinCliente(skin, socket.verifiedUid);
+        room.addPlayer(socket.id, nickFinal, skinValidada, socket.verifiedUid);
+        const nuevoP = room.players[socket.id];
+        nuevoP.__ip = ip;
+        if (socket.__entradaCobrada) nuevoP.pagoEntrada = socket.__entradaCobrada;
+
+        socket.emit('joinedSuccess', { playerId: socket.id, roomId: room.id });
+        emitirSalasPublicas();
+    });
+
+    // El cliente vincula su UID/token de Firebase si llegó después del join
+    // Acepta {uid, token} (nuevo) o string (legacy).
+    socket.on('setUid', async (data) => {
+        const room = rooms[socket.roomId];
+        if (!room || !room.players[socket.id]) return;
+
+        await verificarUidEnSala(socket, room, data);
+        const p = room.players[socket.id];
+        if (socket.verifiedUid) {
+            const duplicado = Object.values(room.players).some(other =>
+                other.id !== socket.id && other.uid && other.uid === socket.verifiedUid
+            );
+            if (duplicado) {
+                socket.verifiedUid = null;
+                return socket.emit('errorMsg', 'Esa cuenta ya está jugando en esta sala.');
+            }
+            p.uid = socket.verifiedUid;
+        }
+
+        // Cobro diferido: llegó el token después del join en una sala de pago
+        if (FIREBASE_ECONOMY && room.entryFee > 0 && socket.verifiedUid && !p.pagoEntrada) {
+            const cobro = await servidorCobrarEntrada(socket.verifiedUid, room.id, room.entryFee);
+            if (cobro.ok) {
+                socket.__entradaCobrada = { entradasId: cobro.entradasId, monto: room.entryFee, salaId: room.id };
+                p.pagoEntrada = socket.__entradaCobrada;
+            } else if (cobro.error === 'SALDO_INSUFICIENTE') {
+                socket.emit('errorMsg', 'Saldo insuficiente para la entrada. Serás retirado de la sala.');
+                room.removePlayer(socket.id);
+                socket.leave(room.id);
+                delete socket.roomId;
+            }
+        }
+    });
+
+    socket.on('playerInput', (inputData) => {
+        if (!socket.roomId || !rooms[socket.roomId]) return;
+        const command = normalizeCommand(null, 'PLAYER_MOVE', inputData);
+        if (!validatePlayerInput(command.payload).ok) return;
+        // Anti-spam: descarta inputs más rápidos que el tick del cliente
+        const ahora = Date.now();
+        if (ahora - (socket.__lastInput || 0) < INPUT_MIN_INTERVAL) return;
+        socket.__lastInput = ahora;
+        rooms[socket.roomId].handleInput(socket.id, command.payload);
+    });
+
+    socket.on('playerShoot', (shootData) => {
+        if (!validateShoot(shootData).ok) return;
+        if (socket.roomId && rooms[socket.roomId]) {
+            const command = normalizeCommand(null, 'PLAYER_SHOOT', shootData);
+            rooms[socket.roomId].handleShoot(socket.id, command.payload);
+        }
+    });
+
+    socket.on('playerDash', () => {
+        if (socket.roomId && rooms[socket.roomId]) {
+            rooms[socket.roomId].handleDash(socket.id);
+        }
+    });
+
+    socket.on('playerBomb', () => {
+        if (socket.roomId && rooms[socket.roomId]) {
+            rooms[socket.roomId].handleBomb(socket.id);
+        }
+    });
+
+    socket.on('switchWeapon', (data) => {
+        const validation = validateWeaponSelection(data);
+        if (!validation.ok) return;
+        if (socket.roomId && rooms[socket.roomId]) {
+            const command = normalizeCommand(null, 'SWITCH_WEAPON', data);
+            rooms[socket.roomId].handleSwitchWeapon(socket.id, command.payload);
+        }
+    });
+
+    socket.on('playerReload', () => {
+        if (socket.roomId && rooms[socket.roomId]) {
+            rooms[socket.roomId].handleReload(socket.id);
+        }
+    });
+
+    socket.on('buyShopItem', (itemType) => {
+        const validation = validateShopItem(itemType);
+        if (!validation.ok) return;
+        if (socket.roomId && rooms[socket.roomId]) {
+            const command = normalizeCommand(null, 'BUY_SHOP_ITEM', { itemType: validation.itemType });
+            rooms[socket.roomId].handleBuyItem(socket.id, command.payload.itemType);
+        }
+    });
+
+    socket.on('requestRespawn', () => {
+        if (socket.roomId && rooms[socket.roomId]) {
+            rooms[socket.roomId].handleRespawn(socket.id);
+        }
+    });
+
+    socket.on('pedirConfig', () => {
+        const room = rooms[socket.roomId];
+        // El cliente lo pide cuando le falta la geometría o su configVersion no
+        // cuadra con la del gameState (mapas tras un reset). Es idempotente y
+        // barata; no filtra nada porque solo devuelve la sala del propio socket.
+        if (room) room.emitirConfig(socket);
+    });
+
+    socket.on('startGame', ({ roomId }) => {
+        if (!adminAutorizado(socket)) {
+            return socket.emit('errorMsg', 'No tienes permisos de administrador.');
+        }
+        const room = rooms[roomId];
+        if (!room) {
+            return socket.emit('errorMsg', 'La sala no existe.');
+        }
+        if (!room.startGame()) {
+            return socket.emit('errorMsg', 'No se puede iniciar la partida (necesita al menos 2 jugadores).');
+        }
+        io.to(roomId).emit('playSound', 'explosion');
+    });
+
+    socket.on('leaveRoom', async () => {
+        if (socket.roomId && rooms[socket.roomId]) {
+            const room = rooms[socket.roomId];
+            await salirDeSala(socket, room);
+            socket.leave(socket.roomId);
+            delete socket.roomId;
+            emitirSalasPublicas();
+        }
+    });
+
+    socket.on('disconnect', async () => {
+        if (socket.roomId && rooms[socket.roomId]) {
+            const room = rooms[socket.roomId];
+            await salirDeSala(socket, room);
+            emitirSalasPublicas();
+        }
+    });
+});
+
+const PORT = Number(process.env.PORT) || 3000;
+server.listen(PORT, '0.0.0.0', () => {
+    // El mensaje antes decía "localhost" fijo, que en Render (donde PORT lo
+    // inyecta la plataforma) daba a entender que escuchaba en local. Se imprime
+    // el puerto real para que el log diga la verdad.
+    console.log('Servidor WinOrbs escuchando en el puerto ' + PORT);
+});
+ + neto.toFixed(2) + ')', refId: idPago,
+                        fecha: firebaseAdmin.firestore.FieldValue.serverTimestamp()
+                    });
+                    t.set(FIREBASE_DB.collection('metricas').doc('casa'), {
+                        comisionesAcumuladas: firebaseAdmin.firestore.FieldValue.increment(comision)
+                    }, { merge: true });
+                    t.update(refPago, { estado: 'pagado', comision, neto, procesadoEn: firebaseAdmin.firestore.FieldValue.serverTimestamp() });
+                    return { ok: true, estado: 'pagado', saldo: nuevoSaldo, comision, neto };
+                }
+
+                t.update(refPago, { estado: estadoSolicitado, procesadoEn: firebaseAdmin.firestore.FieldValue.serverTimestamp() });
+                return { ok: true, estado: estadoSolicitado, saldo: estadoSolicitado === 'aprobado' ? +(saldo + monto).toFixed(2) : saldo };
+            });
+            if (r.ok) registrarAuditoria('ADMIN_PROCESAR_PAGO', socket.id, { idPago, estado: r.estado });
+            socket.emit('pagoProcesado', Object.assign({ idPago }, r));
+        } catch (e) {
+            socket.emit('pagoProcesado', { ok: false, error: String(e.message || 'ERROR').slice(0, 160) });
+        }
+    });
+
+    socket.on('adminAjustarSaldo', async (payload) => {
+        if (!adminAutorizado(socket)) return socket.emit('saldoAjustado', { ok: false, error: 'NO_ADMIN' });
+        if (!FIREBASE_ECONOMY || !FIREBASE_DB) return socket.emit('saldoAjustado', { ok: false, error: 'ECONOMY_OFF' });
+        const uid = String(payload && payload.uid || '').trim();
+        const monto = Number(payload && payload.monto);
+        if (!uid || !Number.isFinite(monto) || monto === 0 || Math.abs(monto) > 10000) return socket.emit('saldoAjustado', { ok: false, error: 'PARAMS' });
+        try {
+            const r = await FIREBASE_DB.runTransaction(async (t) => {
+                const refU = FIREBASE_DB.collection('usuarios').doc(uid);
+                const snap = await t.get(refU);
+                if (!snap.exists) return { ok: false, error: 'USUARIO_NO_EXISTE' };
+                const saldo = Number(snap.data().saldo || 0);
+                const nuevoSaldo = +(saldo + monto).toFixed(2);
+                if (nuevoSaldo < 0) return { ok: false, error: 'SALDO_RESULTANTE_NEGATIVO' };
+                t.update(refU, { saldo: nuevoSaldo });
+                return { ok: true, saldo: nuevoSaldo };
+            });
+            if (r.ok) registrarAuditoria('ADMIN_AJUSTAR_SALDO', socket.id, { uid, monto: +monto.toFixed(2), saldo: r.saldo });
+            socket.emit('saldoAjustado', Object.assign({ uid }, r));
+        } catch (e) {
+            socket.emit('saldoAjustado', { ok: false, error: String(e.message || 'ERROR').slice(0, 160) });
+        }
+    });
+
     // Admin: vincular un pendiente a un UID concreto (respaldo manual)
     socket.on('adminVincularPremio', async (payload) => {
         if (!adminAutorizado(socket)) return socket.emit('premioVinculado', { ok: false, error: 'NO_ADMIN' });
