@@ -1,12 +1,13 @@
 // ─────────────────────────────────────────────────────────────
 // cambiar-servidor.js — Actualiza de golpe la URL del backend.
 //
-// Los "quick tunnels" de Cloudflare (trycloudflare.com) cambian de URL cada
-// vez que se reinicia cloudflared. Ese cambio afecta a DOS sitios:
+// El cambio de backend afecta a:
 //   1) public/js/servidor-config.js → window.SERVIDOR_URL (lo usa el frontend)
-//   2) .env                         → CORS_ORIGIN (orígenes que acepta server.js)
-// Olvidar el segundo provoca el error de CORS en el handshake de Socket.IO.
-// Este script reescribe ambos a la vez.
+//   2) .env                         → CORS_ORIGIN (SOLO orígenes del frontend)
+// IMPORTANTE: la URL del backend NUNCA es un CORS origin. CORS_ORIGIN debe
+// contener las URLs desde las que el navegador carga WinOrbs (p. ej.
+// https://winorbs.pages.dev), no la URL de Render/Cloudflare del servidor.
+// Este script conserva esa separación para Render y para quick tunnels.
 //
 // Uso:
 //   node cambiar-servidor.js https://nueva-url.trycloudflare.com
@@ -47,7 +48,7 @@ const cambioCfg = nuevaCfg !== cfg;
 if (cambioCfg) fs.writeFileSync(CONFIG, nuevaCfg);
 
 // ── 2) .env (solo si existe) ─────────────────────────────────
-const origenes = [CORS_BASE].concat(url && url !== CORS_BASE ? [url] : []);
+const origenes = [CORS_BASE];
 const lineaCors = 'CORS_ORIGIN=' + origenes.join(',');
 const RE_CORS = /^CORS_ORIGIN=.*$/m;
 const envExiste = fs.existsSync(ENV);
@@ -73,5 +74,5 @@ if (!envExiste) {
 }
 console.log('\nPara que surta efecto:');
 console.log('  1) git add public/js/servidor-config.js && git commit -m "chore(deploy): nueva URL del backend" && git push   (redespliega Pages)');
-console.log('  2) Si el .env cambió: súbelo al servidor (scp) y reinicia el backend.');
+console.log('  2) Si el .env cambió: configúralo en el entorno del backend y reinicia el servicio.');
 console.log('  3) Comprueba:  curl -s ' + (url || 'http://localhost:3000') + '/status');
