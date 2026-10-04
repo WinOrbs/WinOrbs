@@ -11,5 +11,9 @@ assert.doesNotMatch(source, /socket\.verifiedUid\s*=\s*uidRaw/);
 assert.match(source, /validatePlayerInput/);
 assert.match(source, /validateShoot/);
 assert.match(source, /adminAutorizado/);
+assert.match(source, /modo: FIREBASE_ECONOMY \? 'ECONOMIA' : 'DESHABILITADA'/);
+assert.match(source, /salas con entrada monetaria requieren economía server-side configurada/);
+assert.match(source, /Esta sala de pago no está disponible temporalmente/);
+assert.doesNotMatch(source, /Cobro\/premio los gestiona el cliente/);
 
 console.log('OK security: server does not trust raw UID or fallback admin credentials.');
