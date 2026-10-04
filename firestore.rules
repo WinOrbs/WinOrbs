@@ -58,10 +58,13 @@ service cloud.firestore {
       //    SUBIRLO ni cambiarse el baneado. → Fábrica de dinero CERRADA.
       allow update: if isAdmin()
                     || (request.auth != null && request.auth.uid == uid
-                        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['baneado'])
-                        && request.resource.data.saldo <= resource.data.saldo
+                        // El propietario solo puede modificar campos de perfil.
+                        // Inventario, saldo, skins, roles y flags administrativos quedan
+                        // fuera de este conjunto y solo los controla el servidor/admin.
+                        && request.resource.data.diff(resource.data).affectedKeys()
+                           .hasOnly(['apodo', 'displayName', 'avatarId', 'bio', 'country'])
                         // Cambiar de apodo exige tenerlo reservado a tu nombre;
-                        // si el apodo no cambia no se exige (perfiles antiguos).
+                        // si el apodo no cambia no se exige.
                         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['apodo'])
                             || apodoReservadoA(request.resource.data.apodo)));
 
