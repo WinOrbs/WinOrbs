@@ -1,13 +1,11 @@
 rules_version = '2';
 
 // ─────────────────────────────────────────────────────────────
-// REGLAS DE FIRESTORE — WinOrbs (ANTICHEAT · Fase 1 endurecida)
+// REGLAS DE FIRESTORE — WinOrbs 2.0 (seguridad endurecida)
 // Pega este contenido en: Firebase Console → Firestore Database → Rules
 //
-// ⚠️ PASO MANUAL OBLIGATORIO:
-// 1) Regístrate en la app con tu email de administrador.
-// 2) Copia tu UID (Consola → Authentication → Users).
-// 3) Pégalo abajo en ADMIN_UID y publica las reglas.
+// La identidad administrativa debe gestionarse mediante claims/email controlados
+// por el entorno; no se aceptan UIDs de usuario incrustados en el repositorio.
 //
 // ECONOMÍA:
 // - El servidor escribe entradas/premios/partidas vía Admin SDK (bypasa estas
@@ -21,10 +19,6 @@ service cloud.firestore {
 
     function isAdmin() {
       return request.auth != null && (
-        // ⚠️ SUSTITUYE_ESTO_POR_TU_UID antes de publicar en Firebase Console.
-        //    Ruta: Console → Authentication → Users → tu cuenta de admin → copiar UID.
-        //    Con el placeholder, esa cuenta pierde los permisos de admin.
-        request.auth.uid == "SUSTITUYE_ESTO_POR_TU_UID" ||
         request.auth.token.email == "winorbs@admins.com"
       );
     }
