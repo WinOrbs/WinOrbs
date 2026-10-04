@@ -14,6 +14,7 @@ const { MATCH_STATUS, canTransition } = require('./apps/server/game/lifecycle');
 const { applyDeathLoss } = require('./apps/server/game/orbs');
 const { bankMatchOrbs, awardElimination } = require('./apps/server/game/score');
 const { applyDamage } = require('./apps/server/game/combat');
+const { extractIdToken } = require('./apps/server/identity');
 
 const express = require('express');
 const http = require('http');
@@ -2440,14 +2441,10 @@ function emitirSalasPublicas(immediate = false) {
 // sesión con una cuenta. Sin Firebase/credenciales el servidor funciona como
 // invitado, pero no habilita operaciones que requieran identidad.
 async function verificarUidEnSala(socket, room, payload) {
-    let token = null;
-    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
-        token = payload.token;
-    }
-
+    const token = extractIdToken(payload);
     socket.verifiedUid = null;
 
-    if (!FIREBASE_ECONOMY || !token || typeof token !== 'string' || token.length >= 6000) {
+    if (!FIREBASE_ECONOMY || !token) {
         return;
     }
 
