@@ -1360,6 +1360,7 @@ class GameRoom {
                 if (playerCount < 2) {
                     this.lobbyActive = false;
                     this.countdown = 0;
+                    this.matchStatus = MATCH_STATUS.WAITING;
                     io.to(this.id).emit('announcement', '⚠️ Inicio cancelado: quedó un solo jugador en la sala.');
                 } else if (this.countdown <= 0) {
                     this.gameStarted = true;
