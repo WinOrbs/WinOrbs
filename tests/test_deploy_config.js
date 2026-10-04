@@ -16,16 +16,16 @@ const gameHtml = fs.readFileSync(path.join(root, 'public/game.html'), 'utf8');
 
 assert.match(
     frontendConfig,
-    /window\.SERVIDOR_URL\s*=\s*"https:\/\/winorbs-api\.onrender\.com";/,
+    /window\.SERVIDOR_URL\s*=\s*"https:\/\/winorbs\.onrender\.com";/,
     'frontend must point Socket.IO at the production Render backend'
 );
 assert.ok(
-    !frontendConfig.includes('winorbs.onrender.com'),
-    'frontend must not use the obsolete Render hostname'
+    !frontendConfig.includes('winorbs-api.onrender.com'),
+    'frontend must not use the inactive Render hostname'
 );
 assert.ok(
-    !server.includes('winorbs.onrender.com'),
-    'server source must not contain the obsolete Render hostname'
+    !server.includes('winorbs-api.onrender.com'),
+    'server source must not contain the inactive Render hostname'
 );
 assert.ok(
     changer.includes("const CORS_BASE = 'https://winorbs.pages.dev';"),
