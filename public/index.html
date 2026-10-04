@@ -972,12 +972,8 @@
                 tarjetaSala.querySelector('.btn-unirse').addEventListener('click', async function () {
                     const precio = parseFloat(this.dataset.precio || '0');
                     if (window.verificarSaldoParaUnirse && !window.verificarSaldoParaUnirse(precio)) return;
-                    if (precio > 0 && window.__economyMode !== true) {
-                        // Modo degradado: el cliente cobra. En modo economía el SERVIDOR
-                        // cobra al conectar (joinRoom), para que nadie pueda colarse sin pagar.
-                        const cobrado = await window.cobrarEntrada(this.dataset.sala, precio);
-                        if (!cobrado) return; // saldo insuficiente o error al cobrar
-                    }
+                    // El cliente solo presenta una prevalidación UX. El cobro real,
+                    // si corresponde, lo decide y ejecuta exclusivamente el servidor.
                     unirseASala(this.dataset.sala, this.dataset.privada === '1');
                 });
 
@@ -1280,55 +1276,14 @@
             window.location.href = "login.html";
         });
 
-        // Cobro de entrada al unirse (transacción atómica).
-        // Nota: si abandonas la sala antes de que inicie la partida, la entrada no se reembolsa.
-        window.cobrandoEntrada = false;
-        window.cobrarEntrada = async function (salaId, precio) {
-            if (window.cobrandoEntrada) return false;
-            window.cobrandoEntrada = true;
-            try {
-                const user = auth.currentUser;
-                if (!user) { alert("Inicia sesión para unirte a la sala."); return false; }
-                if (window.__saldo !== null && window.__saldo < precio) {
-                    const ir = confirm("Tu saldo ($" + window.__saldo.toFixed(2) + " USD) no cubre la entrada ($" + precio.toFixed(2) + " USD).\n¿Ir a la Wallet para depositar?");
-                    if (ir) window.location.href = "wallet.html";
-                    return false;
-                }
-                await runTransaction(db, async (t) => {
-                    const ref = doc(db, "usuarios", user.uid);
-                    const snap = await t.get(ref);
-                    const saldo = Number((snap.data() || {}).saldo || 0);
-                    if (saldo < precio) throw new Error("SALDO_INSUFICIENTE");
-                    t.update(ref, { saldo: +(saldo - precio).toFixed(2) });
-                    t.set(doc(collection(db, "entradas")), {
-                        usuarioId: user.uid,
-                        salaId: salaId,
-                        monto: precio,
-                        estado: "cobrada",
-                        fecha: serverTimestamp()
-                    });
-                });
-                return true;
-            } catch (e) {
-                if ((e.message || "").includes("SALDO_INSUFICIENTE")) {
-                    const ir = confirm("Tu saldo no cubre la entrada ($" + precio.toFixed(2) + " USD).\n¿Ir a la Wallet para depositar?");
-                    if (ir) window.location.href = "wallet.html";
-                } else {
-                    alert("No se pudo cobrar la entrada: " + (e.code || e.message));
-                }
-                return false;
-            } finally {
-                window.cobrandoEntrada = false;
-            }
-        };
-
-        // Validación de saldo antes de unirse a una sala de pago
-        // (el cobro real se hace justo aquí arriba con cobrarEntrada)
+        // Las entradas monetarias son server-authoritative.
+        // El cliente puede consultar el saldo para mejorar la UX, pero nunca
+        // modifica "usuarios.saldo" ni crea una entrada "cobrada".
         window.verificarSaldoParaUnirse = function (precio) {
-            if (window.__saldo === null) return true; // aún sin datos, no bloquear
+            if (window.__saldo === null) return true;
             if (window.__saldo < precio) {
                 const ir = confirm("Tu saldo ($" + window.__saldo.toFixed(2) + " USD) no cubre la entrada ($" +
-                    precio.toFixed(2) + " USD).\n¿Ir a la Wallet para depositar?");
+                    precio.toFixed(2) + " USD).\\n¿Ir a la Wallet para depositar?");
                 if (ir) window.location.href = "wallet.html";
                 return false;
             }
