@@ -744,6 +744,7 @@ class GameRoom {
         this.pozoTotal = 0;            // bote estático fijado al arrancar la partida
         this.pendingStart = null;
         this.ending = false;
+        this.matchStatus = MATCH_STATUS.CREATED;
 
         this.initEnergy();
         this.startLoop();
@@ -1362,6 +1363,7 @@ class GameRoom {
                     io.to(this.id).emit('announcement', '⚠️ Inicio cancelado: quedó un solo jugador en la sala.');
                 } else if (this.countdown <= 0) {
                     this.gameStarted = true;
+                    this.matchStatus = MATCH_STATUS.RUNNING;
                     this.lobbyActive = false;
                     // Botiquines iniciales repartidos por el mapa (antes solo caían
                     // al matar a alguien, así que la salud casi no se recuperaba).
@@ -1429,6 +1431,8 @@ class GameRoom {
     }
 
     startLobby() {
+        if (!canTransition(this.matchStatus, MATCH_STATUS.STARTING)) return false;
+        this.matchStatus = MATCH_STATUS.STARTING;
         this.lobbyActive = true;
         this.countdown = 5;
         this.pendingStart = null;
