@@ -1,8 +1,8 @@
 // Carga variables de entorno desde .env (si existe) — debe ir primero
 try { require('dotenv').config(); } catch (e) { /* dotenv no instalado: usar variables de entorno del sistema */ }
 
-const { isProduction, corsRaw, corsAllowAll, isOriginAllowed, adminPassword } = require('./apps/server/config');
-const { normalizeCommand, validatePlayerInput, validateShoot } = require('./apps/server/transport/command');
+const { corsRaw, corsAllowAll, isOriginAllowed, adminPassword } = require('./apps/server/config');
+const {\n    normalizeCommand,\n    validatePlayerInput,\n    validateShoot,\n    validateWeaponSelection,\n    validateShopItem\n} = require('./apps/server/transport/command');
 
 const express = require('express');
 const http = require('http');
@@ -2896,8 +2896,11 @@ io.on('connection', (socket) => {
     });
 
     socket.on('switchWeapon', (data) => {
+        const validation = validateWeaponSelection(data);
+        if (!validation.ok) return;
         if (socket.roomId && rooms[socket.roomId]) {
-            rooms[socket.roomId].handleSwitchWeapon(socket.id, data);
+            const command = normalizeCommand(null, 'SWITCH_WEAPON', data);
+            rooms[socket.roomId].handleSwitchWeapon(socket.id, command.payload);
         }
     });
 
@@ -2908,8 +2911,11 @@ io.on('connection', (socket) => {
     });
 
     socket.on('buyShopItem', (itemType) => {
+        const validation = validateShopItem(itemType);
+        if (!validation.ok) return;
         if (socket.roomId && rooms[socket.roomId]) {
-            rooms[socket.roomId].handleBuyItem(socket.id, itemType);
+            const command = normalizeCommand(null, 'BUY_SHOP_ITEM', validation.itemType);
+            rooms[socket.roomId].handleBuyItem(socket.id, command.payload);
         }
     });
 
