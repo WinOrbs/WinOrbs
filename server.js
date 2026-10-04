@@ -16,6 +16,7 @@ const { bankMatchOrbs, awardElimination } = require('./apps/server/game/score');
 const { applyDamage } = require('./apps/server/game/combat');
 const { extractIdToken } = require('./apps/server/identity');
 const { lockResult } = require('./apps/server/game/results');
+const { createAuditEvent } = require('./apps/server/platform/audit');
 
 const express = require('express');
 const http = require('http');
@@ -2547,6 +2548,12 @@ if (FIREBASE_ECONOMY && FIREBASE_DB) {
 // dirección directa del handshake. Sin esto, tras el balanceador de Render
 // TODOS los jugadores comparten la IP del proxy: el límite por IP bloquearía a
 // partir del 4º jugador y el rate-limit del panel se volvería global.
+function registrarAuditoria(tipo, actor, data) {
+    const event = createAuditEvent(tipo, actor, data);
+    console.log('[AUDIT]', JSON.stringify(event));
+    return event;
+}
+
 function adminAutorizado(socket) {
     if (!socket || socket.isAdmin !== true || !socket.adminAuthenticatedAt) return false;
     if (Date.now() - socket.adminAuthenticatedAt >= ADMIN_SESSION_MS) {
@@ -2600,6 +2607,7 @@ io.on('connection', (socket) => {
             socket.isAdmin = true;
             socket.adminAuthenticatedAt = now;
             rec.fail = 0;
+            registrarAuditoria('ADMIN_LOGIN', socket.id, { ip });
             socket.emit('adminAuthed', true);
         } else {
             rec.fail++;
@@ -2674,6 +2682,7 @@ io.on('connection', (socket) => {
             return socket.emit('errorMsg', 'ID de sala inválido o ya existe.');
         }
 
+        registrarAuditoria('ADMIN_CREATE_ROOM', socket.id, { roomId: roomConfig.id, maxPlayers: roomConfig.maxJugadores, entryFee: roomConfig.precioEntrada });
         rooms[roomConfig.id] = new GameRoom(
             roomConfig.id,
             sanitizeNick(roomConfig.nombre),
@@ -2710,6 +2719,7 @@ io.on('connection', (socket) => {
                 });
             }).catch(() => { });
 
+            registrarAuditoria('ADMIN_DESTROY_ROOM', socket.id, { roomId });
             room.stopLoop();
             delete rooms[roomId];
             emitirSalasPublicas(true);
