@@ -13,3 +13,6 @@ assert.match(firestore, /allow update: if isAdmin\(\);/);
 assert.doesNotMatch(storage, /2TRnwllarqhaggRR8so48rSVzji1/);
 
 console.log('OK rules: platform writes remain server/admin controlled and storage has no hardcoded UID.');
+
+assert.doesNotMatch(firestore, /SUSTITUYE_ESTO_POR_TU_UID/);
+assert.doesNotMatch(firestore, /2TRnwllarqhaggRR8so48rSVzji1/);
