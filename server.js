@@ -13,6 +13,7 @@ const {
 const { MATCH_STATUS, canTransition } = require('./apps/server/game/lifecycle');
 const { applyDeathLoss } = require('./apps/server/game/orbs');
 const { bankMatchOrbs, awardElimination } = require('./apps/server/game/score');
+const { applyDamage } = require('./apps/server/game/combat');
 
 const express = require('express');
 const http = require('http');
@@ -2063,13 +2064,8 @@ class GameRoom {
     }
 
     damagePlayer(p, ownerId, damage, bullet) {
-        if (p.shield > 0) {
-            const absorbed = Math.min(p.shield, damage);
-            p.shield -= absorbed;
-            damage -= absorbed;
-            if (damage <= 0) return;
-        }
-        p.hp -= damage;
+        const result = applyDamage(p, damage);
+        if (!result.killed) return;
         if (p.hp <= 0) {
             p.hp = 0;
             p.isDead = true;
