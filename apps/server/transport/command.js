@@ -84,10 +84,47 @@ function validateShopItem(payload) {
     return { ok: true, itemType };
 }
 
+function validateAdminRoom(payload) {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        return { ok: false, error: 'INVALID_ROOM' };
+    }
+
+    const id = typeof payload.id === 'string' ? payload.id.trim() : '';
+    const nombre = typeof payload.nombre === 'string' ? payload.nombre.trim() : '';
+    const maxJugadores = Number(payload.maxJugadores);
+    const precioEntrada = Number(payload.precioEntrada);
+
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) {
+        return { ok: false, error: 'INVALID_ROOM_ID' };
+    }
+    if (!nombre || nombre.length > 80) {
+        return { ok: false, error: 'INVALID_ROOM_NAME' };
+    }
+    if (!Number.isInteger(maxJugadores) || maxJugadores < 2 || maxJugadores > 30) {
+        return { ok: false, error: 'INVALID_MAX_PLAYERS' };
+    }
+    if (!Number.isFinite(precioEntrada) || precioEntrada < 0 || precioEntrada > 10000) {
+        return { ok: false, error: 'INVALID_ENTRY_FEE' };
+    }
+
+    return {
+        ok: true,
+        room: {
+            id,
+            nombre,
+            maxJugadores,
+            precioEntrada,
+            esPrivada: payload.esPrivada === true,
+            password: typeof payload.password === 'string' ? payload.password.slice(0, 128) : ''
+        }
+    };
+}
+
 module.exports = Object.freeze({
     normalizeCommand,
     validatePlayerInput,
     validateShoot,
     validateWeaponSelection,
-    validateShopItem
+    validateShopItem,
+    validateAdminRoom
 });
