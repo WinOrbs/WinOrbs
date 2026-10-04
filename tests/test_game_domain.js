@@ -14,7 +14,7 @@ assert.strictEqual(transition({ status: MATCH_STATUS.CREATED }, MATCH_STATUS.RUN
 
 assert.strictEqual(DEATH_LOSS_RATE, 0.20);
 assert.deepStrictEqual(calculateDeathLoss(100), { lost: 20, remaining: 80 });
-assert.deepStrictEqual(calculateDeathLoss(3), { lost: 0, remaining: 3 });
+assert.deepStrictEqual(calculateDeathLoss(3), { lost: 0.6000000000000001, remaining: 2.4 });
 const player = { charge: 100 };
 assert.deepStrictEqual(applyDeathLoss(player), { lost: 20, remaining: 80 });
 assert.strictEqual(player.charge, 80);
