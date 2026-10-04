@@ -57,8 +57,37 @@ function validateShoot(payload) {
     return { ok: true };
 }
 
+function validateWeaponSelection(payload) {
+    const weapon = typeof payload === 'number'
+        ? payload
+        : payload && typeof payload === 'object' && !Array.isArray(payload)
+            ? payload.weapon
+            : undefined;
+
+    if (!Number.isInteger(weapon) || ![1, 2, 3].includes(weapon)) {
+        return { ok: false, error: 'INVALID_WEAPON' };
+    }
+
+    return { ok: true, weapon };
+}
+
+function validateShopItem(payload) {
+    if (typeof payload !== 'string') {
+        return { ok: false, error: 'INVALID_ITEM' };
+    }
+
+    const itemType = payload.trim();
+    if (!['medkit', 'shield', 'bomb', 'orbGun'].includes(itemType)) {
+        return { ok: false, error: 'INVALID_ITEM' };
+    }
+
+    return { ok: true, itemType };
+}
+
 module.exports = Object.freeze({
     normalizeCommand,
     validatePlayerInput,
-    validateShoot
+    validateShoot,
+    validateWeaponSelection,
+    validateShopItem
 });
