@@ -1709,6 +1709,7 @@ class GameRoom {
         this.pozoTotal = 0;
         this.ending = false;
         this.matchStatus = MATCH_STATUS.WAITING;
+        this.resultLock = null;
         this.initEnergy();
         // El mapa es NUEVO: sube la versión y se reenvía la geometría. Sin esto
         // el cliente emparejaría el hp de la partida anterior contra este mapa
