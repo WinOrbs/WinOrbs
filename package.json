@@ -13,7 +13,8 @@
     "banda:tick": "node tools/medir_tick.js",
     "rules": "node tools/patch_rules.js",
     "sprites": "node tools/gen_sprites.js",
-    "servidor": "node tools/cambiar-servidor.js"
+    "servidor": "node tools/cambiar-servidor.js",
+    "test:security": "node tests/test_security_config.js"
   },
   "keywords": [],
   "author": "",
