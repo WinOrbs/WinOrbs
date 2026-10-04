@@ -100,6 +100,7 @@ const MAP_SIZE = 5000;
 const rooms = {};
 
 const ADMIN_PASSWORD = adminPassword;
+const ADMIN_SESSION_MS = 30 * 60 * 1000;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 
@@ -2546,6 +2547,16 @@ if (FIREBASE_ECONOMY && FIREBASE_DB) {
 // dirección directa del handshake. Sin esto, tras el balanceador de Render
 // TODOS los jugadores comparten la IP del proxy: el límite por IP bloquearía a
 // partir del 4º jugador y el rate-limit del panel se volvería global.
+function adminAutorizado(socket) {
+    if (!socket || socket.isAdmin !== true || !socket.adminAuthenticatedAt) return false;
+    if (Date.now() - socket.adminAuthenticatedAt >= ADMIN_SESSION_MS) {
+        socket.isAdmin = false;
+        socket.adminAuthenticatedAt = 0;
+        return false;
+    }
+    return true;
+}
+
 function ipDeSocket(socket) {
     const reenviada = socket.handshake?.headers['x-forwarded-for'];
     if (reenviada) return String(reenviada).split(',')[0].trim();
@@ -2554,6 +2565,7 @@ function ipDeSocket(socket) {
 
 io.on('connection', (socket) => {
     socket.isAdmin = false;
+    socket.adminAuthenticatedAt = 0;
     socket.emit('serverConfig', { economy: FIREBASE_ECONOMY });
     socket.emit('roomsList', Object.values(rooms).map(r => r.getSummary()));
 
@@ -2586,6 +2598,7 @@ io.on('connection', (socket) => {
         }
         if (password === ADMIN_PASSWORD) {
             socket.isAdmin = true;
+            socket.adminAuthenticatedAt = now;
             rec.fail = 0;
             socket.emit('adminAuthed', true);
         } else {
@@ -2599,13 +2612,13 @@ io.on('connection', (socket) => {
     });
 
     socket.on('notifyTelegram', (message) => {
-        if (!socket.isAdmin) return;
+        if (!adminAutorizado(socket)) return;
         telegramNotify(message);
     });
 
     // Notificaciones de jugadores (solicitudes de wallet): validadas y con límite de tasa
     socket.on('notifyPlayerTelegram', (message) => {
-        if (socket.isAdmin) return; // el admin usa el evento notifyTelegram
+        if (adminAutorizado(socket)) return; // el admin usa el evento notifyTelegram
         if (typeof message !== 'string') return;
         const texto = message.trim();
         if (!texto || texto.length > 400) return;
@@ -2630,7 +2643,7 @@ io.on('connection', (socket) => {
 
     // Admin: vincular un pendiente a un UID concreto (respaldo manual)
     socket.on('adminVincularPremio', async (payload) => {
-        if (!socket.isAdmin) return socket.emit('premioVinculado', { ok: false, error: 'NO_ADMIN' });
+        if (!adminAutorizado(socket)) return socket.emit('premioVinculado', { ok: false, error: 'NO_ADMIN' });
         const p = (payload && typeof payload === 'object') ? payload : {};
         if (!p.gameId || !p.uid) return socket.emit('premioVinculado', { ok: false, error: 'PARAMS' });
         const r = await servidorAcreditarPremioPendiente(String(p.gameId), String(p.uid), { manual: true, exigirMatchApodo: false });
@@ -2640,14 +2653,14 @@ io.on('connection', (socket) => {
 
     // Admin: forzar pasada de conciliación automática bajo demanda
     socket.on('adminConciliarPremios', async () => {
-        if (!socket.isAdmin) return socket.emit('premiosConciliados', { ok: false, error: 'NO_ADMIN' });
+        if (!adminAutorizado(socket)) return socket.emit('premiosConciliados', { ok: false, error: 'NO_ADMIN' });
         const r = await servidorConciliarPremiosPendientes('manual-admin');
         socket.emit('premiosConciliados', r);
         if (r.ok && (r.pagados || []).length > 0) io.emit('premiosActualizados', { n: r.pagados.length });
     });
 
     socket.on('adminCreateRoom', (roomData) => {
-        if (!socket.isAdmin) {
+        if (!adminAutorizado(socket)) {
             return socket.emit('errorMsg', 'No tienes permisos de administrador.');
         }
 
@@ -2673,7 +2686,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('adminDestroyRoom', async ({ roomId }) => {
-        if (!socket.isAdmin) {
+        if (!adminAutorizado(socket)) {
             return socket.emit('errorMsg', 'No tienes permisos de administrador.');
         }
         if (rooms[roomId]) {
@@ -2968,7 +2981,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('startGame', ({ roomId }) => {
-        if (!socket.isAdmin) {
+        if (!adminAutorizado(socket)) {
             return socket.emit('errorMsg', 'No tienes permisos de administrador.');
         }
         const room = rooms[roomId];
