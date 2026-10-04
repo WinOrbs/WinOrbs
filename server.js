@@ -748,7 +748,7 @@ class GameRoom {
         this.pozoTotal = 0;            // bote estático fijado al arrancar la partida
         this.pendingStart = null;
         this.ending = false;
-        this.matchStatus = MATCH_STATUS.CREATED;
+        this.matchStatus = MATCH_STATUS.WAITING;
 
         this.initEnergy();
         this.startLoop();
