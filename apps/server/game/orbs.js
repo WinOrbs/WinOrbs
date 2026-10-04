@@ -8,7 +8,7 @@ const DEATH_LOSS_RATE = 0.20;
 
 function calculateDeathLoss(amount) {
     const current = Math.max(0, Number(amount) || 0);
-    const lost = Math.min(current, Math.floor(current * DEATH_LOSS_RATE));
+    const lost = Math.min(current, current * DEATH_LOSS_RATE);
     return { lost, remaining: current - lost };
 }
 
