@@ -2914,8 +2914,8 @@ io.on('connection', (socket) => {
         const validation = validateShopItem(itemType);
         if (!validation.ok) return;
         if (socket.roomId && rooms[socket.roomId]) {
-            const command = normalizeCommand(null, 'BUY_SHOP_ITEM', validation.itemType);
-            rooms[socket.roomId].handleBuyItem(socket.id, command.payload);
+            const command = normalizeCommand(null, 'BUY_SHOP_ITEM', { itemType: validation.itemType });
+            rooms[socket.roomId].handleBuyItem(socket.id, command.payload.itemType);
         }
     });
 
