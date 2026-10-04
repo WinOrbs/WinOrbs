@@ -29,6 +29,10 @@ function validatePlayerInput(input) {
     const keys = Object.keys(input);
     if (keys.some((key) => !ALLOWED_INPUT_KEYS.has(key))) return null;
 
+    for (const key of ['w', 'a', 's', 'd']) {
+        if (input[key] !== undefined && typeof input[key] !== 'boolean') return null;
+    }
+
     const result = {
         w: sanitizeBoolean(input.w),
         a: sanitizeBoolean(input.a),
