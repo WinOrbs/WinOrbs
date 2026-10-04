@@ -15,7 +15,8 @@
     "sprites": "node tools/gen_sprites.js",
     "servidor": "node tools/cambiar-servidor.js",
     "test:security": "node tests/test_security_config.js",
-    "test:validation": "node tests/test_validation.js"
+    "test:validation": "node tests/test_validation.js",
+    "test:types": "node tests/test_types.js"
   },
   "keywords": [],
   "author": "",
