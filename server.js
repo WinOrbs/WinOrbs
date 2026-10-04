@@ -2632,16 +2632,24 @@ io.on('connection', (socket) => {
         if (!socket.isAdmin) {
             return socket.emit('errorMsg', 'No tienes permisos de administrador.');
         }
-        if (!roomData || !roomData.id || rooms[roomData.id]) {
+
+        const validation = validateAdminRoom(roomData);
+        if (!validation.ok) {
+            return socket.emit('errorMsg', 'Configuración de sala inválida.');
+        }
+
+        const roomConfig = validation.room;
+        if (rooms[roomConfig.id]) {
             return socket.emit('errorMsg', 'ID de sala inválido o ya existe.');
         }
-        rooms[roomData.id] = new GameRoom(
-            roomData.id,
-            sanitizeNick(roomData.nombre),
-            roomData.maxJugadores || 6,
-            roomData.precioEntrada || 0,
-            roomData.esPrivada || false,
-            roomData.password || ""
+
+        rooms[roomConfig.id] = new GameRoom(
+            roomConfig.id,
+            sanitizeNick(roomConfig.nombre),
+            roomConfig.maxJugadores,
+            roomConfig.precioEntrada,
+            roomConfig.esPrivada,
+            roomConfig.password
         );
         emitirSalasPublicas(true);
     });
