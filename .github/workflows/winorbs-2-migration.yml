@@ -3,6 +3,7 @@ name: WinOrbs 2.0 Migration Verification
 on:
   push:
     branches:
+      - main
       - winorbs-2.0-migration
   pull_request:
     branches:
