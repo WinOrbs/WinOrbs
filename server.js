@@ -2209,7 +2209,8 @@ class GameRoom {
             // iniciada la partida: bote estático fijado al arrancar.
             pozoActual: iniciada ? this.pozoTotal : Object.keys(this.players).length * this.entryFee,
             esPrivada: this.isPrivate,
-            iniciada: iniciada
+            iniciada: iniciada,
+            matchStatus: this.matchStatus
         };
     }
 
@@ -2380,6 +2381,7 @@ class GameRoom {
             lobbyActive: this.lobbyActive,
             countdown: this.countdown,
             gameStarted: this.gameStarted,
+            matchStatus: this.matchStatus,
             pozoTotal: this.pozoTotal,
             maxPlayers: this.maxPlayers,
             entryFee: this.entryFee
