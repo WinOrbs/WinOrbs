@@ -1,6 +1,8 @@
 // Carga variables de entorno desde .env (si existe) — debe ir primero
 try { require('dotenv').config(); } catch (e) { /* dotenv no instalado: usar variables de entorno del sistema */ }
 
+const { isProduction, corsRaw, corsAllowAll, isOriginAllowed, adminPassword } = require('./apps/server/config');
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -18,13 +20,8 @@ const server = http.createServer(app);
 // NOTA: ese error también aparece cuando Render devuelve 503 (servicio dormido/
 // caído) porque la respuesta la genera el proxy de Render, no Node. Por eso
 // además se corrige el puerto (process.env.PORT) más abajo.
-const CORS_RAW = (process.env.CORS_ORIGIN || '*').split(',').map((s) => s.trim()).filter(Boolean);
-const CORS_ALLOW_ALL = CORS_RAW.includes('*');
-function isOriginAllowed(origin) {
-    if (!origin) return true; // curl / health-checks / mismo origen sin header
-    if (CORS_ALLOW_ALL) return true;
-    return CORS_RAW.includes(origin);
-}
+const CORS_RAW = corsRaw;
+const CORS_ALLOW_ALL = corsAllowAll;
 app.use((req, res, next) => {
     const origin = req.headers.origin;
     if (isOriginAllowed(origin)) {
@@ -88,7 +85,7 @@ app.get('/status', async (req, res) => {
 const MAP_SIZE = 5000;
 const rooms = {};
 
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
+const ADMIN_PASSWORD = adminPassword;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 
@@ -305,13 +302,8 @@ const KIT_LOOT_PROB = 0.65;     // probabilidad de botiquín al abrir un airdrop
 const ORBGUN_LOOT_PROB = 0.35;  // probabilidad de Lanza-Orbes al abrir un airdrop
 const adminFailuresByIP = {};          // rate-limit del panel admin
 
-if (ADMIN_PASSWORD === "admin123" && !process.env.ADMIN_PASSWORD) {
-    console.warn('⚠️  ADMIN: usando la contraseña por defecto "admin123". Define ADMIN_PASSWORD como variable de entorno.');
-    // Aviso extra: esta clave está en el repo, o sea es pública para cualquiera
-    // que lea el código. Con ella se entra al panel (crear salas, tocar la
-    // configuración de pagos). No es un problema de código: se arregla en el
-    // panel de Render → Environment → ADMIN_PASSWORD.
-    console.warn('🔴 ADMIN: con esta contraseña POR DEFECTO cualquiera que lea el repo puede entrar al panel. Define ADMIN_PASSWORD en Render.');
+if (!ADMIN_PASSWORD) {
+    console.warn('[SECURITY] ADMIN_PASSWORD no está configurada. El acceso por contraseña al panel administrativo queda deshabilitado.');
 }
 
 async function telegramNotify(message) {
@@ -2553,8 +2545,11 @@ io.on('connection', (socket) => {
     socket.on('latProbe', (t0, cb) => { if (typeof cb === 'function') cb(t0); });
 
     // Rate-limit del panel admin por IP (5 fallos → bloqueo 60 s)
-    socket.on('adminAuth', ({ password }) => {
+    socket.on('adminAuth', ({ password } = {}) => {
         const ip = ipDeSocket(socket);
+        if (!ADMIN_PASSWORD) {
+            return socket.emit('adminAuthed', false);
+        }
         const now = Date.now();
         const rec = (adminFailuresByIP[ip] = adminFailuresByIP[ip] || { fail: 0, until: 0 });
         if (rec.until > now) {
