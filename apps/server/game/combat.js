@@ -16,11 +16,12 @@ function applyDamage(target, amount) {
     remaining -= absorbed;
 
     const beforeHp = Math.max(0, Number(target.hp) || 0);
-    target.hp = Math.max(0, beforeHp - remaining);
+    const damage = Math.min(beforeHp, remaining);
+    target.hp = beforeHp - damage;
 
     return {
         absorbed,
-        damage: remaining,
+        damage,
         hp: target.hp,
         killed: target.hp <= 0
     };
