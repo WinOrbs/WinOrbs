@@ -38,6 +38,68 @@ const MISSION_OBJECTIVES = Object.freeze([
     'ORBS_COLLECTED'
 ]);
 
+const DEFAULT_MISSIONS = Object.freeze([
+    Object.freeze({
+        missionId: 'elimination-one',
+        version: 'v1',
+        title: 'Primera eliminación',
+        description: 'Consigue una eliminación.',
+        category: 'combat',
+        objective: 'ELIMINATIONS',
+        target: 1,
+        xpReward: 30,
+        rewardDefinition: Object.freeze({ type: 'badge', definitionId: 'first-elimination' }),
+        active: true
+    }),
+    Object.freeze({
+        missionId: 'collect-orbs',
+        version: 'v1',
+        title: 'Recolector de orbes',
+        description: 'Recoge dos orbes.',
+        category: 'gameplay',
+        objective: 'ORBS_COLLECTED',
+        target: 2,
+        xpReward: 0,
+        rewardDefinition: null,
+        active: true
+    }),
+    Object.freeze({
+        missionId: 'play-one',
+        version: 'v1',
+        title: 'Juega una partida',
+        description: 'Completa una partida.',
+        category: 'match',
+        objective: 'MATCHES_PLAYED',
+        target: 1,
+        xpReward: 10,
+        rewardDefinition: Object.freeze({ type: 'cosmetic', definitionId: 'player-banner' }),
+        active: true
+    }),
+    Object.freeze({
+        missionId: 'win-one',
+        version: 'v1',
+        title: 'Gana una partida',
+        description: 'Gana una partida.',
+        category: 'match',
+        objective: 'MATCHES_WON',
+        target: 1,
+        xpReward: 5,
+        rewardDefinition: Object.freeze({ type: 'badge', definitionId: 'match-winner' }),
+        active: true
+    })
+]);
+
+const DEFAULT_LEVEL_REWARDS = Object.freeze(
+    [10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map((level) =>
+        Object.freeze({
+            level,
+            rewardDefinition: Object.freeze({
+                type: 'cosmetic',
+                definitionId: `level-aura-${level}`
+            })
+        }))
+);
+
 const DEFAULT_POLICY = Object.freeze({
     progressionVersion: 'progression-v1',
     xpRulesVersion: 'xp-rules-v1',
@@ -185,6 +247,7 @@ function createProgressionService({
     clock,
     policy = DEFAULT_POLICY,
     missions = [],
+    levelRewards = [],
     levelCurves = {
         [DEFAULT_POLICY.levelCurveVersion]: DEFAULT_LEVEL_CURVE
     }
@@ -228,6 +291,14 @@ function createProgressionService({
             missions.length) {
         throw new TypeError(PROGRESSION_ERRORS.INVALID_MISSION);
     }
+    if (!Array.isArray(levelRewards) ||
+        levelRewards.some((reward) =>
+            !exactKeys(reward, ['level', 'rewardDefinition']) ||
+            !Number.isSafeInteger(reward.level) || reward.level < 2 ||
+            !validateRewardDefinition(reward.rewardDefinition)) ||
+        new Set(levelRewards.map((reward) => reward.level)).size !== levelRewards.length) {
+        throw new TypeError(PROGRESSION_ERRORS.INVALID_MISSION);
+    }
     if (!isRecord(levelCurves) ||
         Object.entries(levelCurves).some(([version, curve]) =>
             !validId(version) || !isRecord(curve) ||
@@ -238,6 +309,7 @@ function createProgressionService({
 
     const configuredPolicy = deepFreeze(clone(policy));
     const configuredMissions = deepFreeze(clone(missions));
+    const configuredLevelRewards = deepFreeze(clone(levelRewards));
     const configuredLevelCurves = deepFreeze(clone(levelCurves));
 
     function createProfile(userId, now) {
@@ -381,6 +453,17 @@ function createProgressionService({
             .digest('hex')}`;
     }
 
+    function levelRewardId(userId, reward) {
+        const identity = JSON.stringify([
+            userId,
+            reward.level,
+            reward.rewardDefinition.definitionId
+        ]);
+        return `progression-level-reward:${crypto.createHash('sha256')
+            .update(identity)
+            .digest('hex')}`;
+    }
+
     async function applyFacts(tx, profiles, facts, sourceId, now) {
         const pendingRewards = [];
         for (const fact of facts) {
@@ -433,6 +516,36 @@ function createProgressionService({
                     if (!addXp(profile, mission.xpReward, now)) {
                         return failure(PROGRESSION_ERRORS.PROFILE_INTEGRITY_ERROR);
                     }
+                }
+            }
+        }
+        for (const profile of profiles.values()) {
+            for (const reward of configuredLevelRewards) {
+                if (profile.level < reward.level) continue;
+                const id = levelRewardId(profile.userId, reward);
+                const prior = await tx.RewardRepository.getById(id, tx.transaction);
+                if (prior && (
+                    prior.userId !== profile.userId ||
+                    prior.sourceType !== 'LEVEL' ||
+                    prior.level !== reward.level ||
+                    canonical(prior.definition) !== canonical(reward.rewardDefinition)
+                )) {
+                    return failure(PROGRESSION_ERRORS.REWARD_INTEGRITY_ERROR);
+                }
+                if (!prior) {
+                    pendingRewards.push({
+                        id,
+                        record: {
+                            rewardId: id,
+                            userId: profile.userId,
+                            sourceType: 'LEVEL',
+                            level: reward.level,
+                            definition: clone(reward.rewardDefinition),
+                            sourceId,
+                            grantedAt: now,
+                            version: 1
+                        }
+                    });
                 }
             }
         }
@@ -726,6 +839,8 @@ function createProgressionService({
 module.exports = Object.freeze({
     DEFAULT_POLICY,
     DEFAULT_LEVEL_CURVE,
+    DEFAULT_LEVEL_REWARDS,
+    DEFAULT_MISSIONS,
     MISSION_OBJECTIVES,
     PROGRESSION_ERRORS,
     createProgressionService,

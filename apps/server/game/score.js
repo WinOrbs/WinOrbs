@@ -30,8 +30,12 @@ function bankMatchOrbs(player) {
     return amount;
 }
 
-function awardElimination(player) {
-    return addScore(player, SCORE_VALUES[SCORE_EVENTS.ELIMINATION]);
+function awardElimination(player, { countAsElimination = true } = {}) {
+    const awarded = addScore(player, SCORE_VALUES[SCORE_EVENTS.ELIMINATION]);
+    if (awarded > 0 && countAsElimination) {
+        player.eliminations = Math.max(0, Math.floor(Number(player.eliminations) || 0)) + 1;
+    }
+    return awarded;
 }
 
 module.exports = Object.freeze({

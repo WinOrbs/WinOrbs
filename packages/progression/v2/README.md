@@ -1,8 +1,9 @@
 # Progression v2
 
-Progression v2 is an independent, server-authoritative domain for XP, levels,
-mission progress, and non-economic progression rewards. It does not expose HTTP
-or Socket.IO handlers and is not connected to the production runtime.
+Progression v2 is the single server-authoritative domain for XP, levels,
+mission progress, idempotency, and non-economic mission rewards. It exposes no
+HTTP or Socket.IO handlers; the server runtime enters through the platform
+adapter and supplies only a persisted, validated match result or event ID.
 
 ## Authority and accepted facts
 
@@ -49,7 +50,7 @@ updates.
 
 ## Missions and rewards
 
-Mission definitions are injected configuration and require a mission ID,
+Mission definitions are versioned configuration and require a mission ID,
 version, title, description, category, objective, target, XP reward, reward
 definition, and active flag. Objectives supported are:
 
@@ -61,12 +62,18 @@ definition, and active flag. Objectives supported are:
 
 Kill missions use the final MatchResult statistic rather than also consuming
 kill events, preventing the same elimination from advancing a mission twice.
+The default v1 mission set is `elimination-one`, `collect-orbs`, `play-one`,
+and `win-one`; existing definitions remain keyed by `missionId@version`.
 Mission progress is capped at its target, versioned independently by
 `missionId@version`, and historical versions remain in the profile. Completion
 is server-derived and irreversible. Completion automatically grants configured
 `badge`, `cosmetic`, or `title` rewards; rewards are not money or wallet
 operations. There is no public claim endpoint. A mission without a reward
 definition has no claimable reward.
+
+Configured level cosmetics are also recorded in `RewardRepository` once their
+server-derived level threshold is reached. Their deterministic IDs make a
+retry safe, and reward creation commits with that event/result's profile update.
 
 ## Persistence, idempotency, and concurrency
 
@@ -83,19 +90,18 @@ the persistence ports and do not contact a live database.
 
 ## Integration boundary
 
-Future Application integration must supply only authenticated internal
-identity/context and stable persisted match/event/result identifiers. It must
-not expose arbitrary user IDs as authority. Future Transport integration
-should call the application boundary, not the service directly. Any future
-economic effect must be handled by Economy/Settlement and their policies;
-Progression has no dependency on either.
+The legacy gameplay runtime locks and validates the result, writes a v2 match
+aggregate through `MatchRepository`, then calls `processGameEvent` for its
+server-generated events and `processMatchResult` for the stable result ID.
+Only server-derived UIDs and match facts enter that adapter; clients cannot
+submit progression fields. Firestore persistence is provided by the injected
+v2 repositories. Any economic effect remains the responsibility of
+Economy/Settlement; Progression has no dependency on either.
 
 The service's `getProfile(userId)` and `getMissionReward(userId, ...)` methods
 are internal read operations, not public authorization boundaries. Their
 callers must authorize the user before exposing those records.
 
-## Legacy distinction
-
-This module does not depend on or migrate any legacy frontend, runtime,
-leaderboard, inventory, store, or economy behavior. It defines only the v2
-progression policy and persisted profile/reward records described above.
+Existing XP totals are imported once by the platform persistence adapter when
+a v2 profile is first needed. After that import, v2 profiles and repositories
+are authoritative; the legacy profile document is not updated.

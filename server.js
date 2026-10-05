@@ -16,15 +16,18 @@ const { bankMatchOrbs, awardElimination } = require('./apps/server/game/score');
 const { applyDamage } = require('./apps/server/game/combat');
 const { extractIdToken, canBindUid } = require('./apps/server/identity');
 const { lockResult } = require('./apps/server/game/results');
+const { finalizeAfterProgression } = require('./apps/server/game/finalization');
 const { createAuditEvent } = require('./apps/server/platform/audit');
 const {
+    DEFAULT_LEVEL_CURVE,
     DEFAULT_VISUAL_REWARDS,
-    DAILY_MISSIONS,
+    COLLECTIONS,
     MAX_LEVEL,
-    applyMatch,
+    createAuthoritativeMatchAggregate,
+    createProgressionRuntime,
+    missionConfig,
     rankEntries,
-    sanitizeVisualRewards,
-    utcDay
+    sanitizeVisualRewards
 } = require('./apps/server/platform/progression');
 const crypto = require('crypto');
 
@@ -127,6 +130,7 @@ let firebaseAdmin = null;
 let FIREBASE_DB = null;
 let FIREBASE_ECONOMY = false;
 let PROGRESSION_REWARDS = sanitizeVisualRewards(DEFAULT_VISUAL_REWARDS);
+let PROGRESSION_RUNTIME = null;
 try {
     firebaseAdmin = require('firebase-admin');
     // Busca la clave de servicio en varios sitios (local y Render):
@@ -209,13 +213,15 @@ try {
     if (sa) {
         FIREBASE_DB = firebaseAdmin.firestore();
         FIREBASE_ECONOMY = true;
+        PROGRESSION_RUNTIME = createProgressionRuntime({ firestore: FIREBASE_DB });
         FIREBASE_DB.collection('configuracion').doc('progresion').onSnapshot((snapshot) => {
             if (!snapshot.exists) return;
             PROGRESSION_REWARDS = sanitizeVisualRewards((snapshot.data() || {}).recompensas);
             io.emit('progressionConfigUpdated', {
                 visualRewards: PROGRESSION_REWARDS,
-                dailyMissions: DAILY_MISSIONS,
-                maxLevel: MAX_LEVEL
+                dailyMissions: missionConfig(),
+                maxLevel: MAX_LEVEL,
+                levelCurve: DEFAULT_LEVEL_CURVE
             });
         }, (error) => {
             console.error('[PROGRESSION] Could not watch visual reward configuration:', error.message);
@@ -417,19 +423,21 @@ function sanitizeHex(v, fallback) {
 const SKIN_FALLBACK = { nombre: 'cielo', ...SKINS_BASICAS.cielo };
 
 async function recompensaVisualEquipada(uid) {
-    if (!uid || !FIREBASE_ECONOMY || !FIREBASE_DB) return null;
+    if (!uid || !FIREBASE_ECONOMY || !FIREBASE_DB || !PROGRESSION_RUNTIME) return null;
     try {
-        const snap = await FIREBASE_DB.collection('progresion').doc(uid).get();
-        const progress = snap.exists ? (snap.data() || {}) : {};
+        await PROGRESSION_RUNTIME.ensureLegacyProfile(uid);
+        const snapshot = await PROGRESSION_RUNTIME.service.getProfile(uid);
+        if (!snapshot.ok) {
+            if (snapshot.error?.code !== 'PROFILE_NOT_FOUND') {
+                console.error('[PROGRESSION] Could not read profile for equipped reward:', snapshot.error?.code);
+            }
+            return null;
+        }
+        const progress = snapshot.data;
         const reward = PROGRESSION_REWARDS.find((item) =>
-            item.id === (progress.equippedReward || progress.equippedAura)
+            item.id === progress.equippedReward
         );
-        if (!reward) return null;
-        const unlockedRewards = Array.isArray(progress.unlockedRewards)
-            ? progress.unlockedRewards
-            : (Array.isArray(progress.unlockedAuras) ? progress.unlockedAuras : []);
-        const unlocked = unlockedRewards.some((item) => item && item.id === reward.id);
-        if (!unlocked || Number(progress.level) < reward.level) return null;
+        if (!reward || progress.level < reward.level) return null;
         return {
             id: reward.id,
             type: reward.type,
@@ -654,62 +662,6 @@ async function servidorPagarPremio(room, gameId, abandono = false) {
     }
 }
 
-async function servidorProcesarMisionDePartida(uid, match) {
-    if (!FIREBASE_ECONOMY || !FIREBASE_DB || !uid || !match || !match.gameId) {
-        return { ok: false, error: 'ECONOMY_OFF' };
-    }
-    try {
-        const progressRef = FIREBASE_DB.collection('progresion').doc(uid);
-        const claimId = crypto.createHash('sha256').update(String(match.gameId)).digest('hex');
-        const claimRef = progressRef.collection('partidas').doc(claimId);
-        const userRef = FIREBASE_DB.collection('usuarios').doc(uid);
-        return await FIREBASE_DB.runTransaction(async (transaction) => {
-            const [claimSnap, progressSnap, userSnap] = await Promise.all([
-                transaction.get(claimRef),
-                transaction.get(progressRef),
-                transaction.get(userRef)
-            ]);
-            if (claimSnap.exists) return { ok: true, duplicate: true };
-            if (!userSnap.exists) return { ok: false, error: 'PROFILE_MISSING' };
-
-            const stored = progressSnap.exists ? (progressSnap.data() || {}) : {};
-            const progress = {
-                xp: stored.xp,
-                level: stored.level,
-                daily: stored.daily,
-                unlockedRewards: stored.unlockedRewards,
-                unlockedAuras: Array.isArray(stored.unlockedAuras) ? stored.unlockedAuras : []
-            };
-            const result = applyMatch(progress, match, utcDay(match.completedAt), PROGRESSION_REWARDS);
-            const profile = userSnap.data() || {};
-            transaction.create(claimRef, {
-                gameId: String(match.gameId).slice(0, 160),
-                date: progress.daily.date,
-                createdAt: firebaseAdmin.firestore.FieldValue.serverTimestamp()
-            });
-            transaction.set(progressRef, {
-                xp: progress.xp,
-                level: progress.level,
-                daily: progress.daily,
-                unlockedRewards: progress.unlockedRewards,
-                unlockedAuras: progress.unlockedAuras,
-                equippedReward: stored.equippedReward || stored.equippedAura || null,
-                apodo: sanitizeNick(profile.apodo || match.nickname),
-                updatedAt: firebaseAdmin.firestore.FieldValue.serverTimestamp()
-            }, { merge: true });
-            return {
-                ok: true,
-                xpAwarded: result.xpAwarded,
-                completedMissions: result.completedMissions,
-                unlockedRewards: result.unlockedRewards.map((reward) => reward.id)
-            };
-        });
-    } catch (e) {
-        console.error('[PROGRESSION] Could not save match missions for account:', uid, e.message);
-        return { ok: false, error: 'SAVE_FAILED' };
-    }
-}
-
 // ── CONCILIACIÓN AUTOMÁTICA de Premios Pendientes ────────────────────────────
 // Origen: ganador sin UID → partida 'premio_pendiente_admin' con solo apodo.
 // Solo autoconcilia con UN ÚNICO match exacto de apodo. Pago transaccional
@@ -874,6 +826,8 @@ class GameRoom {
         this.hazardTimer = 0;
         this.lobbyActive = false;
         this.gameStarted = false;
+        this.gameStartedAt = null;
+        this.progressionEvents = [];
         this.countdown = 0;
         this.waitingTimer = null;      // contador de espera de 30 s
         this.lastPlayerCount = 0;
@@ -1170,7 +1124,7 @@ class GameRoom {
             y: sp.y,
             hp: 100, maxHp: 100,
             shield: 0, maxShield: 50,
-            charge: 0, bankedScore: 0,
+            charge: 0, bankedScore: 0, eliminations: 0,
             radius: 22, speed: 5.5,
             angle: 0,
             inputs: { w: false, a: false, s: false, d: false, angle: 0 },
@@ -1501,6 +1455,8 @@ class GameRoom {
                     io.to(this.id).emit('announcement', '⚠️ Inicio cancelado: quedó un solo jugador en la sala.');
                 } else if (this.countdown <= 0) {
                     this.gameStarted = true;
+                    this.gameStartedAt = Date.now();
+                    this.progressionEvents = [];
                     this.matchStatus = MATCH_STATUS.RUNNING;
                     this.lobbyActive = false;
                     // Botiquines iniciales repartidos por el mapa (antes solo caían
@@ -1759,26 +1715,37 @@ class GameRoom {
         const gameId = this.id + '_' + Date.now();
         const leaderboard = this.getLeaderboard();
         this.resultLock = lockResult(leaderboard);
+        let progressionProcessing = null;
 
-        if (!abandono && FIREBASE_ECONOMY && FIREBASE_DB) {
-            const completedAt = Date.now();
-            this.resultLock.snapshot.forEach((player, index) => {
-                if (!player.uid) return;
-                void servidorProcesarMisionDePartida(player.uid, {
-                    gameId,
-                    completedAt,
-                    nickname: player.nick,
-                    score: player.score,
-                    eliminations: player.eliminations,
-                    position: index + 1
-                }).then((result) => {
-                    if (!result.ok) {
-                        console.error('[PROGRESSION] Match mission processing failed:', result.error, gameId);
-                    }
-                }).catch((error) => {
-                    console.error('[PROGRESSION] Unexpected match mission failure:', error.message, gameId);
+        if (!abandono && PROGRESSION_RUNTIME) {
+            const finishedAt = Date.now();
+            const resultId = `result-${crypto.createHash('sha256')
+                .update(gameId)
+                .digest('hex')}`;
+            try {
+                const aggregate = createAuthoritativeMatchAggregate({
+                    matchId: gameId,
+                    resultId,
+                    startedAt: this.gameStartedAt || finishedAt,
+                    finishedAt,
+                    finishReason: this.gameTime <= 0 ? 'TIME_LIMIT' : 'LAST_PLAYER',
+                    players: this.resultLock.snapshot.map((player, index) => ({
+                        ...player,
+                        position: index + 1
+                    })),
+                    events: this.progressionEvents
                 });
-            });
+                io.to(this.id).emit('matchResultLocked', {
+                    matchId: gameId,
+                    resultId,
+                    resultHash: aggregate.result.value.resultHash
+                });
+                progressionProcessing = Promise.resolve(
+                    PROGRESSION_RUNTIME.processAuthoritativeMatch(aggregate)
+                );
+            } catch (error) {
+                progressionProcessing = Promise.reject(error);
+            }
         }
 
         // Modo economía: el SERVIDOR paga el premio vía Admin SDK
@@ -1792,42 +1759,66 @@ class GameRoom {
         const premioNeto = +(pozo * 0.8).toFixed(2);
 
         this.matchStatus = MATCH_STATUS.RESULT_LOCKED;
-        io.to(this.id).emit('gameOver', {
-            gameId: gameId,
-            entryFee: this.entryFee,
-            leaderboard: leaderboard,
-            resultChecksum: this.resultLock.checksum,
-            abandono: abandono,
-            premioNeto: premioNeto
-        });
         this.stopLoop();
 
-        // Dar 10s para ver los resultados y luego expulsar a todos los jugadores
-        setTimeout(() => {
-            // Si la sala fue destruida por el admin mientras tanto, no hacer nada
-            if (!rooms[this.id]) return;
+        const emitGameOver = () => {
+            io.to(this.id).emit('gameOver', {
+                gameId: gameId,
+                entryFee: this.entryFee,
+                leaderboard: leaderboard,
+                resultChecksum: this.resultLock.checksum,
+                abandono: abandono,
+                premioNeto: premioNeto
+            });
 
-            io.to(this.id).emit('roomClosed', { reason: 'La partida ha finalizado. Volviendo al lobby...' });
+            // Dar 10s para ver los resultados y luego expulsar a todos los jugadores
+            setTimeout(() => {
+                // Si la sala fue destruida por el admin mientras tanto, no hacer nada
+                if (!rooms[this.id]) return;
 
-            // Expulsar a todos los sockets de la sala
-            io.in(this.id).fetchSockets().then(sockets => {
-                sockets.forEach(s => {
-                    s.leave(this.id);
-                    delete s.roomId;
-                });
-            }).catch(() => { });
+                io.to(this.id).emit('roomClosed', { reason: 'La partida ha finalizado. Volviendo al lobby...' });
 
-            // Vaciar jugadores y resetear la sala para nuevos registros
-            this.players = {};
-            this.matchStatus = MATCH_STATUS.COMPLETED;
-            this.resetForLobby();
-            this.startLoop();
-            emitirSalasPublicas();
-        }, 10000);
+                // Expulsar a todos los sockets de la sala
+                io.in(this.id).fetchSockets().then(sockets => {
+                    sockets.forEach(s => {
+                        s.leave(this.id);
+                        delete s.roomId;
+                    });
+                }).catch(() => { });
+
+                // Vaciar jugadores y resetear la sala para nuevos registros
+                this.players = {};
+                this.matchStatus = MATCH_STATUS.COMPLETED;
+                this.resetForLobby();
+                this.startLoop();
+                emitirSalasPublicas();
+            }, 10000);
+        };
+
+        if (progressionProcessing) {
+            void finalizeAfterProgression(
+                progressionProcessing,
+                (failure) => {
+                    const detail = failure instanceof Error
+                        ? failure.message
+                        : typeof failure === 'string' ? failure : JSON.stringify(failure);
+                    console.error(
+                        '[PROGRESSION] Match closed without confirmed progression persistence:',
+                        detail,
+                        gameId
+                    );
+                },
+                emitGameOver
+            );
+        } else {
+            emitGameOver();
+        }
     }
 
     resetForLobby() {
         this.gameStarted = false;
+        this.gameStartedAt = null;
+        this.progressionEvents = [];
         this.lobbyActive = false;
         this.countdown = 0;
         this.pendingStart = null;
@@ -2009,6 +2000,18 @@ class GameRoom {
                 let g = this.droppedEnergy[i];
                 if (Math.hypot(p.x - g.x, p.y - g.y) < p.radius + 10) {
                     p.charge += g.val;
+                    if (p.uid) {
+                        this.progressionEvents.push({
+                            type: 'OrbCollected',
+                            actorId: p.uid,
+                            timestamp: Date.now(),
+                            payload: {
+                                actorId: p.uid,
+                                orbId: g.id,
+                                amount: g.val
+                            }
+                        });
+                    }
                     io.to(this.id).emit('playSound', 'pickup');
                     this.droppedEnergy.splice(i, 1);
                 }
@@ -2244,7 +2247,19 @@ class GameRoom {
             if (ownerSocket) {
                 const owner = this.players[ownerId];
                 if (owner) {
-                    awardElimination(owner);
+                    const selfElimination = owner.id === p.id;
+                    awardElimination(owner, { countAsElimination: !selfElimination });
+                    if (owner.uid && !selfElimination) {
+                        this.progressionEvents.push({
+                            type: 'PlayerKilled',
+                            actorId: owner.uid,
+                            timestamp: Date.now(),
+                            payload: {
+                                actorId: p.uid || p.id,
+                                killerId: owner.uid
+                            }
+                        });
+                    }
                 }
             }
         }
@@ -2732,8 +2747,9 @@ io.on('connection', (socket) => {
     socket.emit('serverConfig', {
         economy: FIREBASE_ECONOMY,
         progression: {
+            dailyMissions: missionConfig(),
             maxLevel: MAX_LEVEL,
-            dailyMissions: DAILY_MISSIONS,
+            levelCurve: DEFAULT_LEVEL_CURVE,
             visualRewards: PROGRESSION_REWARDS
         }
     });
@@ -2763,7 +2779,7 @@ io.on('connection', (socket) => {
         socket.__rankingRequestAt = now;
         const request = payload && typeof payload === 'object' ? payload : {};
         const token = typeof request.token === 'string' ? request.token : '';
-        if (!FIREBASE_ECONOMY || !FIREBASE_DB) {
+        if (!FIREBASE_ECONOMY || !FIREBASE_DB || !PROGRESSION_RUNTIME) {
             return socket.emit('rankingGlobal', { ok: false, error: 'PROGRESSION_OFF' });
         }
         if (!token || token.length > 8192) {
@@ -2771,19 +2787,25 @@ io.on('connection', (socket) => {
         }
         try {
             const decoded = await firebaseAdmin.auth().verifyIdToken(token);
-            const collection = FIREBASE_DB.collection('progresion');
-            const [topSnap, ownSnap] = await Promise.all([
-                collection.orderBy('xp', 'desc').limit(100).get(),
-                collection.doc(decoded.uid).get()
-            ]);
-            const entries = rankEntries(topSnap.docs.map((doc) => {
+            await PROGRESSION_RUNTIME.ensureLegacyProfile(decoded.uid);
+            const collection = FIREBASE_DB.collection(COLLECTIONS.progression);
+            const ownProfile = await PROGRESSION_RUNTIME.service.getProfile(decoded.uid);
+            if (!ownProfile.ok && ownProfile.error?.code !== 'PROFILE_NOT_FOUND') {
+                throw new Error(ownProfile.error?.code || 'PROFILE_READ_FAILED');
+            }
+            const topSnap = await collection.orderBy('totalXp', 'desc').limit(100).get();
+            const entries = rankEntries(await Promise.all(topSnap.docs.map(async (doc) => {
                 const progress = doc.data() || {};
-                return { nickname: progress.apodo, xp: progress.xp };
-            }), 20);
+                const user = progress.userId
+                    ? await FIREBASE_DB.collection('usuarios').doc(progress.userId).get()
+                    : null;
+                const profile = user?.exists ? user.data() || {} : {};
+                return { nickname: profile.apodo, totalXp: progress.totalXp };
+            })), 20);
             let ownRank = null;
-            if (ownSnap.exists) {
-                const ownXp = Math.max(0, Number((ownSnap.data() || {}).xp) || 0);
-                const higherXp = await collection.where('xp', '>', ownXp).count().get();
+            if (ownProfile.ok) {
+                const ownXp = ownProfile.data.totalXp;
+                const higherXp = await collection.where('totalXp', '>', ownXp).count().get();
                 ownRank = higherXp.data().count + 1;
             }
             socket.emit('rankingGlobal', { ok: true, entries, ownRank });
@@ -2802,36 +2824,17 @@ io.on('connection', (socket) => {
         const request = payload && typeof payload === 'object' ? payload : {};
         const token = typeof request.token === 'string' ? request.token : '';
         const rewardId = request.rewardId === null || request.rewardId === '' ? null : request.rewardId;
-        if (!FIREBASE_ECONOMY || !FIREBASE_DB) {
+        if (!FIREBASE_ECONOMY || !FIREBASE_DB || !PROGRESSION_RUNTIME) {
             return socket.emit('progressionRewardEquipped', { ok: false, error: 'PROGRESSION_OFF' });
         }
         if (!token || token.length > 8192) {
             return socket.emit('progressionRewardEquipped', { ok: false, error: 'NO_AUTH' });
         }
-        const reward = rewardId === null ? null : PROGRESSION_REWARDS.find((item) => item.id === rewardId);
-        if (rewardId !== null && !reward) {
-            return socket.emit('progressionRewardEquipped', { ok: false, error: 'INVALID_REWARD' });
-        }
         try {
             const decoded = await firebaseAdmin.auth().verifyIdToken(token);
-            const progressRef = FIREBASE_DB.collection('progresion').doc(decoded.uid);
-            const result = await FIREBASE_DB.runTransaction(async (transaction) => {
-                const progressSnap = await transaction.get(progressRef);
-                if (!progressSnap.exists) return { ok: false, error: 'NO_PROGRESS' };
-                const progress = progressSnap.data() || {};
-                const unlockedRewards = Array.isArray(progress.unlockedRewards)
-                    ? progress.unlockedRewards
-                    : (Array.isArray(progress.unlockedAuras) ? progress.unlockedAuras : []);
-                const unlocked = unlockedRewards.some((item) => item && item.id === rewardId);
-                if (reward && (!unlocked || Number(progress.level) < reward.level)) {
-                    return { ok: false, error: 'REWARD_LOCKED' };
-                }
-                transaction.update(progressRef, {
-                    equippedReward: rewardId,
-                    updatedAt: firebaseAdmin.firestore.FieldValue.serverTimestamp()
-                });
-                return { ok: true, rewardId };
-            });
+            const result = await PROGRESSION_RUNTIME.equipVisualReward(
+                decoded.uid, rewardId, PROGRESSION_REWARDS
+            );
             socket.emit('progressionRewardEquipped', result);
         } catch (e) {
             console.error('[PROGRESSION] Could not equip account visual reward:', e.message);

@@ -825,7 +825,7 @@
         <section class="panel panel-progression reveal" aria-labelledby="progresion-title">
             <div class="panel-head">
                 <span class="panel-kicker" id="progresion-title">// Misiones y progresión</span>
-                <span class="live-badge"><span class="live-dot"></span>HASTA NIVEL 100</span>
+                <span class="live-badge"><span class="live-dot"></span>PROGRESIÓN</span>
             </div>
             <div class="progression-grid">
                 <section class="progression-block" aria-label="Tu nivel y recompensas">
@@ -836,7 +836,7 @@
                     <div class="progression-bar" role="progressbar" id="progresion-bar" aria-label="Experiencia hacia el siguiente nivel">
                         <div class="progression-bar-fill" id="progresion-bar-fill"></div>
                     </div>
-                    <p class="progression-xp" id="progresion-siguiente">150 XP para el nivel 2</p>
+                    <p class="progression-xp" id="progresion-siguiente">Cargando curva de nivel…</p>
                     <h3 style="margin-top:16px">Apariencias desbloqueables</h3>
                     <ul class="progression-rewards" id="progresion-recompensas"></ul>
                     <label for="progresion-aura" class="progression-xp">Apariencia de nivel equipada en tu personaje</label>
@@ -847,8 +847,8 @@
                     <p class="progression-message" id="progresion-mensaje" aria-live="polite">Cargando tu progreso…</p>
                 </section>
 
-                <section class="progression-block" aria-label="Misiones diarias">
-                    <h3>Misiones diarias · UTC</h3>
+                <section class="progression-block" aria-label="Misiones">
+                    <h3>Misiones</h3>
                     <ul class="progression-missions" id="progresion-misiones">
                         <li class="progression-empty">Cargando misiones…</li>
                     </ul>
@@ -885,67 +885,38 @@
             if (window.__progresionActual) window.__renderProgresion(window.__progresionActual);
         });
 
-        const MISIONES_BASE = [
-            { id: 'play-one', description: 'Termina 1 partida', xp: 15, target: 1, stat: 'matchesCompleted' },
-            { id: 'play-three', description: 'Termina 3 partidas', xp: 30, target: 3, stat: 'matchesCompleted' },
-            { id: 'score-250', description: 'Consigue 250 puntos en una partida', xp: 25, target: 250, stat: 'bestScore' },
-            { id: 'top-three', description: 'Queda entre los 3 primeros', xp: 35, target: 1, stat: 'topThree' },
-            { id: 'two-eliminations', description: 'Consigue 2 eliminaciones en el día', xp: 45, target: 2, stat: 'eliminations' }
-        ];
-        const VISUAL_REWARDS_BASE = [
-            [10, 'Pulso Cian', '#22d3ee'], [20, 'Brote Esmeralda', '#34d399'],
-            [30, 'Vórtice Violeta', '#a78bfa'], [40, 'Llama Carmesí', '#fb7185'],
-            [50, 'Corona Solar', '#fbbf24'], [60, 'Núcleo Glacial', '#7dd3fc'],
-            [70, 'Pulso Magenta', '#e879f9'], [80, 'Energía Lima', '#a3e635'],
-            [90, 'Luz Carmesí', '#f87171'], [100, 'Aura Prisma', '#f8fafc']
-        ].map(([level, name, color]) => ({
-            id: 'level-aura-' + level, level, type: 'aura', name, color, imageUrl: '', c1: color, c2: color, border: color
-        }));
-
         window.__renderProgresion = function (progress) {
             progress = progress || {};
             window.__progresionActual = progress;
             const config = window.__progresionConfig || {};
-            const missions = Array.isArray(config.dailyMissions) ? config.dailyMissions : MISIONES_BASE;
-            const visualRewards = Array.isArray(config.visualRewards) ? config.visualRewards : VISUAL_REWARDS_BASE;
-            const xp = Math.max(0, Number(progress.xp) || 0);
-            const maxLevel = Math.max(1, Number(config.maxLevel) || 100);
-            let level = 1, xpAtLevel = 0;
-            while (level < maxLevel) {
-                const next = 150 + 5 * (level - 1);
-                if (xp - xpAtLevel < next) break;
-                xpAtLevel += next;
-                level++;
-            }
-            const xpForNext = level >= maxLevel ? 0 : 150 + 5 * (level - 1);
+            const missions = Array.isArray(config.dailyMissions) ? config.dailyMissions : [];
+            const visualRewards = Array.isArray(config.visualRewards) ? config.visualRewards : [];
+            const xp = Math.max(0, Number(progress.totalXp ?? progress.xp) || 0);
+            const level = Math.max(1, Math.floor(Number(progress.level) || 1));
+            const baseXpPerLevel = Math.max(1, Number(config.levelCurve && config.levelCurve.baseXpPerLevel) || 100);
+            const xpAtLevel = baseXpPerLevel * (level - 1) * level / 2;
+            const xpAtNextLevel = baseXpPerLevel * level * (level + 1) / 2;
+            const xpForNext = xpAtNextLevel - xpAtLevel;
             const xpIntoLevel = xp - xpAtLevel;
             const percentage = xpForNext ? Math.min(100, Math.floor(xpIntoLevel / xpForNext * 100)) : 100;
             document.getElementById('progresion-nivel').textContent = 'Nivel ' + level;
             document.getElementById('progresion-xp').textContent = xp.toLocaleString('es-ES') + ' XP';
             document.getElementById('progresion-siguiente').textContent = xpForNext
                 ? xpIntoLevel.toLocaleString('es-ES') + ' / ' + xpForNext + ' XP · ' + (xpForNext - xpIntoLevel) + ' para nivel ' + (level + 1)
-                : 'Nivel máximo · la XP sigue contando para el ranking';
+                : 'La XP sigue contando para el ranking';
             document.getElementById('progresion-bar-fill').style.width = percentage + '%';
             document.getElementById('progresion-bar').setAttribute('aria-valuenow', String(percentage));
             document.getElementById('progresion-bar').setAttribute('aria-valuemin', '0');
             document.getElementById('progresion-bar').setAttribute('aria-valuemax', '100');
 
-            const today = new Date().toISOString().slice(0, 10);
-            const daily = progress.daily && progress.daily.date === today
-                ? progress.daily
-                : { matchesCompleted: 0, eliminations: 0, bestScore: 0, topThree: 0, completed: {} };
-            const missionValues = {
-                matchesCompleted: daily.matchesCompleted || 0,
-                eliminations: daily.eliminations || 0,
-                bestScore: daily.bestScore || 0,
-                topThree: daily.topThree || 0
-            };
             const missionList = document.getElementById('progresion-misiones');
             missionList.replaceChildren();
             missions.forEach((mission) => {
                 const item = document.createElement('li');
-                const isComplete = !!(daily.completed && daily.completed[mission.id]);
-                const value = Math.min(mission.target, Number(missionValues[mission.stat]) || 0);
+                const missionProgress = progress.missionProgress &&
+                    progress.missionProgress[mission.id + '@' + mission.version];
+                const isComplete = !!(missionProgress && missionProgress.completed);
+                const value = Math.min(mission.target, Number(missionProgress && missionProgress.progress) || 0);
                 item.className = 'progression-mission' + (isComplete ? ' done' : '');
                 const text = document.createElement('span');
                 text.textContent = mission.description;
@@ -959,26 +930,20 @@
                 missionList.appendChild(item);
             });
 
-            const unlocked = Array.isArray(progress.unlockedRewards)
-                ? progress.unlockedRewards
-                : (Array.isArray(progress.unlockedAuras) ? progress.unlockedAuras : []);
-            const unlockedById = new Map(unlocked.map((aura) => [aura.id, aura]));
+            const unlocked = visualRewards.filter((reward) => level >= reward.level);
             const rewardList = document.getElementById('progresion-recompensas');
             rewardList.replaceChildren();
             visualRewards.forEach((reward) => {
-                const owned = unlockedById.get(reward.id);
+                const owned = level >= reward.level;
                 const item = document.createElement('li');
                 item.className = 'progression-reward' + (owned ? ' unlocked' : '');
                 const orb = document.createElement('span');
                 orb.className = 'progression-reward-orb';
                 const configuredImage = typeof reward.imageUrl === 'string' &&
                     /^https:\/\/[^\s'"<>]{10,500}$/i.test(reward.imageUrl) ? reward.imageUrl : '';
-                const previousImage = owned && typeof owned.imageUrl === 'string' &&
-                    /^https:\/\/[^\s'"<>]{10,500}$/i.test(owned.imageUrl) ? owned.imageUrl : '';
-                const imageUrl = configuredImage || previousImage;
-                if (imageUrl) {
+                if (configuredImage) {
                     const image = document.createElement('img');
-                    image.src = imageUrl;
+                    image.src = configuredImage;
                     image.alt = '';
                     image.loading = 'lazy';
                     orb.appendChild(image);
@@ -993,7 +958,7 @@
             });
 
             const rewardSelect = document.getElementById('progresion-aura');
-            const equipped = progress.equippedReward || progress.equippedAura || '';
+            const equipped = progress.equippedReward || '';
             rewardSelect.replaceChildren();
             const noReward = document.createElement('option');
             noReward.value = '';
@@ -1592,23 +1557,23 @@
             });
 
             window.__renderProgresion({
-                xp: 0,
+                totalXp: 0,
                 level: 1,
-                unlockedAuras: [],
-                equippedAura: null,
-                daily: { date: '', matchesCompleted: 0, eliminations: 0, bestScore: 0, topThree: 0, completed: {} }
+                missionProgress: {},
+                equippedReward: null
             });
             let observedProgressXp = 0;
             let rankingRefreshTimer = null;
-            onSnapshot(doc(db, "progresion", user.uid), (snap) => {
+            const progressionDocId = btoa(JSON.stringify([user.uid]))
+                .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+            onSnapshot(doc(db, "v2_progression", progressionDocId), (snap) => {
                 const progress = snap.exists() ? snap.data() : {
-                    xp: 0,
+                    totalXp: 0,
                     level: 1,
-                    unlockedAuras: [],
-                    equippedAura: null,
-                    daily: { date: '', matchesCompleted: 0, eliminations: 0, bestScore: 0, topThree: 0, completed: {} }
+                    missionProgress: {},
+                    equippedReward: null
                 };
-                const currentXp = Math.max(0, Number(progress.xp) || 0);
+                const currentXp = Math.max(0, Number(progress.totalXp) || 0);
                 const earnedXp = currentXp > observedProgressXp;
                 observedProgressXp = currentXp;
                 window.__renderProgresion(progress);

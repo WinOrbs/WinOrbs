@@ -1,25 +1,21 @@
-# Platform progression
+# Platform adapters
 
-Daily mission completion is evaluated from the server-locked match result. XP,
-level, daily counters, unlocked visual rewards, and the public leaderboard
-nickname are stored in `progresion/{uid}` using a Firestore transaction.
+`progression.js` is a compatibility/runtime adapter, not a progression
+implementation. It creates the `packages/progression/v2` service using the
+Firestore v2 persistence ports and maps the legacy game server's locked result
+into a validated v2 match aggregate. Match events, progression profiles,
+mission rewards, and idempotency claims are persisted through the v2
+repositories.
 
-Each account also gets a private `progresion/{uid}/partidas/{sha256(gameId)}`
-claim document. The transaction creates this marker with the progression update
-so replaying a match result cannot award XP twice. Abandoned matches do not
-advance daily missions. Daily counters roll over at 00:00 UTC.
+The legacy `progresion/{uid}` document is read only for one-time XP/equipped
+reward migration. Runtime writes use `v2_progression`, `v2_rewards`, and
+`v2_idempotency`; clients cannot write these collections. The current server
+still owns gameplay, result locking, and settlement. Progression runs only
+after the server has produced a valid locked result and never modifies wallet,
+ledger, or settlement state.
 
-The progression curve starts at 150 XP for level 2 and increases the next-level
-cost by 5 XP per level. Level is capped at 100; total XP continues accumulating
-for global ranking. Each 10-level milestone unlocks one configurable visual
-reward (`aura` or `skin`). Administrators configure its name, colors, type, and
-optional HTTPS image in `configuracion/progresion`. Reward selection is stored
-by the server and checked against unlocked rewards before the appearance is
-sent to other players. The legacy `unlockedAuras` and `equippedAura` fields are
-read during migration; new state uses `unlockedRewards` and `equippedReward`.
-
-The lobby reads only the authenticated player's progression document. Global
-ranking and reward changes go through authenticated Socket.IO events; the
-ranking response contains public nicknames, levels, XP, and positions only.
-Reward images are sent only as part of the validated equipped appearance and
-are size-limited before inclusion in real-time game state.
+`DEFAULT_MISSIONS`, XP policy, mission completion, reward grants, and the level
+curve are owned by `packages/progression/v2`. The adapter's remaining visual
+reward helpers only validate appearance configuration and delegate level
+calculation to that domain. Level cosmetic entitlements are persisted through
+the same atomic v2 reward port as mission rewards.
