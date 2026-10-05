@@ -397,7 +397,9 @@
       try {
         await runTransaction(db, async (t) => {
           const refA = doc(db, "apodos", clave);
+          const refU = doc(db, "usuarios", uid);
           const snapA = await t.get(refA);
+          const snapU = await t.get(refU);
           if (snapA.exists() && snapA.data().uid !== uid) {
             throw new Error("APODO_EN_USO");
           }
@@ -406,8 +408,6 @@
           // no existe lo crea el llamador con el documento completo (la regla
           // 'create' de usuarios exige saldo:0 / baneado:false / apodo, y un
           // merge previo dejaría el perfil incompleto y la creación sería denegada).
-          const refU = doc(db, "usuarios", uid);
-          const snapU = await t.get(refU);
           if (snapU.exists()) t.set(refU, { apodoLower: clave }, { merge: true });
         });
         return true;
@@ -455,6 +455,13 @@
         "auth/operation-not-allowed": "El acceso con Email/Contraseña no está habilitado en la consola de Firebase."
       };
       return mapa[code] || ("Error: " + (code || "desconocido"));
+    }
+
+    function reportarErrorLogin(etapa, error) {
+      console.error("WinOrbs login/register failed", {
+        etapa: etapa,
+        codigo: error && typeof error.code === "string" ? error.code : null
+      });
     }
 
     // Alternar entre modo login y modo registro
@@ -509,6 +516,7 @@
       }
 
       btnEntrar.disabled = true;
+      let etapa = "auth";
       try {
         if (modoRegistro) {
           const apodo = userInput.value.trim();
@@ -517,11 +525,14 @@
             btnEntrar.disabled = false;
             return mostrarError(malApodo);
           }
+          etapa = "auth.sign-up";
           const cred = await createUserWithEmailAndPassword(auth, email, pass);
           try {
             // 1) Reserva el apodo (atómico: falla si ya es de otra cuenta)
+            etapa = "firestore.reserve-nickname";
             await reclamarApodo(cred.user.uid, apodo);
             // 2) Crea el perfil (la regla 'create' exige la reserva previa)
+            etapa = "firestore.create-profile";
             await setDoc(doc(db, "usuarios", cred.user.uid), {
               apodo: apodo,
               apodoLower: claveApodo(apodo),
@@ -533,6 +544,7 @@
           } catch (errApodo) {
             // Revierte TODO: libera la reserva y borra la cuenta Auth, para no
             // dejar ni un apodo bloqueado ni un usuario sin perfil válido.
+            reportarErrorLogin(etapa, errApodo);
             try { await liberarApodo(cred.user.uid, apodo); } catch (e0) { }
             try { await cred.user.delete(); } catch (e2) { try { await signOut(auth); } catch (e3) { } }
             btnEntrar.disabled = false;
@@ -544,11 +556,13 @@
           }
           guardarSesion(cred.user.uid, apodo);
         } else {
+          etapa = "auth.sign-in";
           const cred = await signInWithEmailAndPassword(auth, email, pass);
           // Si la cuenta aún no tiene perfil, se crea con apodo aleatorio;
           // reintenta si colisiona con un apodo existente (máx. 5).
           let perfil = null;
           let baseApodo = apodoDesdeEmail(email);
+          etapa = "firestore.load-profile";
           for (let intento = 0; intento < 5; intento++) {
             try {
               perfil = await asegurarPerfil(cred.user.uid, baseApodo, email);
@@ -569,6 +583,7 @@
         window.location.href = "index.html";
       } catch (err) {
         btnEntrar.disabled = false;
+        reportarErrorLogin(etapa, err);
         if (err && err.message === "APODO_EN_USO") {
           mostrarError("No se pudo asignar un nombre de usuario único. Inténtalo de nuevo.");
         } else {
