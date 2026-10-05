@@ -41,6 +41,21 @@ function isRecord(value) {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function normalizeIdentityFailure(response) {
+    if (!isRecord(response)) return failure(APPLICATION_ERRORS.AUTHENTICATION_REQUIRED);
+    const code = response.error && response.error.code;
+    if (code === APPLICATION_ERRORS.AUTHENTICATION_EXPIRED) {
+        return failure(APPLICATION_ERRORS.AUTHENTICATION_EXPIRED);
+    }
+    if (code === APPLICATION_ERRORS.AUTHENTICATION_REQUIRED) {
+        return failure(APPLICATION_ERRORS.AUTHENTICATION_REQUIRED);
+    }
+    if (code === APPLICATION_ERRORS.AUTHORIZATION_DENIED) {
+        return failure(APPLICATION_ERRORS.AUTHORIZATION_DENIED);
+    }
+    return failure(APPLICATION_ERRORS.AUTHENTICATION_REQUIRED);
+}
+
 function createApplicationBoundary({ identity, coordinator, matchId } = {}) {
     if (!identity || typeof identity.requirePermission !== 'function' ||
         typeof identity.consumeSystemOperation !== 'function' ||
@@ -62,8 +77,13 @@ function createApplicationBoundary({ identity, coordinator, matchId } = {}) {
     async function authorizePlayer(request, permission, options = {}) {
         if (!isRecord(request)) return failure(APPLICATION_ERRORS.AUTHENTICATION_REQUIRED);
         const authorized = await identity.requirePermission(request.principal, permission);
-        if (!authorized.ok) return authorized;
+        if (!isRecord(authorized) || authorized.ok !== true) {
+            return normalizeIdentityFailure(authorized);
+        }
         const principal = authorized.principal;
+        if (!isRecord(principal)) {
+            return failure(APPLICATION_ERRORS.AUTHENTICATION_REQUIRED);
+        }
         if (request.sessionId !== principal.sessionId) {
             return failure(APPLICATION_ERRORS.SESSION_MISMATCH);
         }
@@ -75,8 +95,14 @@ function createApplicationBoundary({ identity, coordinator, matchId } = {}) {
         }
         if (options.requireMembership) {
             const current = coordinator.getSnapshot();
-            if (!current.ok) return failure(APPLICATION_ERRORS.RESOURCE_NOT_FOUND);
-            if (!current.snapshot.memberActorIds.includes(principal.userId)) {
+            if (!isRecord(current) || current.ok !== true || !isRecord(current.snapshot)) {
+                return failure(APPLICATION_ERRORS.RESOURCE_NOT_FOUND);
+            }
+            const memberActorIds = current.snapshot.memberActorIds;
+            if (!Array.isArray(memberActorIds)) {
+                return failure(APPLICATION_ERRORS.RESOURCE_NOT_FOUND);
+            }
+            if (!memberActorIds.includes(principal.userId)) {
                 return failure(APPLICATION_ERRORS.MATCH_ACCESS_DENIED);
             }
         }
@@ -84,21 +110,27 @@ function createApplicationBoundary({ identity, coordinator, matchId } = {}) {
     }
 
     function mapCoordinatorError(response) {
+        if (!isRecord(response)) {
+            return failure(APPLICATION_ERRORS.INVALID_APPLICATION_OPERATION, {
+                cause: 'INVALID_COORDINATOR_RESPONSE'
+            });
+        }
         if (response.ok) return response;
-        if (response.error.code === 'MATCH_NOT_FOUND') {
+        const errorCode = isRecord(response.error) ? response.error.code : undefined;
+        if (errorCode === 'MATCH_NOT_FOUND') {
             return failure(APPLICATION_ERRORS.RESOURCE_NOT_FOUND);
         }
-        if (response.error.code === 'PLAYER_NOT_MEMBER') {
+        if (errorCode === 'PLAYER_NOT_MEMBER') {
             return failure(APPLICATION_ERRORS.MATCH_ACCESS_DENIED);
         }
-        if (response.error.code === 'MATCH_RESULT_LOCKED') {
+        if (errorCode === 'MATCH_RESULT_LOCKED') {
             return failure(APPLICATION_ERRORS.MATCH_RESULT_LOCKED);
         }
-        if (response.error.code === 'SESSION_MISMATCH') {
+        if (errorCode === 'SESSION_MISMATCH') {
             return failure(APPLICATION_ERRORS.SESSION_MISMATCH);
         }
         return failure(APPLICATION_ERRORS.INVALID_APPLICATION_OPERATION, {
-            cause: response.error.code
+            cause: typeof errorCode === 'string' ? errorCode : 'INVALID_COORDINATOR_RESPONSE'
         });
     }
 

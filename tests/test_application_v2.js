@@ -381,6 +381,46 @@ async function run() {
     })).error.code, APPLICATION_ERRORS.SYSTEM_OPERATION_REQUIRED);
 }
 
+// Malformed dependency responses should fail closed instead of throwing.
+{
+    const badIdentity = {
+        async requirePermission() {
+            return { ok: true, principal: { userId: 'user-1', sessionId: 'session-user-1' } };
+        },
+        consumeSystemOperation() {
+            return { ok: true };
+        }
+    };
+    const badCoordinator = {
+        getSnapshot() {
+            return { ok: true, snapshot: {} };
+        },
+        addPlayer() { return { ok: true, snapshot: { memberActorIds: ['user-1'] } }; },
+        reassociatePlayerSession() { return { ok: true, snapshot: { memberActorIds: ['user-1'] } }; },
+        removePlayer() { return { ok: true, snapshot: { memberActorIds: ['user-1'] } }; },
+        markReady() { return { ok: true, snapshot: { memberActorIds: ['user-1'] } }; },
+        submitCommand() { return { ok: true, snapshot: { memberActorIds: ['user-1'] } }; },
+        getEvents() { return { ok: true, events: [] }; },
+        startCountdown() { return { ok: true, snapshot: { memberActorIds: ['user-1'] } }; },
+        startMatch() { return { ok: true, snapshot: { memberActorIds: ['user-1'] } }; },
+        finishMatch() { return { ok: true, snapshot: { memberActorIds: ['user-1'] } }; },
+        getResult() { return { ok: true, result: null }; }
+    };
+
+    const badApp = createApplicationBoundary({
+        identity: badIdentity,
+        coordinator: badCoordinator,
+        matchId: MATCH_ID
+    });
+    const badPrincipal = await principal('token1');
+    const malformed = await badApp.getMatchSnapshot({
+        ...session(badPrincipal),
+        matchId: MATCH_ID
+    });
+    assert.strictEqual(malformed.ok, false);
+    assert.strictEqual(malformed.error.code, APPLICATION_ERRORS.RESOURCE_NOT_FOUND);
+}
+
 // Application imports only contracts, identity, and the Match Coordinator.
 {
     const source = fs.readFileSync(path.join(__dirname,
