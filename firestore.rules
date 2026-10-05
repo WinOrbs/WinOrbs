@@ -116,7 +116,10 @@ service cloud.firestore {
     // Los perfiles son legibles por su propietario; los premios siguen siendo
     // autoritativos y ningún cliente puede crear, cambiar ni borrar registros.
     match /v2_progression/{profileId} {
-      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      // Permite observar el documento propio antes de que el servidor cree
+      // el perfil; los documentos existentes siguen limitados a su propietario.
+      allow read: if request.auth != null
+                  && (resource == null || resource.data.userId == request.auth.uid);
       allow write: if false;
     }
     match /v2_rewards/{rewardId} {

@@ -9,7 +9,7 @@ assert.match(firestore, /hasOnly\(\['apodo', 'displayName', 'avatarId', 'bio', '
 assert.match(firestore, /match \/progresion\/\{uid\}/);
 assert.match(firestore, /match \/progresion\/\{uid\}\s*\{\s*allow read: if request\.auth != null && \(request\.auth\.uid == uid \|\| isAdmin\(\)\);\s*allow create, update, delete: if isAdmin\(\);/);
 assert.match(firestore, /match \/recompensas\/\{uid\}/);
-assert.match(firestore, /match \/v2_progression\/\{profileId\}\s*\{\s*allow read: if request\.auth != null && resource\.data\.userId == request\.auth\.uid;\s*allow write: if false;/);
+assert.match(firestore, /match \/v2_progression\/\{profileId\}\s*\{\s*\/\/ Permite observar el documento propio antes de que el servidor cree\s*\/\/ el perfil; los documentos existentes siguen limitados a su propietario\.\s*allow read: if request\.auth != null\s*&& \(resource == null \|\| resource\.data\.userId == request\.auth\.uid\);\s*allow write: if false;/);
 assert.match(firestore, /match \/v2_rewards\/\{rewardId\}\s*\{\s*allow read: if request\.auth != null && resource\.data\.userId == request\.auth\.uid;\s*allow write: if false;/);
 assert.match(firestore, /match \/v2_matches\/\{matchId\}\s*\{\s*allow read, write: if false;/);
 assert.match(firestore, /match \/pagos\/\{id\}/);
