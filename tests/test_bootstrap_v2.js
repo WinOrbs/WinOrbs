@@ -218,6 +218,38 @@ async function run() {
     });
     assert.strictEqual(configured.matchCoordinator, customCoordinator);
 
+    const recoverySource = createMatchCoordinator({
+        matchId: 'match-boot',
+        clock: () => 1_000,
+        rulesVersion: 'v2'
+    });
+    const initialSnapshot = recoverySource.createMatch().snapshot;
+    const restoreState = {
+        matchId: 'match-boot',
+        lifecycle: 'WAITING',
+        snapshot: initialSnapshot,
+        snapshotVersion: 1,
+        snapshotEventSequence: 0,
+        stateVersion: 2,
+        eventSequence: 0,
+        events: [],
+        resultVersion: null,
+        result: null,
+        resultLocked: false
+    };
+    const restoredRoot = createWinOrbsV2({
+        ...makeValidOptions(),
+        restoreState
+    });
+    assert.strictEqual(restoredRoot.matchCoordinator.getSnapshot().snapshot.status, 'WAITING');
+    assert.strictEqual(restoredRoot.matchCoordinator.createMatch().error.code,
+        'INVALID_LIFECYCLE');
+    assert.strictEqual(typeof restoredRoot.application.reassociatePlayerSession, 'function');
+    assert.throws(() => createWinOrbsV2({
+        ...makeValidOptions(),
+        restoreState: { ...restoreState, matchId: 'different-match' }
+    }), /Match Coordinator recovery failed: INVALID_RECOVERY_STATE/);
+
     const invalidOptions = { identity: {}, persistence: {} };
     assert.throws(() => createWinOrbsV2(invalidOptions), /requires a valid Identity service/);
 

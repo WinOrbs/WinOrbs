@@ -39,6 +39,16 @@ composition object:
 - `settlement`
 - `transport` (optional)
 
+## Fresh match vs recovery
+
+A fresh root is created without `restoreState`; the trusted caller may then
+call `matchCoordinator.createMatch()` once. Recovery is explicit: pass the
+validated recovery envelope as `restoreState`. Bootstrap calls
+`matchCoordinator.restoreFromPersistedState()` before constructing Application
+and fails closed if validation fails. It never creates a fresh match and then
+overwrites it. Restored members have no active session binding until an
+authenticated player is reassociated through Application v2.
+
 ## What it does not do
 
 - start a server

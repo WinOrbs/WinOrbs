@@ -39,6 +39,25 @@ function createRunningMatch(options = {}) {
     return coordinator;
 }
 
+function recoveryFixture(coordinator, overrides = {}) {
+    const snapshot = coordinator.getSnapshot().snapshot;
+    const events = coordinator.getEvents().events;
+    return {
+        matchId: snapshot.matchId,
+        lifecycle: snapshot.status,
+        snapshot,
+        snapshotVersion: 1,
+        snapshotEventSequence: snapshot.gameState.sequence,
+        stateVersion: 2,
+        eventSequence: snapshot.gameState.sequence,
+        events,
+        resultVersion: null,
+        result: null,
+        resultLocked: false,
+        ...overrides
+    };
+}
+
 function containsSensitiveKey(value) {
     if (Array.isArray(value)) return value.some(containsSensitiveKey);
     if (!value || typeof value !== 'object') return false;
@@ -212,6 +231,131 @@ function containsSensitiveKey(value) {
     assert.deepStrictEqual(run(), run());
 }
 
+// Recovery restores the exact state and keeps session reassociation memory-only.
+{
+    const source = createRunningMatch();
+    source.submitCommand(command('match-coordinator-test', 'actor-1', 1));
+    source.advanceTick();
+    const persisted = recoveryFixture(source, { stateVersion: 12 });
+    const restored = createMatchCoordinator({
+        matchId: 'match-coordinator-test',
+        rules: { matchDurationMs: null },
+        clock: () => 1000
+    });
+    assert.strictEqual(restored.reassociatePlayerSession(
+        'match-coordinator-test', 'actor-1', 'session-new'
+    ).error.code, COORDINATOR_ERRORS.MATCH_NOT_FOUND);
+    const hydration = restored.restoreFromPersistedState(persisted);
+    assert.strictEqual(hydration.ok, true, JSON.stringify(hydration.error || null));
+    assert.strictEqual(hydration.stateVersion, 12);
+    assert.strictEqual(hydration.eventSequence, persisted.eventSequence);
+    assert.deepStrictEqual(restored.getSnapshot().snapshot, persisted.snapshot);
+    assert.deepStrictEqual(restored.getEvents().events, persisted.events);
+
+    const beforeSnapshot = restored.getSnapshot().snapshot;
+    const beforeEvents = restored.getEvents().events;
+    const reassociated = restored.reassociatePlayerSession(
+        'match-coordinator-test', 'actor-1', 'session-new'
+    );
+    assert.strictEqual(reassociated.ok, true);
+    assert.strictEqual(reassociated.reassociated, true);
+    assert.strictEqual(restored.reassociatePlayerSession(
+        'match-coordinator-test', 'actor-1', 'session-new'
+    ).reassociated, false);
+    assert.strictEqual(restored.reassociatePlayerSession(
+        'wrong-match', 'actor-1', 'another-session'
+    ).error.code, COORDINATOR_ERRORS.MATCH_NOT_FOUND);
+    assert.strictEqual(restored.reassociatePlayerSession(
+        'match-coordinator-test', 'missing-actor', 'another-session'
+    ).error.code, COORDINATOR_ERRORS.PLAYER_NOT_MEMBER);
+    assert.strictEqual(restored.reassociatePlayerSession(
+        'match-coordinator-test', 'actor-2', 'session-new'
+    ).error.code, COORDINATOR_ERRORS.INVALID_COMMAND);
+    assert.strictEqual(restored.reassociatePlayerSession(
+        'match-coordinator-test', 'actor-2', ''
+    ).error.code, COORDINATOR_ERRORS.INVALID_COMMAND);
+    assert.deepStrictEqual(restored.getSnapshot().snapshot, beforeSnapshot);
+    assert.deepStrictEqual(restored.getEvents().events, beforeEvents);
+    const newSessionCommand = {
+        ...command('match-coordinator-test', 'actor-1', 1, 'recovered-command'),
+        sessionId: 'session-new'
+    };
+    assert.strictEqual(restored.submitCommand(newSessionCommand).ok, true);
+    assert.strictEqual(restored.submitCommand({
+        ...newSessionCommand,
+        commandId: 'old-session-command',
+        sessionId: 'session-actor-1',
+        sequence: 2
+    }).error.code, COORDINATOR_ERRORS.SESSION_MISMATCH);
+
+    for (const mutate of [
+        (state) => { state.matchId = 'other-match'; },
+        (state) => { state.eventSequence -= 1; },
+        (state) => { state.stateVersion = 0; },
+        (state) => { state.snapshot.gameState.match.rulesVersion = 'other-rules'; },
+        (state) => { state.snapshot.readyActorIds = ['missing-actor']; },
+        (state) => { state.snapshot.members[0].actorId = 'missing-actor'; },
+        (state) => {
+            state.lifecycle = 'WAITING';
+            state.snapshot.status = 'WAITING';
+            state.snapshot.gameState.match.status = 'WAITING';
+        }
+    ]) {
+        const corrupt = structuredClone(persisted);
+        mutate(corrupt);
+        const target = createMatchCoordinator({
+            matchId: 'match-coordinator-test',
+            rules: { matchDurationMs: null },
+            clock: () => 1000
+        });
+        assert.strictEqual(target.restoreFromPersistedState(corrupt).error.code,
+            COORDINATOR_ERRORS.INVALID_RECOVERY_STATE);
+        assert.strictEqual(target.getSnapshot().error.code, COORDINATOR_ERRORS.MATCH_NOT_FOUND);
+    }
+}
+
+// Locked results restore immutably through RESULT_LOCKED, SETTLING and SETTLED.
+{
+    const source = createRunningMatch();
+    const finished = source.finishMatch('ABANDONED');
+    const lockedState = recoveryFixture(source, {
+        lifecycle: 'RESULT_LOCKED',
+        snapshot: finished.snapshot,
+        snapshotEventSequence: finished.snapshot.gameState.sequence,
+        eventSequence: finished.snapshot.gameState.sequence,
+        events: source.getEvents().events,
+        resultVersion: 'result-v1',
+        result: finished.result,
+        resultLocked: true
+    });
+    for (const lifecycle of ['RESULT_LOCKED', 'SETTLING', 'SETTLED']) {
+        const state = structuredClone(lockedState);
+        state.lifecycle = lifecycle;
+        const restored = createMatchCoordinator({
+            matchId: 'match-coordinator-test',
+            rules: { matchDurationMs: null },
+            clock: () => 1000
+        });
+        assert.strictEqual(restored.restoreFromPersistedState(state).ok, true);
+        assert.strictEqual(restored.getSnapshot().snapshot.status, lifecycle);
+        assert.deepStrictEqual(restored.getResult().result, finished.result);
+        assert.strictEqual(restored.finishMatch('ABANDONED').ok, false);
+        assert.strictEqual(restored.submitCommand(command(
+            'match-coordinator-test', 'actor-1', 1
+        )).ok, false);
+        assert.deepStrictEqual(restored.getEvents().events, state.events);
+    }
+    const corruptResult = structuredClone(lockedState);
+    corruptResult.result.resultHash = '0'.repeat(64);
+    const target = createMatchCoordinator({
+        matchId: 'match-coordinator-test',
+        rules: { matchDurationMs: null },
+        clock: () => 1000
+    });
+    assert.strictEqual(target.restoreFromPersistedState(corruptResult).error.code,
+        COORDINATOR_ERRORS.INVALID_RECOVERY_STATE);
+}
+
 // The Coordinator boundary has no runtime, transport, persistence, or economy imports.
 {
     const source = fs.readFileSync(path.join(__dirname,
@@ -219,6 +363,7 @@ function containsSensitiveKey(value) {
     const requiredModules = [...source.matchAll(/require\(['"]([^'"]+)['"]\)/g)]
         .map((match) => match[1]);
     assert.deepStrictEqual(requiredModules, [
+        'crypto',
         '../../contracts/v2',
         '../../contracts/v2/validation',
         '../../game-engine/v2'

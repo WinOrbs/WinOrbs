@@ -20,23 +20,28 @@ let now = 1000;
 const permissionSets = new Map([
     ['user-1', [...MATCH_PERMISSIONS]],
     ['user-2', [...MATCH_PERMISSIONS]],
+    ['outsider', [...MATCH_PERMISSIONS]],
     ['no-join', MATCH_PERMISSIONS.filter((permission) => permission !== 'match.join')],
     ['read-only', ['match.view']]
 ]);
 
 const identity = createIdentityService({
     authenticate: async (credential) => {
-        const userId = ({
-            token1: 'user-1',
-            token4: 'user-2',
-            token2: 'no-join',
-            token3: 'read-only'
+        const identityByCredential = ({
+            token1: { userId: 'user-1', sessionId: 'session-user-1' },
+            'token1-recovered': { userId: 'user-1', sessionId: 'session-user-1-recovered' },
+            'token1-recovered-a': { userId: 'user-1', sessionId: 'session-user-1-recovered-a' },
+            'token1-recovered-b': { userId: 'user-1', sessionId: 'session-user-1-recovered-b' },
+            token4: { userId: 'user-2', sessionId: 'session-user-2' },
+            'token-outsider': { userId: 'outsider', sessionId: 'session-outsider' },
+            token2: { userId: 'no-join', sessionId: 'session-no-join' },
+            token3: { userId: 'read-only', sessionId: 'session-read-only' }
         })[credential];
-        if (!userId) return null;
+        if (!identityByCredential) return null;
         return {
-            userId,
+            userId: identityByCredential.userId,
             provider: 'test',
-            sessionId: `session-${userId}`,
+            sessionId: identityByCredential.sessionId,
             expiresAt: now + 60000
         };
     },
@@ -123,6 +128,11 @@ async function run() {
     assert.strictEqual((await app.markReady(session(secondPlayer))).snapshot.status, 'READY');
     assert.deepStrictEqual(coordinator.getSnapshot().snapshot.readyActorIds,
         ['user-1', 'user-2']);
+    const freshReassociation = await app.reassociatePlayerSession(session(player));
+    assert.strictEqual(freshReassociation.ok, false);
+    assert.strictEqual(freshReassociation.error.code,
+        APPLICATION_ERRORS.INVALID_APPLICATION_OPERATION);
+    assert.strictEqual(freshReassociation.error.cause, 'INVALID_LIFECYCLE');
     const authority = await identity.authorizeSystemOperation(
         'internal-system-key', 'startCountdown'
     );
@@ -208,6 +218,112 @@ async function run() {
         principal: player,
         permissions: ['match.result.lock']
     })).error.code, APPLICATION_ERRORS.SYSTEM_OPERATION_REQUIRED);
+}
+
+// Recovery reassociation requires a live Principal and only rebinds an existing actor.
+{
+    const source = createMatchCoordinator({
+        matchId: MATCH_ID,
+        rules: { matchDurationMs: null },
+        clock: () => now
+    });
+    source.createMatch();
+    source.addPlayer('user-1', 'session-user-1');
+    source.addPlayer('user-2', 'session-user-2');
+    source.markReady('user-1', 'session-user-1');
+    source.markReady('user-2', 'session-user-2');
+    source.startCountdown();
+    source.startMatch();
+    const snapshot = source.getSnapshot().snapshot;
+    const events = source.getEvents().events;
+    const restoreState = {
+        matchId: MATCH_ID,
+        lifecycle: snapshot.status,
+        snapshot,
+        snapshotVersion: 1,
+        snapshotEventSequence: snapshot.gameState.sequence,
+        stateVersion: 2,
+        eventSequence: snapshot.gameState.sequence,
+        events,
+        resultVersion: null,
+        result: null,
+        resultLocked: false
+    };
+    const recoveredCoordinator = createMatchCoordinator({
+        matchId: MATCH_ID,
+        rules: { matchDurationMs: null },
+        clock: () => now
+    });
+    assert.strictEqual(recoveredCoordinator.restoreFromPersistedState(restoreState).ok, true);
+    const recoveredApp = createApplicationBoundary({
+        identity,
+        coordinator: recoveredCoordinator,
+        matchId: MATCH_ID
+    });
+    const oldPrincipal = await principal('token1');
+    const newPrincipal = await principal('token1-recovered');
+    const beforeSnapshot = recoveredCoordinator.getSnapshot().snapshot;
+    const beforeEvents = recoveredCoordinator.getEvents().events;
+
+    assert.strictEqual((await recoveredApp.reassociatePlayerSession({
+        matchId: MATCH_ID,
+        sessionId: newPrincipal.sessionId
+    })).error.code, APPLICATION_ERRORS.AUTHENTICATION_REQUIRED);
+    assert.strictEqual((await recoveredApp.reassociatePlayerSession({
+        ...session(newPrincipal), actorId: 'user-2'
+    })).error.code, APPLICATION_ERRORS.ACTOR_MISMATCH);
+    assert.strictEqual((await recoveredApp.reassociatePlayerSession({
+        ...session(newPrincipal), sessionId: 'forged-session'
+    })).error.code, APPLICATION_ERRORS.SESSION_MISMATCH);
+    assert.strictEqual((await recoveredApp.reassociatePlayerSession({
+        ...session(newPrincipal), matchId: 'different-match'
+    })).error.code, APPLICATION_ERRORS.RESOURCE_NOT_FOUND);
+    const outsider = await principal('token-outsider');
+    assert.strictEqual((await recoveredApp.reassociatePlayerSession(
+        session(outsider)
+    )).error.code, APPLICATION_ERRORS.MATCH_ACCESS_DENIED);
+
+    const expired = await principal('token1-recovered-a');
+    const previousNow = now;
+    now = expired.expiresAt + 1;
+    assert.strictEqual((await recoveredApp.reassociatePlayerSession(
+        session(expired)
+    )).error.code, APPLICATION_ERRORS.AUTHENTICATION_EXPIRED);
+    now = previousNow;
+
+    const rebound = await recoveredApp.reassociatePlayerSession(session(newPrincipal));
+    assert.strictEqual(rebound.ok, true, JSON.stringify(rebound.error || null));
+    assert.strictEqual(rebound.snapshot.status, 'RUNNING');
+    assert.deepStrictEqual(rebound.snapshot.members, beforeSnapshot.members);
+    assert.deepStrictEqual(recoveredCoordinator.getEvents().events, beforeEvents);
+    assert.strictEqual((await recoveredApp.submitGameCommand({
+        ...session(oldPrincipal),
+        command: command(oldPrincipal, { commandId: 'old-recovered-session' })
+    })).error.code, APPLICATION_ERRORS.SESSION_MISMATCH);
+
+    const concurrentA = await principal('token1-recovered-a');
+    const concurrentB = await principal('token1-recovered-b');
+    const concurrentResults = await Promise.all([
+        recoveredApp.reassociatePlayerSession(session(concurrentA)),
+        recoveredApp.reassociatePlayerSession(session(concurrentB))
+    ]);
+    assert.strictEqual(concurrentResults.every((response) => response.ok), true);
+    assert.deepStrictEqual(recoveredCoordinator.getSnapshot().snapshot.members,
+        beforeSnapshot.members);
+    assert.deepStrictEqual(recoveredCoordinator.getEvents().events, beforeEvents);
+    const commandA = await recoveredApp.submitGameCommand({
+        ...session(concurrentA),
+        command: command(concurrentA, { commandId: 'concurrent-session-a' })
+    });
+    const commandB = await recoveredApp.submitGameCommand({
+        ...session(concurrentB),
+        command: command(concurrentB, { commandId: 'concurrent-session-b' })
+    });
+    assert.strictEqual(Number(commandA.ok) + Number(commandB.ok), 1);
+    assert.strictEqual(
+        [commandA, commandB].find((response) => !response.ok).error.code,
+        APPLICATION_ERRORS.SESSION_MISMATCH
+    );
 }
 
 // Leave delegates to membership; each privileged lifecycle action requires

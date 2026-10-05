@@ -20,6 +20,7 @@ const PLAYER_OPERATIONS = Object.freeze({
     joinMatch: 'match.join',
     leaveMatch: 'match.leave',
     markReady: 'match.ready',
+    reassociatePlayerSession: 'match.join',
     submitGameCommand: 'match.command',
     getMatchSnapshot: 'match.view',
     getMatchEvents: 'match.view'
@@ -45,6 +46,7 @@ function createApplicationBoundary({ identity, coordinator, matchId } = {}) {
         typeof identity.consumeSystemOperation !== 'function' ||
         !coordinator || typeof coordinator.getSnapshot !== 'function' ||
         typeof coordinator.addPlayer !== 'function' ||
+        typeof coordinator.reassociatePlayerSession !== 'function' ||
         typeof coordinator.removePlayer !== 'function' ||
         typeof coordinator.markReady !== 'function' ||
         typeof coordinator.submitCommand !== 'function' ||
@@ -126,6 +128,20 @@ function createApplicationBoundary({ identity, coordinator, matchId } = {}) {
         });
         if (!access.ok) return access;
         return mapCoordinatorError(coordinator.markReady(
+            access.principal.userId,
+            access.principal.sessionId
+        ));
+    }
+
+    async function reassociatePlayerSession(request) {
+        const access = await authorizePlayer(
+            request,
+            PLAYER_OPERATIONS.reassociatePlayerSession,
+            { requireMembership: true }
+        );
+        if (!access.ok) return access;
+        return mapCoordinatorError(coordinator.reassociatePlayerSession(
+            matchId,
             access.principal.userId,
             access.principal.sessionId
         ));
@@ -227,6 +243,7 @@ function createApplicationBoundary({ identity, coordinator, matchId } = {}) {
         joinMatch,
         leaveMatch,
         markReady,
+        reassociatePlayerSession,
         submitGameCommand,
         getMatchSnapshot,
         getMatchEvents,

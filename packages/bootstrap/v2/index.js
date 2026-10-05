@@ -90,9 +90,20 @@ function createWinOrbsV2(options = {}) {
     );
     if (!matchCoordinator ||
         !hasMethod(matchCoordinator, 'createMatch') ||
+        !hasMethod(matchCoordinator, 'restoreFromPersistedState') ||
+        !hasMethod(matchCoordinator, 'reassociatePlayerSession') ||
         !hasMethod(matchCoordinator, 'getSnapshot') ||
         !hasMethod(matchCoordinator, 'submitCommand')) {
         throw new TypeError('Match Coordinator is required');
+    }
+
+    if (Object.hasOwn(options, 'restoreState')) {
+        const restored = matchCoordinator.restoreFromPersistedState(options.restoreState);
+        if (!restored?.ok) {
+            throw new TypeError(
+                `Match Coordinator recovery failed: ${restored?.error?.code || 'INVALID_RECOVERY_STATE'}`
+            );
+        }
     }
 
     const application = options.application || (

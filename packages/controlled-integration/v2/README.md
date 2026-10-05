@@ -41,6 +41,18 @@ from existing V2 packages:
 Every stage emits `controlled.integration` observability events carrying the
 correlation ID and match ID; no credentials or secrets are passed to the sink.
 
+`restartFromPersistedState(principal)` obtains authorized recovery data, then
+uses a new Production Adapter and Bootstrap root with `restoreState` before
+Application is constructed. The recovered roster and ready flags come from the
+persisted snapshot; session IDs are not persisted. Players authenticate again
+and Application's `reassociatePlayerSession()` binds each new Principal session
+to its existing actor. The test covers a resumed `RUNNING` command, rejection
+of the old session, unchanged runtime authority, and unchanged locked results
+for `RESULT_LOCKED`, `SETTLING`, and `SETTLED`.
+
+`runControlledMatchFlow({ stopAtRunning: true })` leaves a persisted `RUNNING`
+fixture for the restart test without finishing the match.
+
 ## Options
 
 ```js
@@ -63,10 +75,10 @@ const env = createControlledEnvironment({
   `matchId`, `correlationId`, `idempotencyKey`, `root`, `persistence`,
   `integrationBoundary`, `adapter`, `emitted`, `clock`, `randomSource`,
   `getBootstrapCount()`, plus helpers (`resolveControlledAssignment`,
-  `startControlledInstance`, `checkAuthority`, `authenticatePlayer`,
-  `runControlledMatchFlow`, `emit`).
+  `startControlledInstance`, `restartFromPersistedState`, `checkAuthority`,
+  `authenticatePlayer`, `runControlledMatchFlow`, `emit`).
 - `createControlledIdentity(clock)` — minimal Identity adapter kit backed by
-  two controlled player credentials and one system credential.
+  controlled player credentials, an outsider fixture, and one system credential.
 - `SYSTEM_OPERATIONS` — `['startCountdown', 'startMatch', 'finishMatch',
   'lockResult']`, the only operations the controlled system credential can
   authorize.

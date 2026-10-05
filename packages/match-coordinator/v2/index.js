@@ -1,11 +1,15 @@
 'use strict';
 
+const crypto = require('crypto');
 const {
     SCHEMA_VERSION,
+    MATCH_LIFECYCLE,
     MATCH_FINISH_REASONS
 } = require('../../contracts/v2');
 const {
     validateGameCommand,
+    validateGameEvent,
+    validateGameState,
     validateMatchResult
 } = require('../../contracts/v2/validation');
 const {
@@ -23,7 +27,8 @@ const COORDINATOR_ERRORS = Object.freeze({
     COMMAND_DUPLICATE: 'COMMAND_DUPLICATE',
     INVALID_SEQUENCE: 'INVALID_SEQUENCE',
     MATCH_RESULT_LOCKED: 'MATCH_RESULT_LOCKED',
-    INVALID_RESULT: 'INVALID_RESULT'
+    INVALID_RESULT: 'INVALID_RESULT',
+    INVALID_RECOVERY_STATE: 'INVALID_RECOVERY_STATE'
 });
 const MAX_CACHED_COMMANDS = 10000;
 
@@ -46,6 +51,24 @@ function failure(code, details = {}) {
     return { ok: false, error: { code, ...details } };
 }
 
+function exactKeys(value, required) {
+    return isRecord(value) && required.every((key) => Object.hasOwn(value, key)) &&
+        Object.keys(value).every((key) => required.includes(key));
+}
+
+function canonical(value) {
+    if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+    if (!isRecord(value)) return JSON.stringify(value);
+    return `{${Object.keys(value).sort().map((key) =>
+        `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
+}
+
+function validResultHash(result) {
+    const unsigned = { ...result, resultHash: '' };
+    return crypto.createHash('sha256').update(canonical(unsigned)).digest('hex') ===
+        result.resultHash;
+}
+
 function createMatchCoordinator(options = {}) {
     if (!isRecord(options) || typeof options.matchId !== 'string' ||
         !options.matchId.trim() || options.matchId.length > 128) {
@@ -64,6 +87,7 @@ function createMatchCoordinator(options = {}) {
     let lifecycle = null;
     let result = null;
     let resultInvalid = false;
+    let restored = false;
     const members = new Map();
     const events = [];
     const sessions = new Map();
@@ -121,6 +145,184 @@ function createMatchCoordinator(options = {}) {
         engine = createGameEngine(initialState, rules, { clock });
         lifecycle = 'WAITING';
         return makeSnapshotResult();
+    }
+
+    function restoreFromPersistedState(recovery) {
+        const fields = [
+            'matchId', 'lifecycle', 'snapshot', 'snapshotVersion',
+            'snapshotEventSequence', 'stateVersion', 'eventSequence', 'events',
+            'resultVersion', 'result', 'resultLocked'
+        ];
+        if (engine) {
+            return failure(COORDINATOR_ERRORS.INVALID_LIFECYCLE, { status: lifecycle });
+        }
+        if (!exactKeys(recovery, fields) || recovery.matchId !== options.matchId ||
+            !MATCH_LIFECYCLE.includes(recovery.lifecycle) ||
+            !Number.isSafeInteger(recovery.snapshotVersion) || recovery.snapshotVersion < 1 ||
+            !Number.isSafeInteger(recovery.snapshotEventSequence) || recovery.snapshotEventSequence < 0 ||
+            !Number.isSafeInteger(recovery.stateVersion) || recovery.stateVersion < recovery.snapshotVersion ||
+            !Number.isSafeInteger(recovery.eventSequence) || recovery.eventSequence < 0 ||
+            !Array.isArray(recovery.events) || typeof recovery.resultLocked !== 'boolean' ||
+            (recovery.resultVersion !== null &&
+                (typeof recovery.resultVersion !== 'string' || !recovery.resultVersion.trim() ||
+                    recovery.resultVersion.length > 256)) ||
+            (recovery.result !== null && !isRecord(recovery.result))) {
+            return failure(COORDINATOR_ERRORS.INVALID_RECOVERY_STATE);
+        }
+
+        const lockedLifecycle = ['RESULT_LOCKED', 'SETTLING', 'SETTLED']
+            .includes(recovery.lifecycle);
+        const snapshotLifecycle = lockedLifecycle ? 'RESULT_LOCKED' : recovery.lifecycle;
+        const snapshot = recovery.snapshot;
+        const snapshotFields = [
+            'schemaVersion', 'matchId', 'status', 'memberActorIds', 'members',
+            'readyActorIds', 'notReadyActorIds', 'gameState'
+        ];
+        if (!exactKeys(snapshot, snapshotFields) ||
+            snapshot.schemaVersion !== SCHEMA_VERSION ||
+            snapshot.matchId !== options.matchId || snapshot.status !== snapshotLifecycle ||
+            !isRecord(snapshot.gameState) || !validateGameState(snapshot.gameState).ok ||
+            snapshot.gameState.schemaVersion !== SCHEMA_VERSION ||
+            snapshot.gameState.match.matchId !== options.matchId ||
+            snapshot.gameState.match.status !== snapshotLifecycle ||
+            snapshot.gameState.match.rulesVersion !== rulesVersion ||
+            recovery.snapshotEventSequence !== recovery.eventSequence ||
+            snapshot.gameState.sequence !== recovery.eventSequence ||
+            recovery.events.length !== recovery.eventSequence) {
+            return failure(COORDINATOR_ERRORS.INVALID_RECOVERY_STATE);
+        }
+
+        if (!Array.isArray(snapshot.members) || !Array.isArray(snapshot.memberActorIds) ||
+            !Array.isArray(snapshot.readyActorIds) || !Array.isArray(snapshot.notReadyActorIds)) {
+            return failure(COORDINATOR_ERRORS.INVALID_RECOVERY_STATE);
+        }
+        const restoredMembers = new Map();
+        for (const membership of snapshot.members) {
+            if (!exactKeys(membership, ['actorId', 'ready']) ||
+                typeof membership.actorId !== 'string' || !membership.actorId.trim() ||
+                typeof membership.ready !== 'boolean' || restoredMembers.has(membership.actorId)) {
+                return failure(COORDINATOR_ERRORS.INVALID_RECOVERY_STATE);
+            }
+            restoredMembers.set(membership.actorId, {
+                sessionId: null,
+                ready: membership.ready
+            });
+        }
+        const roster = [...restoredMembers.keys()].sort();
+        const players = Object.keys(snapshot.gameState.players).sort();
+        const readyActors = [...restoredMembers]
+            .filter(([, membership]) => membership.ready)
+            .map(([actorId]) => actorId)
+            .sort();
+        const notReadyActors = [...restoredMembers]
+            .filter(([, membership]) => !membership.ready)
+            .map(([actorId]) => actorId)
+            .sort();
+        if (canonical([...snapshot.memberActorIds].sort()) !== canonical(roster) ||
+            canonical(players) !== canonical(roster) ||
+            canonical([...snapshot.readyActorIds].sort()) !== canonical(readyActors) ||
+            canonical([...snapshot.notReadyActorIds].sort()) !== canonical(notReadyActors) ||
+            new Set(snapshot.memberActorIds).size !== snapshot.memberActorIds.length ||
+            new Set(snapshot.readyActorIds).size !== snapshot.readyActorIds.length ||
+            new Set(snapshot.notReadyActorIds).size !== snapshot.notReadyActorIds.length) {
+            return failure(COORDINATOR_ERRORS.INVALID_RECOVERY_STATE);
+        }
+        if (['READY', 'COUNTDOWN', 'RUNNING', 'FINISHING', 'RESULT_LOCKED', 'SETTLING', 'SETTLED']
+            .includes(recovery.lifecycle) &&
+            (restoredMembers.size < 2 || [...restoredMembers.values()].some((member) => !member.ready))) {
+            return failure(COORDINATOR_ERRORS.INVALID_RECOVERY_STATE);
+        }
+        if (recovery.lifecycle === 'WAITING' && restoredMembers.size >= 2 &&
+            [...restoredMembers.values()].every((member) => member.ready)) {
+            return failure(COORDINATOR_ERRORS.INVALID_RECOVERY_STATE);
+        }
+
+        const eventIds = new Set();
+        for (let index = 0; index < recovery.events.length; index += 1) {
+            const event = recovery.events[index];
+            if (!validateGameEvent(event).ok || event.matchId !== options.matchId ||
+                event.sequence !== index + 1 || eventIds.has(event.eventId)) {
+                return failure(COORDINATOR_ERRORS.INVALID_RECOVERY_STATE);
+            }
+            eventIds.add(event.eventId);
+        }
+
+        if (lockedLifecycle !== recovery.resultLocked ||
+            (recovery.resultLocked && (!recovery.result || !recovery.resultVersion)) ||
+            (!recovery.resultLocked && (recovery.result || recovery.resultVersion)) ||
+            (recovery.result && (!validateMatchResult(recovery.result).ok ||
+                recovery.result.matchId !== options.matchId ||
+                recovery.result.rulesVersion !== rulesVersion ||
+                !validResultHash(recovery.result) ||
+                canonical(recovery.result.participants.map((participant) => participant.actorId).sort()) !==
+                    canonical(roster)))) {
+            return failure(COORDINATOR_ERRORS.INVALID_RECOVERY_STATE);
+        }
+
+        let restoredEngine;
+        try {
+            restoredEngine = createGameEngine(snapshot.gameState, rules, { clock });
+        } catch {
+            return failure(COORDINATOR_ERRORS.INVALID_RECOVERY_STATE);
+        }
+        engine = restoredEngine;
+        lifecycle = recovery.lifecycle;
+        result = recovery.result ? deepFreeze(clone(recovery.result)) : null;
+        resultInvalid = false;
+        restored = true;
+        for (const [actorId, membership] of restoredMembers) {
+            members.set(actorId, membership);
+        }
+        recordEvents(recovery.events);
+        return {
+            ok: true,
+            snapshot: snapshotValue(),
+            stateVersion: recovery.stateVersion,
+            eventSequence: recovery.eventSequence,
+            resultVersion: recovery.resultVersion,
+            resultLocked: recovery.resultLocked
+        };
+    }
+
+    function reassociatePlayerSession(matchId, actorId, sessionId) {
+        if (!engine) return missingMatch();
+        if (matchId !== options.matchId) return failure(COORDINATOR_ERRORS.MATCH_NOT_FOUND);
+        if (!restored) {
+            return failure(COORDINATOR_ERRORS.INVALID_LIFECYCLE, {
+                reason: 'MATCH_NOT_RESTORED'
+            });
+        }
+        if (typeof actorId !== 'string' || !actorId.trim() || actorId.length > 128) {
+            return failure(COORDINATOR_ERRORS.INVALID_COMMAND, { field: 'actorId' });
+        }
+        if (typeof sessionId !== 'string' || !sessionId.trim() || sessionId.length > 128) {
+            return failure(COORDINATOR_ERRORS.INVALID_COMMAND, { field: 'sessionId' });
+        }
+        const membership = members.get(actorId);
+        if (!membership) return failure(COORDINATOR_ERRORS.PLAYER_NOT_MEMBER);
+        const boundActor = sessions.get(sessionId);
+        if (boundActor && boundActor !== actorId) {
+            return failure(COORDINATOR_ERRORS.INVALID_COMMAND, {
+                reason: 'SESSION_ACTOR_MISMATCH'
+            });
+        }
+        for (const [memberId, member] of members) {
+            if (memberId !== actorId && member.sessionId === sessionId) {
+                return failure(COORDINATOR_ERRORS.INVALID_COMMAND, {
+                    reason: 'SESSION_ACTOR_MISMATCH'
+                });
+            }
+        }
+        if (membership.sessionId === sessionId) {
+            return { ok: true, reassociated: false, snapshot: snapshotValue() };
+        }
+        if (membership.sessionId) {
+            sessions.delete(membership.sessionId);
+            lastSequenceBySession.delete(membership.sessionId);
+        }
+        membership.sessionId = sessionId;
+        sessions.set(sessionId, actorId);
+        return { ok: true, reassociated: true, snapshot: snapshotValue() };
     }
 
     function syncReadinessLifecycle() {
@@ -393,6 +595,8 @@ function createMatchCoordinator(options = {}) {
 
     return Object.freeze({
         createMatch,
+        restoreFromPersistedState,
+        reassociatePlayerSession,
         addPlayer,
         removePlayer,
         markReady,
