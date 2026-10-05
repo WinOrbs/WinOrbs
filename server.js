@@ -2386,7 +2386,9 @@ class GameRoom {
     }
 
     getLeaderboard() {
-        return Object.values(this.players).sort((a, b) => b.bankedScore - a.bankedScore);
+        return Object.values(this.players).sort((a, b) =>
+            (b.bankedScore - a.bankedScore) ||
+            ((Number(b.eliminations) || 0) - (Number(a.eliminations) || 0)));
     }
 
     // ─ Versión RED del estado (recorta lo que el cliente no usa) ─────────────
@@ -2448,6 +2450,7 @@ class GameRoom {
                 maxShield: p.maxShield,
                 charge: p.charge,
                 bankedScore: p.bankedScore,
+                eliminations: p.eliminations,
                 isDead: p.isDead,
                 respawnTimer: p.respawnTimer,
                 canRespawn: p.canRespawn,

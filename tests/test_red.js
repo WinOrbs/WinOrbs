@@ -38,7 +38,7 @@ const p = {
     skin: { c1: '#fff', imagenUrl: 'https://x/y.png' },
     x: 1234.56, y: 2345.67, angle: 1.23456,
     hp: 80, maxHp: 100, shield: 20, maxShield: 50,
-    charge: 33, bankedScore: 99, radius: 22, speed: 5.5,
+    charge: 33, bankedScore: 99, eliminations: 4, radius: 22, speed: 5.5,
     inputs: { w: true, a: false, s: false, d: false, angle: 1.2 },
     isDead: false, respawnTimer: 0, canRespawn: false,
     currentWeapon: 1, ammo: 12, maxAmmo: 15, bombs: 2, hasOrbGun: false,
@@ -66,7 +66,7 @@ check('el UID de ejemplo no aparece en la salida',
 
 // ── 3) Campos que SÍ debe seguir viajando (los usa game.html) ──
 const NECESARIOS = ['id', 'nick', 'x', 'y', 'angle', 'radius', 'skin',
-    'hp', 'maxHp', 'shield', 'maxShield', 'charge', 'bankedScore',
+    'hp', 'maxHp', 'shield', 'maxShield', 'charge', 'bankedScore', 'eliminations',
     'isDead', 'respawnTimer', 'canRespawn', 'currentWeapon',
     'ammo', 'maxAmmo', 'ammo2', 'maxAmmo2', 'bombs', 'hasOrbGun',
     'isReloading', 'reloadTimer', 'isExtracting', 'dashProgress',
@@ -83,7 +83,27 @@ check('el recorte produce un objeto nuevo, no una referencia', j !== p);
 check('las coordenadas del recorte van redondeadas (menos bytes)',
     j.x === 1235 && j.y === 2346);
 
-// ── 5) Fase 2: simulación 60 Hz, emisión 30 Hz ──
+// ── 5) La clasificación mantiene puntos y desempata con eliminaciones ──
+const iniLeaderboard = server.indexOf('    getLeaderboard() {');
+const finLeaderboard = server.indexOf('\n    // ─ Versión RED', iniLeaderboard);
+assert.ok(iniLeaderboard > 0 && finLeaderboard > iniLeaderboard, 'No se encontró getLeaderboard()');
+const leaderboardBody = server.slice(iniLeaderboard, finLeaderboard);
+const getLeaderboard = new Function('return function () {' +
+    leaderboardBody.slice(leaderboardBody.indexOf('{') + 1, leaderboardBody.lastIndexOf('}')) +
+    '\n}')();
+const ranked = getLeaderboard.call({
+    players: {
+        scoreLeader: { bankedScore: 120, eliminations: 0 },
+        tieFewerKills: { bankedScore: 100, eliminations: 1 },
+        tieMoreKills: { bankedScore: 100, eliminations: 3 }
+    }
+});
+check('puntos asegurados siguen siendo el criterio principal',
+    ranked[0].bankedScore === 120);
+check('las eliminaciones resuelven empates de puntos',
+    ranked[1].eliminations === 3 && ranked[2].eliminations === 1);
+
+// ── 6) Fase 2: simulación 60 Hz, emisión 30 Hz ──
 check('la constante de emisión existe', /const TICK_EMITIR_CADA = \d+;/.test(server));
 check('update() se sigue llamando ANTES de decidir si se emite (simulación a 60 Hz)',
     /this\.update\(\);[\s\S]{0,400}this\.tick\+\+/.test(server));
@@ -104,12 +124,12 @@ check('la emisión va por debajo de la simulación (30 Hz < 60 Hz)',
     /this\.update\(\);[\s\S]*this\.tick\+\+;[\s\S]*volatile\.emit\('gameState'/.test(cuerpoLoop));
 check('TICK_EMITIR_CADA divide 2 → 30 Hz de emisión', /TICK_EMITIR_CADA = 2;/.test(server));
 
-// ── 6) El cliente no interpola: la nota de riesgo está documentada ──
+// ── 7) El cliente no interpola: la nota de riesgo está documentada ──
 const dibujaCrudo = /ctx\.arc\(p\.x, p\.y/.test(game);
 check('el cliente dibuja p.x/p.y sin interpolar (riesgo 30 Hz asumido a conciencia)',
     dibujaCrudo && /NO interpola posiciones/.test(server));
 
-// ── 7) roomConfig: la geometría viaja una vez, no en cada gameState ──
+// ── 8) roomConfig: la geometría viaja una vez, no en cada gameState ──
 // El mapa NO es estático (muros/obstáculos se destruyen, tiendas se reubican),
 // así que lo que se separa es la GEOMETRÍA; el hp sigue en cada gameState.
 const cuerpoGetState = server.slice(server.indexOf('    getState() {'));
@@ -144,12 +164,30 @@ check('las tiendas siguen viajando completas en gameState (se reubican)',
 // Cliente: combina geometría + hp, y tiene salida de emergencia.
 check('el cliente combina roomConfig con el hp del frame (combinarMapa)',
     /function combinarMapa\(/.test(game) && /obstaculosHp/.test(game) && /murosHp/.test(game));
+const iniCombinar = game.indexOf('        function combinarMapa(');
+const finCombinar = game.indexOf('\n        // Caché de imágenes', iniCombinar);
+assert.ok(iniCombinar > 0 && finCombinar > iniCombinar, 'No se encontró combinarMapa()');
+const combinarBody = game.slice(iniCombinar, finCombinar);
+const combinarMapa = new Function('return function (geo, hp) {' +
+    combinarBody.slice(combinarBody.indexOf('{') + 1, combinarBody.lastIndexOf('}')) +
+    '\n}')();
+const reconciledMap = combinarMapa([
+    { id: 'alive', x: 10, y: 20, w: 30, h: 40, maxHp: 50 },
+    { id: 'destroyed', x: 50, y: 60, w: 30, h: 40, maxHp: 50 }
+], { alive: 25 });
+check('omitir el id de un objeto en el estado vivo lo elimina del render',
+    reconciledMap.length === 1 && reconciledMap[0].hp === 25);
 check('el cliente dibuja los muros/obstáculos desde la geometría combinada',
     /muros\.forEach\(wl =>/.test(game) && /obstaculos\.forEach\(obs =>/.test(game));
 check('si falta roomConfig el render cae a los arrays del gameState (no se rompe)',
     /cfgOk\s*\?.*combinarMapa/.test(game) && /\(gameState\.obstacles \|\| \[\]\)/.test(game));
 check('el cliente pide la config como mucho una vez (sin bucle)',
     /configPedida = true/.test(game));
+check('el HUD muestra las eliminaciones recibidas en gameState',
+    /hud-kills/.test(game) && /eliminations:\s*p\.eliminations/.test(server));
+check('el resultado final incluye podio y clasificación con puntuación y kills',
+    /id="match-podium"/.test(game) && /id="results-list"/.test(game) &&
+    /renderFinalStandings\(ranking\)/.test(game) && /player\.eliminations/.test(game));
 
 console.log('\n' + (fallos === 0 ? '✔ Todo correcto' : '✖ ' + fallos + ' fallo(s)'));
 process.exit(fallos === 0 ? 0 : 1);

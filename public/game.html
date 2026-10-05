@@ -703,6 +703,166 @@
             background: linear-gradient(90deg, transparent, var(--green), transparent);
         }
 
+        .death-card.final-results {
+            width: min(880px, 100%);
+            max-height: calc(100vh - 32px);
+            max-height: calc(100dvh - 32px);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            padding: clamp(16px, 3vw, 30px);
+            border-color: rgba(245, 179, 1, 0.55);
+        }
+
+        .death-card.final-results::before {
+            background: linear-gradient(90deg, transparent, var(--gold), transparent);
+        }
+
+        .death-card.final-results.win-card {
+            border-color: rgba(52, 211, 153, 0.55);
+        }
+
+        .death-card.final-results .ov-title {
+            font-size: clamp(18px, 3vw, 26px) !important;
+        }
+
+        .match-results {
+            display: none;
+            margin-top: 18px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+        }
+
+        .match-results.visible {
+            display: block;
+        }
+
+        .match-podium {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1fr);
+            align-items: end;
+            gap: clamp(6px, 2vw, 16px);
+            min-height: 210px;
+            max-width: 620px;
+            margin: 0 auto;
+        }
+
+        .podium-place {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+        }
+
+        .podium-place.second { order: 1; }
+        .podium-place.first { order: 2; }
+        .podium-place.third { order: 3; }
+
+        .podium-player {
+            min-width: 0;
+            padding: 9px 5px;
+            background: rgba(148, 163, 184, 0.1);
+            border: 1px solid var(--border);
+            overflow-wrap: anywhere;
+        }
+
+        .podium-place.first .podium-player {
+            padding: 13px 7px;
+            background: rgba(245, 179, 1, 0.12);
+            border-color: rgba(245, 179, 1, 0.6);
+            box-shadow: 0 0 24px rgba(245, 179, 1, 0.12);
+        }
+
+        .podium-place.third .podium-player {
+            padding: 7px 4px;
+        }
+
+        .podium-rank,
+        .podium-nick,
+        .podium-stats {
+            display: block;
+        }
+
+        .podium-rank {
+            color: var(--gold);
+            font-family: var(--font-display);
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .podium-place.first .podium-rank { font-size: 15px; }
+        .podium-place.third .podium-rank { font-size: 10px; }
+
+        .podium-nick {
+            margin-top: 5px;
+            font-size: clamp(10px, 2vw, 14px);
+            font-weight: 700;
+            line-height: 1.25;
+        }
+
+        .podium-stats {
+            margin-top: 6px;
+            color: var(--muted);
+            font-size: clamp(8px, 1.4vw, 10px);
+            line-height: 1.5;
+        }
+
+        .podium-step {
+            display: grid;
+            place-items: center;
+            margin-top: 5px;
+            background: rgba(56, 189, 248, 0.16);
+            border: 1px solid rgba(56, 189, 248, 0.4);
+            color: #bae6fd;
+            font-family: var(--font-display);
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .podium-place.second .podium-step { height: 48px; }
+        .podium-place.first .podium-step {
+            height: 72px;
+            background: rgba(245, 179, 1, 0.2);
+            border-color: rgba(245, 179, 1, 0.55);
+            color: #fde68a;
+        }
+        .podium-place.third .podium-step { height: 34px; }
+
+        .results-list-wrap {
+            max-width: 620px;
+            margin: 16px auto 0;
+            text-align: left;
+        }
+
+        .results-list-wrap h3 {
+            margin-bottom: 7px;
+            color: var(--muted);
+            font-size: 11px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .results-list {
+            max-height: 150px;
+            overflow-y: auto;
+            list-style: none;
+        }
+
+        .results-list li {
+            display: grid;
+            grid-template-columns: 32px minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 4px;
+            border-top: 1px solid rgba(148, 163, 184, 0.1);
+            font-size: 12px;
+        }
+
+        .results-list li.you { color: var(--primary); }
+        .result-rank { color: var(--muted); }
+        .result-player { min-width: 0; overflow-wrap: anywhere; }
+        .result-stats { color: var(--muted); white-space: nowrap; font-size: 10px; }
+
         .btn-respawn {
             background: linear-gradient(135deg, #34d399, #10b981);
             color: #032216;
@@ -2033,6 +2193,7 @@
                 top: calc(6px + env(safe-area-inset-top));
                 right: calc(8px + env(safe-area-inset-right));
                 left: auto;
+                width: 110px;
                 gap: 5px;
             }
 
@@ -2055,6 +2216,7 @@
                 right: auto;
                 transform: none;
                 transform-origin: top left;
+                width: 186px;
                 max-width: calc(100vw - 142px - env(safe-area-inset-left) - env(safe-area-inset-right));
                 padding: 3px;
             }
@@ -2079,11 +2241,33 @@
             }
 
             .hud-item.hp {
-                min-width: 78px;
+                min-width: 0;
+                padding-right: 4px;
+                padding-left: 4px;
+            }
+
+            .hud-item.timer .label,
+            .hud-item.hp .label {
+                gap: 0;
+                font-size: 0;
+            }
+
+            .hud-item.kills {
+                min-width: 32px;
+                padding-right: 4px;
+                padding-left: 4px;
+            }
+
+            .hud-item.kills .label {
+                font-size: 5px;
+            }
+
+            .hud-item.kills b {
+                font-size: 8px !important;
             }
 
             .status-bars {
-                width: 66px;
+                width: 56px;
                 margin-top: 0;
             }
 
@@ -2099,7 +2283,12 @@
             }
 
             #hud-shield-text {
-                font-size: 6px;
+                display: none;
+            }
+
+            .kbd,
+            .weapon-hud small {
+                display: none !important;
             }
 
             #minimap {
@@ -2237,8 +2426,21 @@
             .touch-btn.shoot {
                 width: 52px;
                 height: 52px;
-                justify-self: center;
+                grid-column: 3;
+                grid-row: 2;
+                justify-self: end;
                 align-self: center;
+            }
+
+            #btn-reload-mobile {
+                grid-column: 1;
+                grid-row: 2;
+                justify-self: start;
+            }
+
+            .touch-btn.bomb {
+                grid-column: 2;
+                grid-row: 2;
             }
 
             .touch-btn.auto {
@@ -2259,31 +2461,31 @@
             .zone-warning,
             .announcement-banner,
             .solo-banner {
-                top: calc(104px + env(safe-area-inset-top));
-                left: 50%;
-                right: auto;
-                width: max-content;
-                max-width: min(76vw, 420px);
-                padding: 5px 9px !important;
-                font-size: 6px !important;
-                line-height: 1.45;
+                top: calc(7px + env(safe-area-inset-top));
+                left: calc(194px + env(safe-area-inset-left));
+                right: calc(126px + env(safe-area-inset-right));
+                width: auto;
+                max-width: none;
+                padding: 3px 5px !important;
+                font-size: 5px !important;
+                line-height: 1.35;
                 letter-spacing: 0 !important;
                 text-align: center;
                 white-space: normal;
                 overflow-wrap: anywhere;
-                transform: translateX(-50%);
+                transform: none;
             }
 
             .zone-warning {
-                top: calc(132px + env(safe-area-inset-top));
+                top: calc(23px + env(safe-area-inset-top));
             }
 
             .announcement-banner {
-                top: calc(160px + env(safe-area-inset-top));
+                top: calc(39px + env(safe-area-inset-top));
             }
 
             .solo-banner {
-                top: calc(104px + env(safe-area-inset-top));
+                top: calc(7px + env(safe-area-inset-top));
             }
         }
 
@@ -2314,8 +2516,21 @@
             .touch-btn.shoot {
                 width: 48px;
                 height: 48px;
-                justify-self: center;
+                grid-column: 3;
+                grid-row: 2;
+                justify-self: end;
                 align-self: center;
+            }
+
+            #btn-reload-mobile {
+                grid-column: 1;
+                grid-row: 2;
+                justify-self: start;
+            }
+
+            .touch-btn.bomb {
+                grid-column: 2;
+                grid-row: 2;
             }
 
             .touch-btn.auto {
@@ -2336,6 +2551,76 @@
 
             .leaderboard {
                 width: 124px;
+            }
+        }
+
+        @media (pointer: coarse) {
+            #death-screen {
+                padding: calc(10px + env(safe-area-inset-top))
+                    calc(10px + env(safe-area-inset-right))
+                    calc(10px + env(safe-area-inset-bottom))
+                    calc(10px + env(safe-area-inset-left));
+            }
+
+            .death-card.final-results {
+                width: 100%;
+                padding: 14px 10px;
+                border-radius: 0;
+            }
+
+            .match-results {
+                margin-top: 12px;
+                padding-top: 10px;
+            }
+
+            .match-podium {
+                min-height: 170px;
+                gap: 4px;
+            }
+
+            .podium-player,
+            .podium-place.first .podium-player,
+            .podium-place.third .podium-player {
+                padding: 7px 3px;
+            }
+
+            .podium-place.first .podium-rank { font-size: 11px; }
+            .podium-place.second .podium-rank { font-size: 9px; }
+            .podium-place.third .podium-rank { font-size: 8px; }
+
+            .podium-nick {
+                font-size: 10px;
+                margin-top: 3px;
+            }
+
+            .podium-stats {
+                font-size: 7px;
+                overflow-wrap: anywhere;
+            }
+
+            .podium-place.second .podium-step { height: 38px; }
+            .podium-place.first .podium-step { height: 58px; }
+            .podium-place.third .podium-step { height: 28px; }
+
+            .results-list-wrap {
+                margin-top: 10px;
+            }
+
+            .results-list li {
+                grid-template-columns: 25px minmax(0, 1fr);
+                gap: 4px 6px;
+                padding: 5px 2px;
+                font-size: 10px;
+            }
+
+            .result-stats {
+                grid-column: 2;
+                font-size: 9px;
+            }
+
+            .death-card.final-results .btn-respawn {
+                margin-top: 12px;
+                padding: 11px 14px;
             }
         }
     </style>
@@ -2448,6 +2733,10 @@
                 </div>
             </div>
             <small id="hud-shield-text">ESCUDO: 0%</small>
+        </div>
+        <div class="hud-item kills">
+            <span class="label">Kills</span>
+            <b id="hud-kills">0</b>
         </div>
         <div class="hud-item charge">
             <span class="label"><img class="pix" src="assets/game/ui-gem.png" alt="">Gemas en mano · en riesgo</span>
@@ -2629,6 +2918,13 @@
         <div class="death-card" id="death-card-container">
             <div class="ov-title" style="color: var(--red); font-size: 26px;" id="death-title">NÚCLEO DESTRUIDO</div>
             <p class="ov-text" id="death-subtext">Perdiste todas las gemas no aseguradas.</p>
+            <div class="match-results" id="match-results">
+                <div class="match-podium" id="match-podium"></div>
+                <div class="results-list-wrap" id="results-list-wrap" hidden>
+                    <h3>Clasificación</h3>
+                    <ol class="results-list" id="results-list"></ol>
+                </div>
+            </div>
             <button class="btn-respawn" id="btn-respawn-action" onclick="respawnPlayer()">DESPLEGAR NUEVO ORBE
                 🔄</button>
         </div>
@@ -3556,23 +3852,23 @@
         // Une geometría (roomConfig) + hp actual (gameState) en la lista de
         // obstáculos y muros lista para dibujar.
         //
-        // - Si hay roomConfig: la geometría es la de roomConfig y el hp el de
-        //   este frame. Si el hp aún no llegó, se asume intacto (maxHp) para no
-        //   hacer parpadear un muro entero el primer instante.
+        // - Si hay roomConfig y estado hp: la geometría es estática y el mapa hp
+        //   enumera los objetos vivos. Un id ausente corresponde a un objeto
+        //   destruido; sin mapa hp todavía se conserva la geometría intacta.
         // - Si NO hay roomConfig (servidor en reversión, o el paquete se perdió):
         //   se usa el array completo que viene en gameState. El juego sigue
         //   funcionando igual; por eso esto no puede romperse en silencio.
         function combinarMapa(geo, hp) {
             if (!geo || !geo.length) return [];
             return geo.map(g => {
-                const st = hp && hp[g.id];
-                const vivo = st === undefined ? true : st > 0;
+                const tieneEstado = hp && Object.prototype.hasOwnProperty.call(hp, g.id);
+                const st = tieneEstado ? hp[g.id] : undefined;
+                const vivo = !hp || (tieneEstado && st > 0);
                 if (!vivo) return null;
                 return {
                     x: g.x, y: g.y, w: g.w, h: g.h, tipo: g.tipo,
-                    // maxHp es geometría (no cambia): lo trae roomConfig. El hp
-                    // es lo único volátil. Si aún no llegó, se dibuja intacto
-                    // para no hacer parpadear todo el mapa el primer frame.
+                    // El mapa de hp enumera los objetos vivos; si falta un id,
+                    // el servidor ya lo retiró del mapa.
                     hp: st === undefined ? g.maxHp : st,
                     maxHp: g.maxHp
                 };
@@ -4118,6 +4414,8 @@
 
             isDead = me.isDead;
             document.body.classList.toggle("dead", !!isDead);
+            document.getElementById("hud-kills").innerText =
+                String(Math.max(0, Math.floor(Number(me.eliminations) || 0)));
 
             // Overlay de Lobby
             const lobbyOverlay = document.getElementById("lobby-overlay");
@@ -4369,7 +4667,9 @@
             // Fuente única de la geometría del mapa para el render. Si hay roomConfig se
             // combina con el hp del frame; si no (reversión o paquete perdido) se
             // usan los arrays completos del propio gameState.
-            const cfgOk = roomConfig && roomConfig.obstacles;
+            const cfgOk = roomConfig && Array.isArray(roomConfig.obstacles) &&
+                (gameState.configVersion === undefined || roomConfig.v === undefined ||
+                    gameState.configVersion === roomConfig.v);
             const obstaculos = cfgOk
                 ? combinarMapa(roomConfig.obstacles, gameState.obstaculosHp)
                 : (gameState.obstacles || []);
@@ -4926,8 +5226,71 @@
             });
         }
 
+        function renderFinalStandings(ranking) {
+            const resultsEl = document.getElementById("match-results");
+            const podiumEl = document.getElementById("match-podium");
+            const listWrap = document.getElementById("results-list-wrap");
+            const listEl = document.getElementById("results-list");
+            podiumEl.replaceChildren();
+            listEl.replaceChildren();
+
+            const appendStat = (container, player) => {
+                const score = Math.max(0, Number(player.bankedScore) || 0);
+                const kills = Math.max(0, Math.floor(Number(player.eliminations) || 0));
+                container.textContent = `${score} pts asegurados · ${kills} kills`;
+            };
+
+            [
+                { player: ranking[1], position: 2, className: "second" },
+                { player: ranking[0], position: 1, className: "first" },
+                { player: ranking[2], position: 3, className: "third" }
+            ].forEach(({ player, position, className }) => {
+                if (!player) return;
+                const place = document.createElement("article");
+                place.className = `podium-place ${className}`;
+
+                const summary = document.createElement("div");
+                summary.className = "podium-player";
+                const rank = document.createElement("span");
+                rank.className = "podium-rank";
+                rank.textContent = position === 1 ? "CAMPEÓN" : `${position}º LUGAR`;
+                const nick = document.createElement("span");
+                nick.className = "podium-nick";
+                nick.textContent = String(player.nick || "Jugador");
+                const stats = document.createElement("span");
+                stats.className = "podium-stats";
+                appendStat(stats, player);
+                summary.append(rank, nick, stats);
+
+                const step = document.createElement("div");
+                step.className = "podium-step";
+                step.textContent = `${position}º`;
+                place.append(summary, step);
+                podiumEl.appendChild(place);
+            });
+
+            ranking.slice(3).forEach((player, index) => {
+                const row = document.createElement("li");
+                if ((player.id || player.playerId) === myPlayerId) row.classList.add("you");
+                const position = document.createElement("span");
+                position.className = "result-rank";
+                position.textContent = `${index + 4}º`;
+                const nick = document.createElement("span");
+                nick.className = "result-player";
+                nick.textContent = String(player.nick || "Jugador");
+                const stats = document.createElement("span");
+                stats.className = "result-stats";
+                appendStat(stats, player);
+                row.append(position, nick, stats);
+                listEl.appendChild(row);
+            });
+
+            listWrap.hidden = ranking.length <= 3;
+            resultsEl.classList.toggle("visible", ranking.length > 0);
+        }
+
         function finalizarJuego(ranking, data) {
-            const posicionJugador = ranking.findIndex(e => e.id === myPlayerId) + 1;
+            const posicionJugador = ranking.findIndex(e => (e.id || e.playerId) === myPlayerId) + 1;
             const primerLugar = ranking[0];
 
             const titleEl = document.getElementById("death-title");
@@ -4940,7 +5303,12 @@
                 ? data.premioNeto
                 : +(ranking.length * entryFee * 0.8).toFixed(2));
 
-            if (data && data.abandono && posicionJugador === 1) {
+            if (!primerLugar) {
+                titleEl.innerText = "PARTIDA FINALIZADA";
+                titleEl.style.color = "#f5b301";
+                subtextEl.innerText = "La partida terminó sin resultados de clasificación.";
+                cardEl.className = "death-card";
+            } else if (data && data.abandono && posicionJugador === 1) {
                 titleEl.innerText = "¡VICTORIA POR ABANDONO! 🏆";
                 titleEl.style.color = "#22c55e";
                 subtextEl.innerText = `Los demás mercenarios abandonaron la sala. Reclamas el bote neto de $${neto.toFixed(2)} USD (comisión del 20% ya descontada) con ${primerLugar.bankedScore} pts asegurados.`;
@@ -4957,7 +5325,11 @@
                 cardEl.className = "death-card";
             }
 
-            document.getElementById("btn-respawn-action").innerText = "VOLVER AL LOBBY 🔄";
+            cardEl.classList.add("final-results");
+            renderFinalStandings(ranking);
+            const returnButton = document.getElementById("btn-respawn-action");
+            returnButton.innerText = "VOLVER AL LOBBY 🔄";
+            returnButton.disabled = false;
             document.getElementById("death-screen").style.display = "flex";
         }
 
