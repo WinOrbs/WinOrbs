@@ -439,16 +439,16 @@
             backdrop-filter: blur(16px) saturate(120%);
             -webkit-backdrop-filter: blur(16px) saturate(120%);
             border: 1px solid var(--border);
-            padding: 13px 14px;
+            padding: 10px;
             border-radius: var(--radius);
-            width: 224px;
+            width: 200px;
             pointer-events: none;
             z-index: 5;
             box-shadow: var(--shadow);
         }
 
         .leaderboard h3 {
-            margin: 0 0 10px 0;
+            margin: 0 0 7px 0;
             font-size: 11px;
             color: var(--primary);
             text-transform: uppercase;
@@ -458,7 +458,7 @@
             display: flex;
             align-items: center;
             gap: 7px;
-            padding-bottom: 8px;
+            padding-bottom: 6px;
             border-bottom: 1px solid var(--border);
         }
 
@@ -480,8 +480,8 @@
             counter-increment: rank;
             display: flex;
             align-items: center;
-            gap: 8px;
-            padding: 4px 0;
+            gap: 6px;
+            padding: 3px 0;
             line-height: 1.35;
         }
 
@@ -1069,6 +1069,25 @@
             transition: opacity 0.45s ease;
         }
 
+        .intro-card {
+            width: min(620px, calc(100vw - 32px - env(safe-area-inset-left) - env(safe-area-inset-right)));
+            max-height: calc(100vh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+            padding: clamp(16px, 4vw, 30px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: clamp(8px, 2vh, 14px);
+            overflow: hidden;
+            border: 1px solid var(--border-strong);
+            background: rgba(8, 14, 27, 0.92);
+            box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65), 0 0 50px rgba(56, 189, 248, 0.08);
+        }
+
+        .intro-card .brand-badge {
+            margin-bottom: 0;
+        }
+
         #intro-overlay.oculto {
             opacity: 0;
             pointer-events: none;
@@ -1076,16 +1095,16 @@
 
         #intro-canvas {
             display: block;
-            width: min(92vw, 900px);
-            height: 190px;
-            max-height: 46vh;
+            width: 100%;
+            height: clamp(96px, 22vh, 190px);
+            max-height: 30vh;
         }
 
         .intro-pista {
-            width: min(92vw, 620px);
+            width: 100%;
             display: flex;
             flex-direction: column;
-            gap: 7px;
+            gap: 6px;
         }
 
         .intro-barra {
@@ -1126,6 +1145,43 @@
             font-size: 12.5px;
             color: var(--muted);
             letter-spacing: 0.4px;
+        }
+
+        @media (max-width: 560px) {
+            #intro-overlay {
+                padding: calc(12px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right))
+                    calc(12px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left));
+            }
+
+            .intro-card .wordmark {
+                font-size: clamp(18px, 6vw, 26px) !important;
+            }
+
+            #intro-pct {
+                font-size: 15px;
+            }
+
+            #intro-paso {
+                font-size: 11px;
+                text-align: right;
+            }
+        }
+
+        @media (max-height: 420px) {
+            .intro-card {
+                padding: 10px 18px;
+                gap: 6px;
+            }
+
+            .intro-card .brand-mark {
+                width: 26px;
+                height: 26px;
+            }
+
+            #intro-canvas {
+                height: 88px;
+                max-height: 28vh;
+            }
         }
 
         /* ============ Estado de conexion ============ */
@@ -1969,6 +2025,284 @@
             .hud-item.timer b { font-size: 12px !important; }
             .leaderboard li { font-size: 6px !important; }
         }
+
+        /* HUD tactil: reserva el borde superior para estado y acciones, y
+           mantiene mapa, clasificacion y controles en zonas independientes. */
+        @media (pointer: coarse) {
+            #top-actions {
+                top: calc(6px + env(safe-area-inset-top));
+                right: calc(8px + env(safe-area-inset-right));
+                left: auto;
+                gap: 5px;
+            }
+
+            #top-actions .top-btn {
+                min-height: 44px;
+                height: 44px;
+            }
+
+            #top-actions .btn-exit {
+                padding: 0 9px;
+            }
+
+            #btn-fullscreen {
+                width: 42px;
+            }
+
+            .hud {
+                top: calc(6px + env(safe-area-inset-top));
+                left: calc(8px + env(safe-area-inset-left));
+                right: auto;
+                transform: none;
+                transform-origin: top left;
+                max-width: calc(100vw - 142px - env(safe-area-inset-left) - env(safe-area-inset-right));
+                padding: 3px;
+            }
+
+            .hud-item {
+                padding: 5px 7px;
+                gap: 2px;
+            }
+
+            .hud-item .label {
+                font-size: 6px;
+                letter-spacing: 0;
+            }
+
+            .hud-item .label .pix {
+                width: 10px;
+                height: 10px;
+            }
+
+            .hud-item.timer b {
+                font-size: 10px !important;
+            }
+
+            .hud-item.hp {
+                min-width: 78px;
+            }
+
+            .status-bars {
+                width: 66px;
+                margin-top: 0;
+            }
+
+            .hud,
+            .weapon-hud,
+            .leaderboard {
+                pointer-events: auto;
+            }
+
+            .bar-container {
+                height: 6px;
+                margin-bottom: 2px;
+            }
+
+            #hud-shield-text {
+                font-size: 6px;
+            }
+
+            #minimap {
+                top: calc(54px + env(safe-area-inset-top));
+                right: calc(8px + env(safe-area-inset-right));
+                bottom: auto;
+                width: clamp(64px, 17vw, 84px);
+                height: clamp(64px, 17vw, 84px);
+            }
+
+            .leaderboard {
+                top: calc(58px + env(safe-area-inset-top));
+                left: calc(8px + env(safe-area-inset-left));
+                right: auto;
+                width: clamp(94px, 27vw, 116px);
+                max-height: min(28vh, 124px);
+                padding: 5px 6px;
+                overflow: hidden;
+            }
+
+            .leaderboard h3 {
+                gap: 4px;
+                margin-bottom: 3px;
+                padding-bottom: 3px;
+                font-size: 0 !important;
+            }
+
+            .leaderboard h3::after {
+                content: "TOP";
+                font-size: 6px;
+                color: #fde047;
+            }
+
+            .leaderboard h3 .pix {
+                width: 10px;
+                height: 10px;
+            }
+
+            .leaderboard ol {
+                font-size: 8px !important;
+            }
+
+            .leaderboard li {
+                gap: 5px;
+                padding: 1px 0;
+                font-size: 7px !important;
+                line-height: 1.5 !important;
+                white-space: nowrap;
+                overflow: hidden;
+            }
+
+            .leaderboard li::before {
+                width: 14px;
+                height: 14px;
+                font-size: 6px;
+            }
+
+            .leaderboard li:nth-child(n+4) {
+                display: none;
+            }
+
+            .weapon-hud {
+                left: calc(8px + env(safe-area-inset-left));
+                bottom: calc(8px + env(safe-area-inset-bottom));
+                width: 150px;
+                min-width: 0;
+                padding: 4px 6px;
+                font-size: 8px;
+                transform: none;
+            }
+
+            .weapon-hud .row {
+                gap: 5px;
+                padding: 1px 0;
+            }
+
+            .weapon-hud .row:nth-child(1),
+            .weapon-hud .row:nth-child(4) {
+                display: none;
+            }
+
+            .weapon-hud .row+.row {
+                margin-top: 1px;
+                padding-top: 2px;
+            }
+
+            .weapon-hud .ic {
+                width: 16px;
+                height: 16px;
+            }
+
+            .weapon-hud .ic svg {
+                width: 11px;
+                height: 11px;
+            }
+
+            .weapon-hud .k {
+                min-width: 34px;
+                font-size: 7px;
+            }
+
+            .weapon-hud .k .pix {
+                width: 9px;
+                height: 9px;
+            }
+
+            .weapon-hud small {
+                font-size: 6px;
+            }
+
+            .touch-controls {
+                display: none;
+                position: absolute;
+                right: calc(8px + env(safe-area-inset-right));
+                bottom: calc(8px + env(safe-area-inset-bottom));
+                width: 148px;
+                grid-template-columns: repeat(3, 44px);
+                grid-auto-rows: 44px;
+                gap: 5px;
+                justify-content: end;
+                align-items: center;
+            }
+
+            .touch-controls.active {
+                display: grid;
+            }
+
+            .touch-btn,
+            .touch-btn.small {
+                width: 44px;
+                height: 44px;
+                touch-action: none;
+            }
+
+            .touch-btn.shoot {
+                width: 52px;
+                height: 52px;
+            }
+
+            .touch-btn.auto {
+                width: 44px;
+                height: 30px;
+                padding: 0 4px;
+                font-size: 7px;
+                letter-spacing: 0;
+            }
+
+            .joystick-container {
+                width: 136px;
+                height: 136px;
+                pointer-events: none;
+            }
+        }
+
+        #gameCanvas {
+            touch-action: none;
+        }
+
+        @media (pointer: coarse) and (max-height: 480px) {
+            .leaderboard {
+                max-height: 25vh;
+            }
+
+            .touch-controls {
+                right: calc(6px + env(safe-area-inset-right));
+                bottom: calc(6px + env(safe-area-inset-bottom));
+                grid-template-columns: repeat(3, 40px);
+                grid-auto-rows: 40px;
+                gap: 4px;
+                width: 132px;
+            }
+
+            .touch-btn,
+            .touch-btn.small {
+                width: 40px;
+                height: 40px;
+            }
+
+            .touch-btn.shoot {
+                width: 48px;
+                height: 48px;
+            }
+
+            .touch-btn.auto {
+                width: 40px;
+                height: 28px;
+            }
+
+            .weapon-hud {
+                bottom: calc(6px + env(safe-area-inset-bottom));
+            }
+        }
+
+        @media (pointer: coarse) and (min-width: 720px) {
+            #minimap {
+                width: 88px;
+                height: 88px;
+            }
+
+            .leaderboard {
+                width: 124px;
+            }
+        }
     </style>
 </head>
 
@@ -2011,23 +2345,25 @@
 
     <!-- Intro de carga: barra de % + orbe que come puntos y dispara -->
     <div id="intro-overlay">
-        <div class="brand-badge">
-            <div class="brand-mark">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                    <circle cx="12" cy="12" r="9"></circle>
-                    <circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none"></circle>
-                </svg>
+        <div class="intro-card">
+            <div class="brand-badge">
+                <div class="brand-mark">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <circle cx="12" cy="12" r="9"></circle>
+                        <circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none"></circle>
+                    </svg>
+                </div>
+                <span class="wordmark" style="font-size: 30px;">WinOrbs</span>
             </div>
-            <span class="wordmark" style="font-size: 30px;">WinOrbs</span>
-        </div>
-        <canvas id="intro-canvas"></canvas>
-        <div class="intro-pista">
-            <div class="intro-barra">
-                <div id="intro-fill"></div>
-            </div>
-            <div class="intro-meta">
-                <span id="intro-pct">0%</span>
-                <span id="intro-paso">Preparando arena…</span>
+            <canvas id="intro-canvas"></canvas>
+            <div class="intro-pista">
+                <div class="intro-barra">
+                    <div id="intro-fill"></div>
+                </div>
+                <div class="intro-meta">
+                    <span id="intro-pct">0%</span>
+                    <span id="intro-paso">Preparando arena…</span>
+                </div>
             </div>
         </div>
     </div>
@@ -2302,13 +2638,13 @@
         <div class="joystick-handle" id="aim-handle"></div>
     </div>
     <div class="touch-controls" id="touch-controls">
-        <button class="touch-btn dash" id="btn-dash-mobile" onmousedown="mobileDash()" ontouchstart="mobileDash(event)"
+        <button class="touch-btn dash" id="btn-dash-mobile" onclick="mobileDash(event)"
             style="order: 0;" aria-label="Dash">
             <svg viewBox="0 0 24 24" fill="currentColor">
                 <path d="M13 2 4.5 13H11l-1 9 8.5-11H12z"></path>
             </svg>
         </button>
-        <button class="touch-btn weapon" onmousedown="toggleWeaponMobile()" ontouchstart="toggleWeaponMobile(event)"
+        <button class="touch-btn weapon" onclick="toggleWeaponMobile(event)"
             style="order: 1;" aria-label="Cambiar arma">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                 stroke-linejoin="round">
@@ -2318,7 +2654,7 @@
                 <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
             </svg>
         </button>
-        <button class="touch-btn shop" onmousedown="intentarAbrirTienda()" ontouchstart="intentarAbrirTienda(event)"
+        <button class="touch-btn shop" onclick="intentarAbrirTienda(event)"
             style="order: 2;" aria-label="Tienda">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                 stroke-linejoin="round">
@@ -2327,9 +2663,9 @@
                 <path d="M16 10a4 4 0 0 1-8 0"></path>
             </svg>
         </button>
-        <button class="touch-btn shoot" onmousedown="mobileShoot(event)" onmouseup="mobileShootStop(event)"
-            onmouseleave="mobileShootStop(event)" ontouchstart="mobileShoot(event)" ontouchend="mobileShootStop(event)"
-            ontouchcancel="mobileShootStop(event)" style="order: 6;" aria-label="Disparar">
+        <button class="touch-btn shoot" onpointerdown="mobileShoot(event)" onpointerup="mobileShootStop(event)"
+            onpointercancel="mobileShootStop(event)" onlostpointercapture="mobileShootStop(event)"
+            style="order: 3;" aria-label="Disparar">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                 stroke-linejoin="round">
                 <circle cx="12" cy="12" r="9"></circle>
@@ -2341,16 +2677,16 @@
             </svg>
             <span class="btn-badge" id="shoot-ammo">15</span>
         </button>
-        <button class="touch-btn small reload" id="btn-reload-mobile" onmousedown="mobileReload()"
-            ontouchstart="mobileReload(event)" style="order: 3;" aria-label="Recargar">
+        <button class="touch-btn small reload" id="btn-reload-mobile" onclick="mobileReload(event)"
+            style="order: 4;" aria-label="Recargar">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                 stroke-linejoin="round">
                 <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
                 <path d="M21 3v6h-6"></path>
             </svg>
         </button>
-        <button class="touch-btn small bomb" onmousedown="mobileBomb()" ontouchstart="mobileBomb(event)"
-            style="order: 4;" aria-label="Lanzar bomba">
+        <button class="touch-btn small bomb" onclick="mobileBomb(event)"
+            style="order: 5;" aria-label="Lanzar bomba">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                 stroke-linejoin="round">
                 <circle cx="12" cy="14" r="7"></circle>
@@ -2358,8 +2694,8 @@
                 <path d="M14 3h-4"></path>
             </svg>
         </button>
-        <button class="touch-btn auto" id="btn-autofire" onmousedown="toggleAutoFire()"
-            ontouchstart="toggleAutoFire(event)" style="order: 5;" aria-label="Disparo automatico">AUTO</button>
+        <button class="touch-btn auto" id="btn-autofire" onclick="toggleAutoFire(event)"
+            style="order: 6;" aria-label="Disparo automatico">AUTO</button>
     </div>
 
     <!-- UID de Firebase: necesario para cobros de entrada y premios -->
@@ -2876,7 +3212,7 @@
         let joystickActive = false;
         let joystickTouchId = null;
         let joystickCenter = { x: 0, y: 0 };
-        let joystickRadius = 48;
+        let joystickRadius = 42;
         const keys = { w: false, a: false, s: false, d: false, space: false, angle: 0 };
         let mouseX = window.innerWidth / 2;
         let mouseY = window.innerHeight / 2;
@@ -2908,49 +3244,53 @@
         window.addEventListener("orientationchange", checkOrientation);
         window.addEventListener("resize", checkOrientation);
 
-        // Joystick virtual dinamico: aparece donde toques (mitad izquierda)
+        // Joystick virtual dinamico: aparece donde empieza cada pointer/touch.
         const fsOverlay = document.getElementById("fs-overlay");
         const btnFullscreen = document.getElementById("btn-fullscreen");
 
         if (isTouchDevice) {
-            // Multitáctil: el joystick rastrea SU propio dedo por identifier,
-            // dejando el resto de toques (disparar, dash, etc.) libres a la vez.
-            function joystickStart(e) {
-                if (!fsOverlay.classList.contains("hidden")) return;
-                for (const touch of e.changedTouches) {
-                    if (joystickActive) break;
-                    // Solo la mitad izquierda inicia el joystick; la derecha son botones.
-                    if (touch.clientX > window.innerWidth * 0.55) continue;
-                    // No capturar toques sobre botones, marcador o minimapa
-                    if (touch.target && touch.target.closest && touch.target.closest('.top-btn, .leaderboard, #minimap, .touch-btn')) continue;
+            function startTouchControl(id, x, y, target, event) {
+                if (!fsOverlay.classList.contains("hidden") || document.body.classList.contains("dead")) return;
+                if (!(target instanceof Element) ||
+                    target.closest('.top-btn, .hud, .weapon-hud, .leaderboard, #minimap, .touch-controls, .touch-btn, #shop-modal, button, a, input')) return;
 
+                if (x <= window.innerWidth * 0.55 && !joystickActive) {
                     joystickActive = true;
-                    joystickTouchId = touch.identifier;
-                    joystickCenter.x = touch.clientX;
-                    joystickCenter.y = touch.clientY;
-                    const half = 59;
-                    joystickContainer.style.left = (joystickCenter.x - half) + "px";
-                    joystickContainer.style.top = (joystickCenter.y - half) + "px";
+                    joystickTouchId = id;
+                    joystickCenter.x = x;
+                    joystickCenter.y = y;
+                    joystickContainer.style.left = (x - 68) + "px";
+                    joystickContainer.style.top = (y - 68) + "px";
                     joystickContainer.style.bottom = "auto";
                     joystickContainer.classList.add("active");
-                    e.preventDefault();
+                    if (event.cancelable) event.preventDefault();
+                    return;
+                }
+
+                if (x > window.innerWidth * 0.55 && !aimActive && !document.body.classList.contains("dead")) {
+                    aimActive = true;
+                    aimTouchId = id;
+                    aimCenter.x = x;
+                    aimCenter.y = y;
+                    aimContainer.style.left = (x - 68) + "px";
+                    aimContainer.style.top = (y - 68) + "px";
+                    aimContainer.style.bottom = "auto";
+                    aimContainer.classList.add("active");
+                    if (autoFire) fireLoopStart(350);
+                    if (event.cancelable) event.preventDefault();
                 }
             }
 
-            function joystickMove(e) {
-                if (!joystickActive) return;
-                for (const touch of e.changedTouches) {
-                    if (touch.identifier !== joystickTouchId) continue;
-                    const dx = touch.clientX - joystickCenter.x;
-                    const dy = touch.clientY - joystickCenter.y;
+            function moveTouchControl(id, x, y, event) {
+                if (joystickActive && id === joystickTouchId) {
+                    const dx = x - joystickCenter.x;
+                    const dy = y - joystickCenter.y;
                     const dist = Math.min(Math.hypot(dx, dy), joystickRadius);
                     const angle = Math.atan2(dy, dx);
+                    joystickHandle.style.transform =
+                        `translate(calc(-50% + ${Math.cos(angle) * dist}px), calc(-50% + ${Math.sin(angle) * dist}px))`;
 
-                    const handleX = Math.cos(angle) * dist;
-                    const handleY = Math.sin(angle) * dist;
-                    joystickHandle.style.transform = `translate(calc(-50% + ${handleX}px), calc(-50% + ${handleY}px))`;
-
-                    // Movimiento analogico con histéresis (evita parpadeo en el borde)
+                    // Conserva el umbral y la histeresis del control existente.
                     const mag = Math.hypot(dx, dy);
                     const setKey = (k, wanted) => { if (wanted) keys[k] = mag > 14; else if (mag < 9) keys[k] = false; };
                     setKey('w', dy < 0);
@@ -2958,87 +3298,76 @@
                     setKey('a', dx < 0);
                     setKey('d', dx > 0);
                     touchAngle = angle;
-                    e.preventDefault();
+                    if (event.cancelable) event.preventDefault();
+                }
+
+                if (aimActive && id === aimTouchId) {
+                    const dx = x - aimCenter.x;
+                    const dy = y - aimCenter.y;
+                    const dist = Math.min(Math.hypot(dx, dy), 42);
+                    const angle = Math.atan2(dy, dx);
+                    aimAngle = angle;
+                    touchAngle = angle;
+                    aimHandle.style.transform =
+                        `translate(calc(-50% + ${Math.cos(angle) * dist}px), calc(-50% + ${Math.sin(angle) * dist}px))`;
+                    if (event.cancelable) event.preventDefault();
                 }
             }
 
-            function joystickEnd(e) {
-                if (!joystickActive) return;
-                for (const touch of e.changedTouches) {
-                    if (touch.identifier !== joystickTouchId) continue;
+            function endTouchControl(id, event) {
+                if (joystickActive && id === joystickTouchId) {
                     joystickActive = false;
                     joystickTouchId = null;
                     keys.w = false; keys.a = false; keys.s = false; keys.d = false;
                     joystickContainer.classList.remove("active");
                     joystickHandle.style.transform = "translate(-50%, -50%)";
-                    if (e && e.cancelable) e.preventDefault();
+                    if (event && event.cancelable) event.preventDefault();
                 }
-            }
 
-            window.addEventListener('touchstart', joystickStart, { passive: false });
-            window.addEventListener('touchmove', joystickMove, { passive: false });
-            window.addEventListener('touchend', joystickEnd, { passive: false });
-            window.addEventListener('touchcancel', joystickEnd, { passive: false });
-
-            // === Stick de apuntado (zona derecha, fuera de los botones) ===
-            function aimStart(e) {
-                if (!fsOverlay.classList.contains("hidden")) return;
-                if (document.body.classList.contains("dead")) return;
-                for (const touch of e.changedTouches) {
-                    if (aimActive) break;
-                    if (touch.clientX < window.innerWidth * 0.55) continue;
-                    if (touch.target && touch.target.closest && touch.target.closest('.touch-btn, .top-btn, #shop-modal, .shop-modal, button, a, input')) continue;
-                    aimActive = true;
-                    aimTouchId = touch.identifier;
-                    aimCenter.x = touch.clientX;
-                    aimCenter.y = touch.clientY;
-                    const half = 59;
-                    aimContainer.style.left = (aimCenter.x - half) + "px";
-                    aimContainer.style.top = (aimCenter.y - half) + "px";
-                    aimContainer.style.bottom = "auto";
-                    aimContainer.classList.add("active");
-                    if (autoFire) fireLoopStart(350); // cadencia AUTO controlada, no metralleta
-                    e.preventDefault();
-                }
-            }
-
-            function aimMove(e) {
-                if (!aimActive) return;
-                for (const touch of e.changedTouches) {
-                    if (touch.identifier !== aimTouchId) continue;
-                    const dx = touch.clientX - aimCenter.x;
-                    const dy = touch.clientY - aimCenter.y;
-                    const dist = Math.min(Math.hypot(dx, dy), 48);
-                    const ang = Math.atan2(dy, dx);
-                    aimAngle = ang;
-                    touchAngle = ang;
-                    aimHandle.style.transform = `translate(calc(-50% + ${Math.cos(ang) * dist}px), calc(-50% + ${Math.sin(ang) * dist}px))`;
-                    e.preventDefault();
-                }
-            }
-
-            function aimEnd(e) {
-                if (!aimActive) return;
-                for (const touch of e.changedTouches) {
-                    if (touch.identifier !== aimTouchId) continue;
+                if (aimActive && id === aimTouchId) {
                     aimActive = false;
                     aimTouchId = null;
                     aimContainer.classList.remove("active");
                     aimHandle.style.transform = "translate(-50%, -50%)";
                     if (autoFire) fireLoopStop();
-                    if (e && e.cancelable) e.preventDefault();
+                    if (event && event.cancelable) event.preventDefault();
                 }
             }
 
-            window.addEventListener('touchstart', aimStart, { passive: false });
-            window.addEventListener('touchmove', aimMove, { passive: false });
-            window.addEventListener('touchend', aimEnd, { passive: false });
-            window.addEventListener('touchcancel', aimEnd, { passive: false });
+            if (window.PointerEvent) {
+                window.addEventListener('pointerdown', (event) => {
+                    if (event.pointerType !== 'touch') return;
+                    startTouchControl(event.pointerId, event.clientX, event.clientY, event.target, event);
+                    if ((joystickTouchId === event.pointerId || aimTouchId === event.pointerId) &&
+                        event.target instanceof Element && event.target.setPointerCapture) {
+                        event.target.setPointerCapture(event.pointerId);
+                    }
+                }, { passive: false });
+                window.addEventListener('pointermove', (event) => {
+                    moveTouchControl(event.pointerId, event.clientX, event.clientY, event);
+                }, { passive: false });
+                window.addEventListener('pointerup', (event) => endTouchControl(event.pointerId, event), { passive: false });
+                window.addEventListener('pointercancel', (event) => endTouchControl(event.pointerId, event), { passive: false });
+                window.addEventListener('lostpointercapture', (event) => endTouchControl(event.pointerId, event), { passive: false });
+            } else {
+                window.addEventListener('touchstart', (event) => {
+                    for (const touch of event.changedTouches) {
+                        startTouchControl(touch.identifier, touch.clientX, touch.clientY, event.target, event);
+                    }
+                }, { passive: false });
+                window.addEventListener('touchmove', (event) => {
+                    for (const touch of event.changedTouches) {
+                        moveTouchControl(touch.identifier, touch.clientX, touch.clientY, event);
+                    }
+                }, { passive: false });
+                const endTouchEvents = (event) => {
+                    for (const touch of event.changedTouches) endTouchControl(touch.identifier, event);
+                };
+                window.addEventListener('touchend', endTouchEvents, { passive: false });
+                window.addEventListener('touchcancel', endTouchEvents, { passive: false });
+            }
 
-            // Bloquea scroll/rebote y doble-tap zoom sobre el lienzo
-            document.addEventListener('touchmove', (e) => {
-                if (e.target === canvas && e.cancelable) e.preventDefault();
-            }, { passive: false });
+            // Bloquea doble-tap zoom sin duplicar los listeners del joystick.
             document.addEventListener('dblclick', (e) => e.preventDefault());
 
             const hint = document.getElementById("lobby-controls-hint");
@@ -3093,6 +3422,9 @@
         let mobileShootTimer = null;
 
         function mobileShoot(e) {
+            if (e && e.pointerId !== undefined && e.currentTarget.setPointerCapture) {
+                e.currentTarget.setPointerCapture(e.pointerId);
+            }
             if (e && e.cancelable) e.preventDefault();
             fireLoopStart();
         }
