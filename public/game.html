@@ -2207,7 +2207,7 @@
             }
 
             .weapon-hud small {
-                font-size: 6px;
+                display: none;
             }
 
             .touch-controls {
@@ -2215,10 +2215,10 @@
                 position: absolute;
                 right: calc(8px + env(safe-area-inset-right));
                 bottom: calc(8px + env(safe-area-inset-bottom));
-                width: 148px;
-                grid-template-columns: repeat(3, 44px);
-                grid-auto-rows: 44px;
-                gap: 5px;
+                width: 152px;
+                grid-template-columns: 52px 44px 44px;
+                grid-template-rows: 44px 52px 30px;
+                gap: 6px;
                 justify-content: end;
                 align-items: center;
             }
@@ -2237,6 +2237,8 @@
             .touch-btn.shoot {
                 width: 52px;
                 height: 52px;
+                justify-self: center;
+                align-self: center;
             }
 
             .touch-btn.auto {
@@ -2252,6 +2254,37 @@
                 height: 136px;
                 pointer-events: none;
             }
+
+            .extract-banner,
+            .zone-warning,
+            .announcement-banner,
+            .solo-banner {
+                top: calc(104px + env(safe-area-inset-top));
+                left: 50%;
+                right: auto;
+                width: max-content;
+                max-width: min(76vw, 420px);
+                padding: 5px 9px !important;
+                font-size: 6px !important;
+                line-height: 1.45;
+                letter-spacing: 0 !important;
+                text-align: center;
+                white-space: normal;
+                overflow-wrap: anywhere;
+                transform: translateX(-50%);
+            }
+
+            .zone-warning {
+                top: calc(132px + env(safe-area-inset-top));
+            }
+
+            .announcement-banner {
+                top: calc(160px + env(safe-area-inset-top));
+            }
+
+            .solo-banner {
+                top: calc(104px + env(safe-area-inset-top));
+            }
         }
 
         #gameCanvas {
@@ -2266,10 +2299,10 @@
             .touch-controls {
                 right: calc(6px + env(safe-area-inset-right));
                 bottom: calc(6px + env(safe-area-inset-bottom));
-                grid-template-columns: repeat(3, 40px);
-                grid-auto-rows: 40px;
-                gap: 4px;
-                width: 132px;
+                grid-template-columns: 48px 40px 40px;
+                grid-template-rows: 40px 48px 28px;
+                gap: 5px;
+                width: 138px;
             }
 
             .touch-btn,
@@ -2281,6 +2314,8 @@
             .touch-btn.shoot {
                 width: 48px;
                 height: 48px;
+                justify-self: center;
+                align-self: center;
             }
 
             .touch-btn.auto {
