@@ -41,8 +41,10 @@
   <filter id="shadow" x="-40%" y="-40%" width="180%" height="190%">
     <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#050914" flood-opacity=".65"/>
   </filter></defs><title>barrel</title>
-    <path d="M7 4h18l3 5v14l-3 5H7l-3-5V9l3-5Z" fill="url(#red)" stroke="#ffbea6" stroke-width="1.5" filter="url(#shadow)"/>
-    <path d="M7 5h18l3 4H4l3-4Zm-3 18h24l-3 5H7l-3-5Z" fill="url(#silver)" stroke="#9bacbf" stroke-width=".8"/>
-    <path d="M5 12h22v7H5z" fill="url(#gold)" stroke="#fff0a4" stroke-width=".8"/>
-    <path d="m9 13 3 2-3 3m8-5 3 2-3 3m5-5 3 2-3 3" stroke="#27354a" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M10 6v20" stroke="#ffd0bb" stroke-opacity=".6" stroke-width="1.5"/></svg>
+    <path d="M7 4h18l3 5v14l-3 5H7l-3-5V9l3-5Z" fill="#091221" stroke="#839ab5" stroke-width="1.2" filter="url(#shadow)"/>
+    <path d="M7 5h18l2.3 4H4.7L7 5Zm-2.3 18h22.6L25 28H7l-2.3-5Z" fill="url(#silver)" stroke="#dceaff" stroke-width=".75"/>
+    <path d="M5.2 11.1h21.6v9.7H5.2z" fill="url(#red)"/>
+    <path d="M5.2 11.1h21.6v2.2H5.2z" fill="#ff9a7e" opacity=".55"/>
+    <path d="m9 13.2 3.1 2-3.1 2.5m7.2-4.5 3.1 2-3.1 2.5m5.1-4.5 2.6 2-2.6 2.5" stroke="#3a1820" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M10 6.2v19.6" stroke="#fff" stroke-opacity=".55" stroke-width="1.2"/>
+  </svg>
