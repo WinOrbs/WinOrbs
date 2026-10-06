@@ -65,7 +65,7 @@ const sprites = {
     <path d="M12 4.2c2.9 2.1 4.9 4.8 5.1 7.7-.2 3.2-2.4 6.2-5.1 7.9-2.8-1.7-5-4.7-5.1-7.9.2-2.9 2.2-5.6 5.1-7.7Z" fill="none" stroke="#c9f9ff" stroke-width=".7" opacity=".8"/>
     <path d="M12 5.4v13.1M7.2 10.1 16.8 15.8M7.4 15.8 16.7 10.1" stroke="#e9fdff" stroke-width=".62" opacity=".72"/>
     <circle cx="12" cy="12" r="2.5" fill="#eaffff" opacity=".78" filter="url(#glow)"/>
-  `],,
+  `],
   'health-kit.svg': [32, 32, `
     <rect x="3.5" y="6.5" width="25" height="23" rx="4" fill="#07111f" stroke="#b9d4ec" stroke-width="1.4" filter="url(#shadow)"/>
     <path d="M6 10h20v15.2a2.2 2.2 0 0 1-2.2 2.2H8.2A2.2 2.2 0 0 1 6 25.2V10Z" fill="url(#red)"/>
@@ -74,7 +74,7 @@ const sprites = {
     <path d="M11.5 13.5h4v3.2h3.2v4h-3.2v3.2h-4v-3.2H8.3v-4h3.2v-3.2Z" fill="#fff" stroke="#ffe8e1" stroke-width=".7"/>
     <path d="M8 11.2h16" stroke="#ffd7cd" stroke-width=".8" opacity=".75"/>
     <path d="M8 24.2h16" stroke="#6e2028" stroke-width="1.2" opacity=".65"/>
-  `],,
+  `],
   'bullet.svg': [20, 20, `
     <path d="M10 1.7c-3.7 3.2-5.7 7-5.7 10.5 0 3.5 2.5 5.8 5.7 5.8s5.7-2.3 5.7-5.8C15.7 8.7 13.7 4.9 10 1.7Z" fill="#0a1424" stroke="#7892b0" stroke-width="1.1" filter="url(#shadow)"/>
     <path d="M10 2.8c-2.8 3-4.4 6.3-4.4 9.1 0 2.5 1.8 4.2 4.4 4.2s4.4-1.7 4.4-4.2c0-2.8-1.6-6.1-4.4-9.1Z" fill="url(#silver)"/>
@@ -89,7 +89,7 @@ const sprites = {
     <path d="M14 4.6c3.8 2.3 6.1 5.4 6.1 9.4 0 3.6-2.6 6.9-6.1 9.3-3.5-2.4-6.1-5.7-6.1-9.3 0-4 2.3-7.1 6.1-9.4Z" fill="none" stroke="#f4dcff" stroke-width=".8"/>
     <path d="M14 5.5v17M7.8 10.3 20.2 17.7M8 17.7 20 10.3" stroke="#fff8ff" stroke-width=".72" opacity=".72"/>
     <circle cx="14" cy="14" r="2.7" fill="#fff2ff" opacity=".75" filter="url(#glow)"/>
-  `],,
+  `],
   'bomb.svg': [32, 32, `
     <path d="M20.2 8.8 25 4.2" stroke="#c9d8e9" stroke-width="3" stroke-linecap="round"/>
     <path d="m24.6 3.1 1.2-1.8m1.1 3.2 2-.4m-1.3 2.7 1.5 1.1" stroke="#ffe06a" stroke-width="1.45" stroke-linecap="round" filter="url(#glow)"/>
@@ -99,7 +99,7 @@ const sprites = {
     <ellipse cx="10.8" cy="12.5" rx="4.1" ry="2.3" fill="#fff" opacity=".42"/>
     <path d="m10 22 3-3 2.5 2.2 2.7-3 3 2.3" fill="none" stroke="#7e222b" stroke-width="1.15" opacity=".8"/>
     <path d="m20.4 8.1 3.2 1.8-1 3.5-3.8-1.3" fill="url(#darkMetal)" stroke="#e6f1ff" stroke-width=".7"/>
-  `],,
+  `],
   'explosion.svg': [256, 64, `
     <g transform="translate(0 0)"><circle cx="32" cy="32" r="16" fill="#ffd445" opacity=".5" filter="url(#glow)"/><path d="m32 9 5 13 12-9-3 15 14 2-13 7 8 12-15-4-3 14-7-13-10 9 2-15-14-4 13-6-7-13 14 4 4-12Z" fill="url(#gold)" stroke="#fff5c8" stroke-width="1.4"/><circle cx="32" cy="32" r="8" fill="#fff"/><circle cx="32" cy="32" r="4" fill="#fff8c8"/></g>
     <g transform="translate(64 0)"><circle cx="32" cy="32" r="24" fill="#ff8d35" opacity=".36" filter="url(#glow)"/><path d="m31 5 7 14 12-7-3 14 13 5-13 7 7 13-15-4-7 13-5-15-14 6 5-15-13-7 15-5-1-15 12 9 10-13Z" fill="#f8a52d" stroke="#fff0a0" stroke-width="1.4"/><path d="m32 15 13 8 2 13-10 12-14-5-5-13 5-12 9-3Z" fill="#fff7d4"/></g>
@@ -189,7 +189,7 @@ const sprites = {
     <circle cx="27.2" cy="16.7" r="3.1" fill="url(#purple)" stroke="#f8e5ff" stroke-width=".9"/>
     <circle cx="26.2" cy="15.7" r=".85" fill="#fff"/>
     <path d="M9 11.7h8.2" stroke="#fff" stroke-width="1" opacity=".85" stroke-linecap="round"/>
-  `],,
+  `],
   'ui-heart.svg': [24, 24, `
     <path d="M12 21 3.8 13.5C-1 8.5 6.1 2.4 11 7l1 1 1-1c4.9-4.6 12 1.5 7.2 6.5L12 21Z" fill="url(#red)" stroke="#ffd7ca" stroke-width="1.2"/>
     <path d="M5 11c0-2.8 3.2-4.2 5.4-2.4" stroke="#fff" stroke-opacity=".82" stroke-width="1.3" stroke-linecap="round"/>
