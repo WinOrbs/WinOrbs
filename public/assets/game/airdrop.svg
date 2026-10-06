@@ -41,9 +41,12 @@
   <filter id="shadow" x="-40%" y="-40%" width="180%" height="190%">
     <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#050914" flood-opacity=".65"/>
   </filter></defs><title>airdrop</title>
-    <path d="M13 34 48 25l35 9v43l-35 13-35-13V34Z" fill="url(#gold)" stroke="#ffe9a7" stroke-width="2.5" filter="url(#shadow)"/>
-    <path d="m13 34 35 10v46L13 77V34ZM48 44l35-10v43L48 90V44Z" fill="#8f4c19" fill-opacity=".28" stroke="#704019" stroke-width="1.5"/>
-    <path d="M24 31v50m12-53v57m25-57v57m12-59v55" stroke="#ffeaa6" stroke-opacity=".65" stroke-width="3"/>
-    <path d="M13 47 48 57l35-10M13 66l35 11 35-11" stroke="#8c5118" stroke-width="2"/>
-    <path d="m39 54 9-4 10 4v12l-10 7-9-7V54Z" fill="url(#silver)" stroke="#fff" stroke-width="1.5"/>
-    <path d="M47 54h3v5h5v3h-5v5h-3v-5h-5v-3h5z" fill="#ed4c43"/></svg>
+    <path d="M13 34 48 24l35 10v43l-35 14-35-14V34Z" fill="#081321" stroke="#8ca5c0" stroke-width="2.2" filter="url(#shadow)"/>
+    <path d="m14 35 34 10v42L14 76V35ZM48 45l34-10v41L48 87V45Z" fill="url(#darkMetal)"/>
+    <path d="M13 35 48 45 83 35" stroke="#ffe18a" stroke-opacity=".65" stroke-width="2"/>
+    <path d="M23 31v49m13-53v57m25-58v58m12-60v56" stroke="#c8d8e8" stroke-opacity=".48" stroke-width="2.4"/>
+    <path d="M22 52 48 60l26-8M14 67l34 11 34-11" stroke="#07101e" stroke-width="2"/>
+    <path d="m39 54 9-4 10 4v12l-10 7-9-7V54Z" fill="url(#gold)" stroke="#fff0a7" stroke-width="1.3"/>
+    <path d="M47 54h3v5h5v3h-5v5h-3v-5h-5v-3h5z" fill="#fff8c9"/>
+    <path d="m18 38 27 8" stroke="#fff" stroke-opacity=".32" stroke-width="1.4"/>
+  </svg>

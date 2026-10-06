@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="112" height="112" viewBox="0 0 28 28" fill="none" role="img"><defs>
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="192" viewBox="0 0 80 48" fill="none" role="img"><defs>
   <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
     <stop stop-color="#fff4bd"/><stop offset=".35" stop-color="#f4be3f"/>
     <stop offset=".72" stop-color="#b96a18"/><stop offset="1" stop-color="#71310e"/>
@@ -40,12 +40,11 @@
   </filter>
   <filter id="shadow" x="-40%" y="-40%" width="180%" height="190%">
     <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#050914" flood-opacity=".65"/>
-  </filter></defs><title>bullet orb</title>
-    <circle cx="14" cy="14" r="12.5" fill="#8b4cff" opacity=".24" filter="url(#glow)"/>
-    <circle cx="14" cy="14" r="10.8" fill="#060d1a" stroke="#d0a0ff" stroke-width="1.15" filter="url(#shadow)"/>
-    <circle cx="14" cy="14" r="9.2" fill="url(#purple)"/>
-    <ellipse cx="10.3" cy="8.8" rx="4.1" ry="2.2" fill="#fff" opacity=".62"/>
-    <path d="M14 4.6c3.8 2.3 6.1 5.4 6.1 9.4 0 3.6-2.6 6.9-6.1 9.3-3.5-2.4-6.1-5.7-6.1-9.3 0-4 2.3-7.1 6.1-9.4Z" fill="none" stroke="#f4dcff" stroke-width=".8"/>
-    <path d="M14 5.5v17M7.8 10.3 20.2 17.7M8 17.7 20 10.3" stroke="#fff8ff" stroke-width=".72" opacity=".72"/>
-    <circle cx="14" cy="14" r="2.7" fill="#fff2ff" opacity=".75" filter="url(#glow)"/>
-  </svg>
+  </filter></defs><title>car</title>
+    <path d="M9 7h7v8H9zm55 0h7v8h-7zM9 33h7v8H9zm55 0h7v8h-7z" fill="#101727" stroke="#8296b1" stroke-width="1"/>
+    <path d="m7 13 5-7h56l5 7v23l-6 7H13l-6-7V13Z" fill="url(#red)" stroke="#ffd0bb" stroke-width="2" filter="url(#shadow)"/>
+    <path d="m15 11 10-3h30l10 3v6H15v-6Zm0 21h50v5l-8 4H22l-7-4v-5Z" fill="#742d34" stroke="#fac2a7" stroke-width="1"/>
+    <path d="m20 14 7-3h26l7 3v8H20v-8Zm0 13h40v5H20v-5Z" fill="url(#blue)" stroke="#ddf8ff" stroke-width="1.4"/>
+    <path d="M35 10h10v29H35z" fill="#a83735" stroke="#ffd0bb" stroke-width="1"/>
+    <path d="M21 14h11v7H21zm27 0h11v7H48z" fill="#fff" fill-opacity=".18"/>
+    <path d="M8 15h5v5H8zm59 0h5v5h-5zM8 29h5v5H8zm59 0h5v5h-5z" fill="#ffe38a"/></svg>

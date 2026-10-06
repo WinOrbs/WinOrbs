@@ -41,7 +41,10 @@
   <filter id="shadow" x="-40%" y="-40%" width="180%" height="190%">
     <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#050914" flood-opacity=".65"/>
   </filter></defs><title>speed pad</title>
-    <path d="m5 5 7-3h72l7 3v26l-7 3H12l-7-3V5Z" fill="url(#gold)" stroke="#fff0a4" stroke-width="2" filter="url(#shadow)"/>
-    <path d="m10 8 4-2h66l5 2v20l-5 2H14l-4-2V8Z" fill="#17243b" stroke="#f7cf58" stroke-width="1.4"/>
-    <path d="m24 10 10 8-10 8h-7l9-8-9-8h7Zm23 0 10 8-10 8h-7l9-8-9-8h7Zm23 0 10 8-10 8h-7l9-8-9-8h7Z" fill="url(#gold)" stroke="#fff3c2" stroke-width=".8"/>
-    <path d="M14 7h67" stroke="#fff" stroke-opacity=".58" stroke-width="1"/></svg>
+    <path d="m5 5 7-3h72l7 3v26l-7 3H12l-7-3V5Z" fill="#06101f" stroke="#6ddfff" stroke-width="1.7" filter="url(#shadow)"/>
+    <path d="m9 7 5-2h68l5 2v22l-5 2H14l-5-2V7Z" fill="#10263d" stroke="#238bc0" stroke-width="1"/>
+    <path d="m18 9h61l5 2v14l-5 2H18l-5-2V11l5-2Z" fill="#0b1728"/>
+    <path d="m24 10 10 8-10 8h-7l9-8-9-8h7Zm23 0 10 8-10 8h-7l9-8-9-8h7Zm23 0 10 8-10 8h-7l9-8-9-8h7Z" fill="url(#blue)" stroke="#baf5ff" stroke-width=".7" filter="url(#glow)"/>
+    <path d="M16 7h65" stroke="#fff" stroke-opacity=".5" stroke-width="1"/>
+    <circle cx="12" cy="18" r="1.2" fill="#62e8ff"/><circle cx="84" cy="18" r="1.2" fill="#62e8ff"/>
+  </svg>
