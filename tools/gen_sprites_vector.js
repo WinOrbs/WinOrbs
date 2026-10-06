@@ -58,23 +58,23 @@ const sprites = {
     <path d="M0 149.5h150M149.5 0v150" stroke="#91a9ca" stroke-opacity=".24"/>
     <g fill="#8aa0c3" opacity=".16"><circle cx="17" cy="25" r="1"/><circle cx="76" cy="14" r="1"/><circle cx="129" cy="39" r="1"/><circle cx="36" cy="91" r="1"/><circle cx="111" cy="119" r="1"/><circle cx="69" cy="137" r="1"/><circle cx="19" cy="128" r="1"/></g>`],
   'orb-energy.svg': [24, 24, `
-    <circle cx="12" cy="12.5" r="10.2" fill="#24c9ff" opacity=".16" filter="url(#glow)"/>
-    <circle cx="12" cy="12" r="9.1" fill="#091526" stroke="#78eaff" stroke-width="1.2" filter="url(#shadow)"/>
-    <circle cx="12" cy="12" r="7.8" fill="url(#gold)"/>
-    <path d="M12 4.4 17.8 8l-1.1 7.2-5.1 4.2-5.3-4.2L5.2 8 12 4.4Z" fill="none" stroke="#fff4a6" stroke-opacity=".62" stroke-width=".65"/>
-    <path d="M12 5.1v6.5l4.7-3.1M12 11.6 6.2 15m5.8-3.4 3.9 4.8" stroke="#fffde4" stroke-width=".7" stroke-linecap="round" opacity=".9"/>
-    <ellipse cx="8.8" cy="7.7" rx="3.1" ry="1.65" fill="url(#shine)"/>
-    <circle cx="12" cy="12" r="2.1" fill="#fff9c9" opacity=".72" filter="url(#glow)"/>
-  `],
+    <circle cx="12" cy="12" r="11" fill="#00cfff" opacity=".22" filter="url(#glow)"/>
+    <circle cx="12" cy="12" r="9.7" fill="#07111f" stroke="#65e9ff" stroke-width="1.25" filter="url(#shadow)"/>
+    <circle cx="12" cy="12" r="8.55" fill="url(#blue)"/>
+    <ellipse cx="9" cy="7.1" rx="4.2" ry="2.35" fill="#fff" opacity=".72"/>
+    <path d="M12 4.2c2.9 2.1 4.9 4.8 5.1 7.7-.2 3.2-2.4 6.2-5.1 7.9-2.8-1.7-5-4.7-5.1-7.9.2-2.9 2.2-5.6 5.1-7.7Z" fill="none" stroke="#c9f9ff" stroke-width=".7" opacity=".8"/>
+    <path d="M12 5.4v13.1M7.2 10.1 16.8 15.8M7.4 15.8 16.7 10.1" stroke="#e9fdff" stroke-width=".62" opacity=".72"/>
+    <circle cx="12" cy="12" r="2.5" fill="#eaffff" opacity=".78" filter="url(#glow)"/>
+  `],,
   'health-kit.svg': [32, 32, `
-    <path d="M5 9 8 5h16l3 4 2 17-3 3H6l-3-3 2-17Z" fill="#0b1728" stroke="#9db5d0" stroke-width="1.4" filter="url(#shadow)"/>
-    <path d="M6 10h20l1.7 14-2.3 2H6.6l-2.3-2L6 10Z" fill="url(#silver)"/>
-    <path d="M7 12h18v10.5l-2 2H9l-2-2V12Z" fill="url(#red)"/>
-    <path d="M7 12h18v3H7z" fill="#ff9b85" opacity=".7"/>
-    <path d="M13.2 13.4h5.6v3.2h3.2v5.6h-3.2v3.2h-5.6v-3.2H10v-5.6h3.2z" fill="#fff" stroke="#ffe8e1" stroke-width=".7"/>
-    <path d="M8 6.4h16l2 3.1H6l2-3.1Z" fill="#dcecff" opacity=".8"/>
-    <path d="M9 6.4h8" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/>
-  `],
+    <rect x="3.5" y="6.5" width="25" height="23" rx="4" fill="#07111f" stroke="#b9d4ec" stroke-width="1.4" filter="url(#shadow)"/>
+    <path d="M6 10h20v15.2a2.2 2.2 0 0 1-2.2 2.2H8.2A2.2 2.2 0 0 1 6 25.2V10Z" fill="url(#red)"/>
+    <path d="M6 10h20v4H6z" fill="#ffb3a0" opacity=".7"/>
+    <path d="M10 6.5V5.2c0-1 .8-1.7 1.7-1.7h8.6c.9 0 1.7.7 1.7 1.7v1.3" fill="none" stroke="#dceeff" stroke-width="2"/>
+    <path d="M11.5 13.5h4v3.2h3.2v4h-3.2v3.2h-4v-3.2H8.3v-4h3.2v-3.2Z" fill="#fff" stroke="#ffe8e1" stroke-width=".7"/>
+    <path d="M8 11.2h16" stroke="#ffd7cd" stroke-width=".8" opacity=".75"/>
+    <path d="M8 24.2h16" stroke="#6e2028" stroke-width="1.2" opacity=".65"/>
+  `],,
   'bullet.svg': [20, 20, `
     <path d="M10 1.7c-3.7 3.2-5.7 7-5.7 10.5 0 3.5 2.5 5.8 5.7 5.8s5.7-2.3 5.7-5.8C15.7 8.7 13.7 4.9 10 1.7Z" fill="#0a1424" stroke="#7892b0" stroke-width="1.1" filter="url(#shadow)"/>
     <path d="M10 2.8c-2.8 3-4.4 6.3-4.4 9.1 0 2.5 1.8 4.2 4.4 4.2s4.4-1.7 4.4-4.2c0-2.8-1.6-6.1-4.4-9.1Z" fill="url(#silver)"/>
@@ -82,24 +82,24 @@ const sprites = {
     <path d="M6.2 13.2c1.2 2.3 6.1 2.7 7.5-.1" stroke="#263a54" stroke-width="1.2" stroke-linecap="round"/>
   `],
   'bullet-orb.svg': [28, 28, `
-    <circle cx="14" cy="14" r="12.1" fill="#a95cff" opacity=".2" filter="url(#glow)"/>
-    <circle cx="14" cy="14" r="10.1" fill="#0c1222" stroke="#c68aff" stroke-width="1.1" filter="url(#shadow)"/>
-    <circle cx="14" cy="14" r="8.7" fill="url(#purple)"/>
-    <path d="m14 5.4 6.3 4.4-1.1 7.6-5.2 5.1-5.4-5.1.9-7.6L14 5.4Z" fill="none" stroke="#f4dcff" stroke-opacity=".7" stroke-width=".7"/>
-    <path d="M14 5.8v7.1l5.2-3.1M14 12.9l-6.1 3.9m6.1-3.9 3.8 5.2" stroke="#fff6ff" stroke-width=".85" stroke-linecap="round"/>
-    <ellipse cx="10.5" cy="9" rx="3.5" ry="1.9" fill="url(#shine)"/>
-    <circle cx="14" cy="13.8" r="2.2" fill="#fff0ff" opacity=".58" filter="url(#glow)"/>
-  `],
+    <circle cx="14" cy="14" r="12.5" fill="#8b4cff" opacity=".24" filter="url(#glow)"/>
+    <circle cx="14" cy="14" r="10.8" fill="#060d1a" stroke="#d0a0ff" stroke-width="1.15" filter="url(#shadow)"/>
+    <circle cx="14" cy="14" r="9.2" fill="url(#purple)"/>
+    <ellipse cx="10.3" cy="8.8" rx="4.1" ry="2.2" fill="#fff" opacity=".62"/>
+    <path d="M14 4.6c3.8 2.3 6.1 5.4 6.1 9.4 0 3.6-2.6 6.9-6.1 9.3-3.5-2.4-6.1-5.7-6.1-9.3 0-4 2.3-7.1 6.1-9.4Z" fill="none" stroke="#f4dcff" stroke-width=".8"/>
+    <path d="M14 5.5v17M7.8 10.3 20.2 17.7M8 17.7 20 10.3" stroke="#fff8ff" stroke-width=".72" opacity=".72"/>
+    <circle cx="14" cy="14" r="2.7" fill="#fff2ff" opacity=".75" filter="url(#glow)"/>
+  `],,
   'bomb.svg': [32, 32, `
-    <path d="m19.5 8.5 5.2-4.4" stroke="#aebfd4" stroke-width="2.8" stroke-linecap="round"/>
-    <path d="m24.3 3.2 1-1.8m1.8 3.2 1.8-.8m-1.1 3.2 1.9 1" stroke="#ffd84d" stroke-width="1.5" stroke-linecap="round" filter="url(#glow)"/>
-    <circle cx="16" cy="19" r="12.1" fill="#090f1d" stroke="#8da5bf" stroke-width="1.1" filter="url(#shadow)"/>
-    <circle cx="16" cy="19" r="10.7" fill="url(#red)"/>
-    <path d="m16 8.6 7.7 4.3-1.1 8.5-7.6 6.2-7.5-5.7 1-8.7L16 8.6Z" fill="#ef5b48" opacity=".48"/>
-    <path d="M8 18.5c2.7-5.1 7.4-7.6 13-6.4" stroke="#fff1ea" stroke-opacity=".46" stroke-width="1.2" stroke-linecap="round"/>
-    <ellipse cx="11.6" cy="13.1" rx="3.7" ry="2.2" fill="url(#shine)"/>
-    <path d="m21.2 8.1 3 1.7-1.1 3.3-3.7-1.2" fill="url(#darkMetal)" stroke="#dbe8f5" stroke-width=".7"/>
-  `],
+    <path d="M20.2 8.8 25 4.2" stroke="#c9d8e9" stroke-width="3" stroke-linecap="round"/>
+    <path d="m24.6 3.1 1.2-1.8m1.1 3.2 2-.4m-1.3 2.7 1.5 1.1" stroke="#ffe06a" stroke-width="1.45" stroke-linecap="round" filter="url(#glow)"/>
+    <circle cx="15.5" cy="19" r="12.5" fill="#050b15" stroke="#9db2c9" stroke-width="1.25" filter="url(#shadow)"/>
+    <circle cx="15.5" cy="19" r="11" fill="url(#red)"/>
+    <path d="M8 17.8c1.7-5 5.7-7.9 10.9-7.1" stroke="#fff1ea" stroke-width="1.4" stroke-linecap="round" opacity=".5"/>
+    <ellipse cx="10.8" cy="12.5" rx="4.1" ry="2.3" fill="#fff" opacity=".42"/>
+    <path d="m10 22 3-3 2.5 2.2 2.7-3 3 2.3" fill="none" stroke="#7e222b" stroke-width="1.15" opacity=".8"/>
+    <path d="m20.4 8.1 3.2 1.8-1 3.5-3.8-1.3" fill="url(#darkMetal)" stroke="#e6f1ff" stroke-width=".7"/>
+  `],,
   'explosion.svg': [256, 64, `
     <g transform="translate(0 0)"><circle cx="32" cy="32" r="16" fill="#ffd445" opacity=".5" filter="url(#glow)"/><path d="m32 9 5 13 12-9-3 15 14 2-13 7 8 12-15-4-3 14-7-13-10 9 2-15-14-4 13-6-7-13 14 4 4-12Z" fill="url(#gold)" stroke="#fff5c8" stroke-width="1.4"/><circle cx="32" cy="32" r="8" fill="#fff"/><circle cx="32" cy="32" r="4" fill="#fff8c8"/></g>
     <g transform="translate(64 0)"><circle cx="32" cy="32" r="24" fill="#ff8d35" opacity=".36" filter="url(#glow)"/><path d="m31 5 7 14 12-7-3 14 13 5-13 7 7 13-15-4-7 13-5-15-14 6 5-15-13-7 15-5-1-15 12 9 10-13Z" fill="#f8a52d" stroke="#fff0a0" stroke-width="1.4"/><path d="m32 15 13 8 2 13-10 12-14-5-5-13 5-12 9-3Z" fill="#fff7d4"/></g>
@@ -181,15 +181,15 @@ const sprites = {
     <path d="M48 49v18m-8-9h16m-14-6 12 12m0-12L42 64" stroke="#e9fff0" stroke-width="1.6"/>
     <path d="m20 30 28-15 28 15" stroke="#fff" stroke-opacity=".72" stroke-width="2"/>`],
   'orb-gun.svg': [32, 32, `
-    <path d="M4 10h15.5l4.3 3.8H29v8h-6.7l-4.9 4H8.8v-5.5H4V10Z" fill="#090f1d" stroke="#9bb0ca" stroke-width="1.2" filter="url(#shadow)"/>
-    <path d="M5.8 11.8h13.4l3.5 3.1h5v4.1H5.8v-7.2Z" fill="url(#purple)"/>
-    <path d="M7 12.2h11.5l2.2 2.1H7v-2.1Z" fill="#f0c8ff" opacity=".55"/>
-    <path d="M9 20.2h6.5v6H10l-1-6Zm10-5.8h4.1v7.2H19z" fill="url(#darkMetal)" stroke="#e6f1ff" stroke-width=".7"/>
-    <circle cx="27" cy="17.6" r="4.3" fill="#b457ff" opacity=".28" filter="url(#glow)"/>
-    <circle cx="27" cy="17.6" r="2.5" fill="url(#purple)" stroke="#f5dfff" stroke-width=".8"/>
-    <circle cx="26.2" cy="16.8" r=".7" fill="#fff"/>
-    <path d="M9 12h7" stroke="#fff" stroke-opacity=".8" stroke-width="1" stroke-linecap="round"/>
-  `],
+    <path d="M3.5 9.5h16.8l4.2 3.8h4.8v8.4h-7l-5 4.2H8.2v-5.7H3.5V9.5Z" fill="#040b15" stroke="#a9bfd7" stroke-width="1.3" filter="url(#shadow)"/>
+    <path d="M5.5 11.3h14.3l3.5 3.2h4v4.5H5.5v-7.7Z" fill="url(#purple)"/>
+    <path d="M6.8 12h11.8l2.3 2.1H6.8z" fill="#fff" opacity=".5"/>
+    <path d="M9 20h6.5v6.1H10l-1-6.1Zm10-5.5h4.2v7.4H19z" fill="url(#darkMetal)" stroke="#e7f2ff" stroke-width=".75"/>
+    <circle cx="27.2" cy="16.7" r="5.3" fill="#b85cff" opacity=".28" filter="url(#glow)"/>
+    <circle cx="27.2" cy="16.7" r="3.1" fill="url(#purple)" stroke="#f8e5ff" stroke-width=".9"/>
+    <circle cx="26.2" cy="15.7" r=".85" fill="#fff"/>
+    <path d="M9 11.7h8.2" stroke="#fff" stroke-width="1" opacity=".85" stroke-linecap="round"/>
+  `],,
   'ui-heart.svg': [24, 24, `
     <path d="M12 21 3.8 13.5C-1 8.5 6.1 2.4 11 7l1 1 1-1c4.9-4.6 12 1.5 7.2 6.5L12 21Z" fill="url(#red)" stroke="#ffd7ca" stroke-width="1.2"/>
     <path d="M5 11c0-2.8 3.2-4.2 5.4-2.4" stroke="#fff" stroke-opacity=".82" stroke-width="1.3" stroke-linecap="round"/>
