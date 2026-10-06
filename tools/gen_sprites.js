@@ -1,18 +1,16 @@
 'use strict';
 
 // ============================================================================
-//  gen_sprites.js — Generador de sprites pixel-art de WinOrbs.
+//  gen_sprites.js — Generador raster legacy de WinOrbs.
 //
 //  Sin dependencias: los PNG se codifican a mano (firma + IHDR + IDAT zlib +
 //  IEND, con CRC32 propio), solo Node puro.
 //
-//  Uso:      node gen_sprites.js
-//  Salida:   public/assets/game/*.png
+//  Uso:      npm run sprites (tambien genera los SVG activos del juego)
+//  Salida:   public/assets/game/*.png (compatibilidad con clientes antiguos)
 //
-//  Es 100% determinista: re-ejecutarlo regenera exactamente los mismos
-//  archivos. Para sustituir un sprite por uno propio basta con guardar tu
-//  PNG con el mismo nombre en public/assets/game/ (el juego lo usa solo y,
-//  si falta o falla, el dibujo procedural original actúa de fallback).
+//  Es 100% determinista. Los PNG se conservan para compatibilidad; el cliente
+//  actual utiliza los SVG generados por gen_sprites_vector.js.
 // ============================================================================
 
 const fs = require('fs');
@@ -788,7 +786,7 @@ function main() {
     console.log(mal === 0
         ? '\nVerificación de cabeceras PNG: OK'
         : `\n¡Atención! ${mal} PNG con problemas.`);
-    console.log('\nPara reemplazar un sprite: guarda tu PNG con el mismo nombre en public/assets/game/.');
+    console.log('\nLos PNG generados son compatibilidad; el cliente actual carga los SVG.');
 }
 
 main();

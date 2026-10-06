@@ -302,7 +302,7 @@ async function parte2(p1, admin, m) {
         /hp: 15, maxHp: 15, tipo: 'fino'/.test(src) && src.includes("const vertical = Math.random() < 0.5;"));
     log('Cliente: obstáculos por tipo, anillo de tienda y marcador de zona final',
         fs.readFileSync(path.join(__dirname, '..', 'public', 'game.html'), 'utf8')
-            .match(/coche: \{ src: 'assets\/game\/car\.png' \}/) !== null &&
+            .match(/coche: \{ src: 'assets\/game\/car\.svg' \}/) !== null &&
         fs.readFileSync(path.join(__dirname, '..', 'public', 'game.html'), 'utf8').includes('ZONA FINAL') &&
         fs.readFileSync(path.join(__dirname, '..', 'public', 'game.html'), 'utf8').includes('sz.life / sz.maxLife'));
 }

@@ -705,6 +705,7 @@
 
         .death-card.final-results {
             width: min(880px, 100%);
+            max-width: 880px;
             max-height: calc(100vh - 32px);
             max-height: calc(100dvh - 32px);
             display: flex;
@@ -808,15 +809,36 @@
         }
 
         .podium-step {
-            display: grid;
-            place-items: center;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             margin-top: 5px;
-            background: rgba(56, 189, 248, 0.16);
-            border: 1px solid rgba(56, 189, 248, 0.4);
-            color: #bae6fd;
+            background: transparent;
+            border: 0;
+            color: #fff;
             font-family: var(--font-display);
             font-size: 16px;
             font-weight: 700;
+            isolation: isolate;
+        }
+
+        .podium-sprite {
+            position: absolute;
+            inset: 0;
+            z-index: -1;
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: fill;
+            pointer-events: none;
+        }
+
+        .podium-step-label {
+            margin-top: 20px;
+            color: #fff8dc;
+            text-shadow: 2px 2px #361b12, -1px -1px rgba(255, 255, 255, 0.55);
+            font-size: 14px;
         }
 
         .podium-place.second .podium-step { height: 48px; }
@@ -1974,7 +1996,6 @@
         }
 
         .pix {
-            image-rendering: pixelated;
             -webkit-user-drag: none;
             flex: none;
             width: 13px;
@@ -2406,7 +2427,7 @@
                 bottom: calc(8px + env(safe-area-inset-bottom));
                 width: 152px;
                 grid-template-columns: 52px 44px 44px;
-                grid-template-rows: 44px 52px 30px;
+                grid-template-rows: 44px 44px 52px;
                 gap: 6px;
                 justify-content: end;
                 align-items: center;
@@ -2427,9 +2448,24 @@
                 width: 52px;
                 height: 52px;
                 grid-column: 3;
-                grid-row: 2;
+                grid-row: 3;
                 justify-self: end;
                 align-self: center;
+            }
+
+            #btn-dash-mobile {
+                grid-column: 1;
+                grid-row: 1;
+            }
+
+            .touch-btn.weapon {
+                grid-column: 2;
+                grid-row: 1;
+            }
+
+            .touch-btn.shop {
+                grid-column: 3;
+                grid-row: 1;
             }
 
             #btn-reload-mobile {
@@ -2444,6 +2480,8 @@
             }
 
             .touch-btn.auto {
+                grid-column: 3;
+                grid-row: 2;
                 width: 44px;
                 height: 30px;
                 padding: 0 4px;
@@ -2466,9 +2504,9 @@
                 right: calc(126px + env(safe-area-inset-right));
                 width: auto;
                 max-width: none;
-                padding: 3px 5px !important;
-                font-size: 5px !important;
-                line-height: 1.35;
+                padding: 4px 7px !important;
+                font-size: 6px !important;
+                line-height: 1.4;
                 letter-spacing: 0 !important;
                 text-align: center;
                 white-space: normal;
@@ -2477,15 +2515,15 @@
             }
 
             .zone-warning {
-                top: calc(23px + env(safe-area-inset-top));
+                top: calc(33px + env(safe-area-inset-top));
             }
 
             .announcement-banner {
-                top: calc(39px + env(safe-area-inset-top));
+                top: calc(59px + env(safe-area-inset-top));
             }
 
             .solo-banner {
-                top: calc(7px + env(safe-area-inset-top));
+                top: calc(85px + env(safe-area-inset-top));
             }
         }
 
@@ -2502,7 +2540,7 @@
                 right: calc(6px + env(safe-area-inset-right));
                 bottom: calc(6px + env(safe-area-inset-bottom));
                 grid-template-columns: 48px 40px 40px;
-                grid-template-rows: 40px 48px 28px;
+                grid-template-rows: 40px 40px 48px;
                 gap: 5px;
                 width: 138px;
             }
@@ -2517,9 +2555,24 @@
                 width: 48px;
                 height: 48px;
                 grid-column: 3;
-                grid-row: 2;
+                grid-row: 3;
                 justify-self: end;
                 align-self: center;
+            }
+
+            #btn-dash-mobile {
+                grid-column: 1;
+                grid-row: 1;
+            }
+
+            .touch-btn.weapon {
+                grid-column: 2;
+                grid-row: 1;
+            }
+
+            .touch-btn.shop {
+                grid-column: 3;
+                grid-row: 1;
             }
 
             #btn-reload-mobile {
@@ -2534,6 +2587,8 @@
             }
 
             .touch-btn.auto {
+                grid-column: 3;
+                grid-row: 2;
                 width: 40px;
                 height: 28px;
             }
@@ -2715,15 +2770,15 @@
     <!-- HUD -->
     <div class="hud">
         <div class="hud-item timer">
-            <span class="label"><img class="pix" src="assets/game/ui-clock.png" alt="">Tiempo restante</span>
+            <span class="label"><img class="pix" src="assets/game/ui-clock.svg" alt="">Tiempo restante</span>
             <b id="hud-timer">05:00</b>
         </div>
         <div class="hud-item pot">
-            <span class="label"><img class="pix" src="assets/game/ui-coin.png" alt="">Bote de la sala</span>
+            <span class="label"><img class="pix" src="assets/game/ui-coin.svg" alt="">Bote de la sala</span>
             <b id="hud-pot">$8.00 USD</b>
         </div>
         <div class="hud-item hp">
-            <span class="label"><img class="pix" src="assets/game/ui-heart.png" alt="">Salud &amp; escudo</span>
+            <span class="label"><img class="pix" src="assets/game/ui-heart.svg" alt="">Salud &amp; escudo</span>
             <div class="status-bars">
                 <div class="bar-container">
                     <div class="bar-fill-hp" id="hp-fill"></div>
@@ -2739,11 +2794,11 @@
             <b id="hud-kills">0</b>
         </div>
         <div class="hud-item charge">
-            <span class="label"><img class="pix" src="assets/game/ui-gem.png" alt="">Gemas en mano · en riesgo</span>
+            <span class="label"><img class="pix" src="assets/game/ui-gem.svg" alt="">Gemas en mano · en riesgo</span>
             <b id="hud-charge">0 pts</b>
         </div>
         <div class="hud-item bank">
-            <span class="label"><img class="pix" src="assets/game/ui-shield.png" alt="">Asegurado · banco</span>
+            <span class="label"><img class="pix" src="assets/game/ui-shield.svg" alt="">Asegurado · banco</span>
             <b id="hud-bank">0 pts</b>
         </div>
     </div>
@@ -2762,7 +2817,7 @@
                     <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"></circle>
                 </svg>
             </span>
-            <span class="k"><img class="pix" src="assets/game/ui-gun.png" alt="">Arma</span>
+            <span class="k"><img class="pix" src="assets/game/ui-gun.svg" alt="">Arma</span>
             <b><span id="weapon-name" style="color: var(--primary);">Pistola Base</span></b>
             <small style="margin-left:auto;">[<span class="kbd">1</span>/<span class="kbd">2</span>/<span class="kbd">Q</span>]</small>
         </div>
@@ -2774,7 +2829,7 @@
                     <path d="M7 15v3"></path>
                 </svg>
             </span>
-            <span class="k"><img class="pix" src="assets/game/ui-ammo.png" alt="">Balas</span>
+            <span class="k"><img class="pix" src="assets/game/ui-ammo.svg" alt="">Balas</span>
             <b><span id="ammo-count">15 / 15</span></b>
             <small id="ammo-status" style="margin-left:auto;"><span class="kbd">R</span> Recargar</small>
         </div>
@@ -2788,7 +2843,7 @@
                     <path d="M16 6l2-2"></path>
                 </svg>
             </span>
-            <span class="k"><img class="pix" src="assets/game/ui-bomb.png" alt="">Bombas</span>
+            <span class="k"><img class="pix" src="assets/game/ui-bomb.svg" alt="">Bombas</span>
             <b><span id="bomb-count" style="color: var(--red);">0</span></b>
             <small style="margin-left:auto;"><span class="kbd">Q</span> Equipar</small>
         </div>
@@ -2799,7 +2854,7 @@
                     <path d="M6 2h12v4l-4 4 4 4v4H6v-4l4-4-4-4z"></path>
                 </svg>
             </span>
-            <span class="k"><img class="pix" src="assets/game/ui-coin.png" alt="">Tienda</span>
+            <span class="k"><img class="pix" src="assets/game/ui-coin.svg" alt="">Tienda</span>
             <small><span class="kbd">E</span> en zona azul</small>
         </div>
     </div>
@@ -2810,7 +2865,7 @@
     <div class="solo-banner" id="solo-banner" style="display:none;">⏳ SOLO EN LA SALA · VICTORIA EN 10s</div>
 
     <div class="ability-hud">
-        <div class="ability-icon"><img class="pix" src="assets/game/ui-bolt.png" alt="" style="width:18px;height:18px;"></div>
+        <div class="ability-icon"><img class="pix" src="assets/game/ui-bolt.svg" alt="" style="width:18px;height:18px;"></div>
         <div>
             <div class="label" style="color: var(--muted);">Módulo táctico</div>
             <div style="color: var(--primary); font-family: var(--font-display); font-weight: 600; font-size: 13px;">
@@ -2823,7 +2878,7 @@
 
     <div class="leaderboard">
         <h3>
-            <img class="pix" src="assets/game/ui-trophy.png" alt="">
+            <img class="pix" src="assets/game/ui-trophy.svg" alt="">
             Tabla de posiciones
         </h3>
         <ol id="leader-list"></ol>
@@ -3545,6 +3600,21 @@
         let joystickCenter = { x: 0, y: 0 };
         let joystickRadius = 42;
         const keys = { w: false, a: false, s: false, d: false, space: false, angle: 0 };
+        function actualizarTeclasJoystick(dx, dy, targetKeys) {
+            if (Math.hypot(dx, dy) <= 14) {
+                targetKeys.w = false;
+                targetKeys.a = false;
+                targetKeys.s = false;
+                targetKeys.d = false;
+                return;
+            }
+
+            targetKeys.w = dy < 0;
+            targetKeys.a = dx < 0;
+            targetKeys.s = dy > 0;
+            targetKeys.d = dx > 0;
+        }
+
         let mouseX = window.innerWidth / 2;
         let mouseY = window.innerHeight / 2;
         let touchAngle = 0;
@@ -3621,13 +3691,7 @@
                     joystickHandle.style.transform =
                         `translate(calc(-50% + ${Math.cos(angle) * dist}px), calc(-50% + ${Math.sin(angle) * dist}px))`;
 
-                    // Conserva el umbral y la histeresis del control existente.
-                    const mag = Math.hypot(dx, dy);
-                    const setKey = (k, wanted) => { if (wanted) keys[k] = mag > 14; else if (mag < 9) keys[k] = false; };
-                    setKey('w', dy < 0);
-                    setKey('s', dy > 0);
-                    setKey('a', dx < 0);
-                    setKey('d', dx > 0);
+                    actualizarTeclasJoystick(dx, dy, keys);
                     touchAngle = angle;
                     if (event.cancelable) event.preventDefault();
                 }
@@ -3878,29 +3942,29 @@
         const skinImages = {};
         let shakeIntensity = 0;
 
-        // ==== SPRITES DEL JUEGO (pixel art en public/assets/game/) ====
+        // ==== SPRITES DEL JUEGO (SVG facetado en alta resolución) ====
         // Manifest: clave → { src, tile?, frames?, frameW?, frameH? }.
-        // Cada PNG se precarga al abrir la página; si falta o falla,
+        // Cada SVG se precarga al abrir la página; si falta o falla,
         // sprites[clave] queda null y render() usa el dibujo procedural
         // original (fallback grácil, mismo patrón que las skins sin foto).
         const SPRITES_MANIFEST = {
-            fondo: { src: 'assets/game/bg-tile.png', tile: true },
-            orbe: { src: 'assets/game/orb-energy.png' },
-            kit: { src: 'assets/game/health-kit.png' },
-            bala: { src: 'assets/game/bullet.png' },
-            balaOrbe: { src: 'assets/game/bullet-orb.png' },
-            bomba: { src: 'assets/game/bomb.png' },
-            explosion: { src: 'assets/game/explosion.png', frameW: 64, frameH: 64, frames: 4 },
-            airdrop: { src: 'assets/game/airdrop.png' },
-            obstaculo: { src: 'assets/game/obstacle.png' },
-            coche: { src: 'assets/game/car.png' },
-            moto: { src: 'assets/game/moto.png' },
-            barril: { src: 'assets/game/barrel.png' },
-            muro: { src: 'assets/game/wall.png' },
-            turbo: { src: 'assets/game/speed-pad.png' },
-            tienda: { src: 'assets/game/shop.png' },
-            banco: { src: 'assets/game/bank.png' },
-            orbGun: { src: 'assets/game/orb-gun.png' }
+            fondo: { src: 'assets/game/bg-tile.svg', tile: true },
+            orbe: { src: 'assets/game/orb-energy.svg' },
+            kit: { src: 'assets/game/health-kit.svg' },
+            bala: { src: 'assets/game/bullet.svg' },
+            balaOrbe: { src: 'assets/game/bullet-orb.svg' },
+            bomba: { src: 'assets/game/bomb.svg' },
+            explosion: { src: 'assets/game/explosion.svg', frameW: 256, frameH: 256, frames: 4 },
+            airdrop: { src: 'assets/game/airdrop.svg' },
+            obstaculo: { src: 'assets/game/obstacle.svg' },
+            coche: { src: 'assets/game/car.svg' },
+            moto: { src: 'assets/game/moto.svg' },
+            barril: { src: 'assets/game/barrel.svg' },
+            muro: { src: 'assets/game/wall.svg' },
+            turbo: { src: 'assets/game/speed-pad.svg' },
+            tienda: { src: 'assets/game/shop.svg' },
+            banco: { src: 'assets/game/bank.svg' },
+            orbGun: { src: 'assets/game/orb-gun.svg' }
         };
         const sprites = {};
         let spriteFondoPattern = null;
@@ -3921,16 +3985,16 @@
             });
         })();
 
-        // Dibuja el sprite `clave` centrado en (x, y) con ancho w y alto
+        // Dibuja el sprite SVG `clave` centrado en (x, y) con ancho w y alto
         // proporcional (o alto h fijo), rotación opcional `rot` en radianes
-        // y suavizado desactivado (pixel art nítido). Devuelve true si se
+        // y suavizado adecuado al tamaño vectorial. Devuelve true si se
         // dibujó; false si no hay sprite (el caller aplica su fallback).
         function drawSprite(clave, x, y, w, h, rot) {
             const img = sprites[clave];
             if (!img || !img.complete || !img.naturalWidth) return false;
             const alto = h || (w * img.naturalHeight / img.naturalWidth);
             ctx.save();
-            ctx.imageSmoothingEnabled = false;
+            ctx.imageSmoothingEnabled = true;
             ctx.translate(x, y);
             if (rot) ctx.rotate(rot);
             ctx.drawImage(img, -w / 2, -alto / 2, w, alto);
@@ -3950,7 +4014,7 @@
             const idx = Math.max(0, Math.min(m.frames - 1, Math.floor((1 - exp.alpha) * m.frames)));
             const lado = exp.radius * 2.1; // el arte sobresale un poco del radio lógico
             ctx.save();
-            ctx.imageSmoothingEnabled = false;
+            ctx.imageSmoothingEnabled = true;
             ctx.globalAlpha = Math.min(1, exp.alpha * 1.6);
             ctx.drawImage(img, idx * m.frameW, 0, m.frameW, m.frameH, exp.x - lado / 2, exp.y - lado / 2, lado, lado);
             ctx.restore();
@@ -4880,6 +4944,83 @@
                     const size = r * (0.55 + 0.45 * prog) * 1.2;
                     ctx.fillStyle = 'rgba(0,0,0,0.35)';
                     ctx.beginPath(); ctx.ellipse(ad.x, ad.y, r * 0.8 * prog, r * 0.3 * prog, 0, 0, Math.PI * 2); ctx.fill();
+                    const canopyAlpha = Math.max(0, Math.min(1, (1 - prog) * 7));
+                    if (canopyAlpha > 0) {
+                        const sway = Math.sin(Date.now() / 430 + ad.x * 0.01) * r * 0.12;
+                        const boxY = ad.y - drop;
+                        const canopyWidth = r * 2.8;
+                        const canopyHeight = r * 1.3;
+                        const canopyX = ad.x + sway;
+                        const canopyY = boxY - size - canopyHeight - r * 0.25;
+                        const canopyBottom = canopyY + canopyHeight * 0.72;
+
+                        ctx.save();
+                        ctx.globalAlpha = canopyAlpha;
+                        ctx.lineCap = 'round';
+                        ctx.lineJoin = 'round';
+                        ctx.strokeStyle = 'rgba(30, 41, 59, 0.85)';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.moveTo(canopyX - canopyWidth * 0.38, canopyBottom);
+                        ctx.lineTo(ad.x - size * 0.56, boxY - size * 0.65);
+                        ctx.moveTo(canopyX + canopyWidth * 0.38, canopyBottom);
+                        ctx.lineTo(ad.x + size * 0.56, boxY - size * 0.65);
+                        ctx.moveTo(canopyX, canopyY + canopyHeight * 0.12);
+                        ctx.lineTo(ad.x, boxY - size);
+                        ctx.stroke();
+
+                        const canopyPath = () => {
+                            ctx.beginPath();
+                            ctx.moveTo(canopyX - canopyWidth / 2, canopyBottom);
+                            ctx.bezierCurveTo(
+                                canopyX - canopyWidth * 0.52, canopyY + canopyHeight * 0.18,
+                                canopyX - canopyWidth * 0.22, canopyY,
+                                canopyX, canopyY
+                            );
+                            ctx.bezierCurveTo(
+                                canopyX + canopyWidth * 0.22, canopyY,
+                                canopyX + canopyWidth * 0.52, canopyY + canopyHeight * 0.18,
+                                canopyX + canopyWidth / 2, canopyBottom
+                            );
+                            ctx.closePath();
+                        };
+
+                        canopyPath();
+                        ctx.fillStyle = '#e8edf5';
+                        ctx.fill();
+                        ctx.strokeStyle = '#27364c';
+                        ctx.lineWidth = 2.5;
+                        ctx.stroke();
+                        ctx.save();
+                        canopyPath();
+                        ctx.clip();
+                        ctx.fillStyle = '#bd3f39';
+                        ctx.beginPath();
+                        ctx.moveTo(canopyX - canopyWidth * 0.16, canopyY - 2);
+                        ctx.lineTo(canopyX + canopyWidth * 0.16, canopyY - 2);
+                        ctx.lineTo(canopyX + canopyWidth * 0.3, canopyBottom + 2);
+                        ctx.lineTo(canopyX - canopyWidth * 0.3, canopyBottom + 2);
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.68)';
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        ctx.moveTo(canopyX - canopyWidth * 0.34, canopyY + canopyHeight * 0.16);
+                        ctx.lineTo(canopyX - canopyWidth * 0.23, canopyBottom);
+                        ctx.moveTo(canopyX + canopyWidth * 0.34, canopyY + canopyHeight * 0.16);
+                        ctx.lineTo(canopyX + canopyWidth * 0.23, canopyBottom);
+                        ctx.stroke();
+                        ctx.restore();
+
+                        ctx.beginPath();
+                        ctx.ellipse(canopyX, canopyY + canopyHeight * 0.62, canopyWidth * 0.09, canopyHeight * 0.1, 0, 0, Math.PI * 2);
+                        ctx.fillStyle = '#f2c34b';
+                        ctx.fill();
+                        ctx.strokeStyle = '#80501c';
+                        ctx.lineWidth = 1.5;
+                        ctx.stroke();
+                        ctx.restore();
+                    }
                     if (!drawSprite('airdrop', ad.x, ad.y - drop, size * 2, size * 2)) {
                         ctx.fillStyle = '#facc15';
                         ctx.fillRect(ad.x - size, ad.y - drop - size, size * 2, size * 2);
@@ -5241,10 +5382,10 @@
             };
 
             [
-                { player: ranking[1], position: 2, className: "second" },
-                { player: ranking[0], position: 1, className: "first" },
-                { player: ranking[2], position: 3, className: "third" }
-            ].forEach(({ player, position, className }) => {
+                { player: ranking[1], position: 2, className: "second", medal: "silver" },
+                { player: ranking[0], position: 1, className: "first", medal: "gold" },
+                { player: ranking[2], position: 3, className: "third", medal: "bronze" }
+            ].forEach(({ player, position, className, medal }) => {
                 if (!player) return;
                 const place = document.createElement("article");
                 place.className = `podium-place ${className}`;
@@ -5264,7 +5405,15 @@
 
                 const step = document.createElement("div");
                 step.className = "podium-step";
-                step.textContent = `${position}º`;
+                const podiumSprite = document.createElement("img");
+                podiumSprite.className = "podium-sprite";
+                podiumSprite.src = `assets/game/podium-${medal}.svg`;
+                podiumSprite.alt = "";
+                podiumSprite.setAttribute("aria-hidden", "true");
+                const stepLabel = document.createElement("span");
+                stepLabel.className = "podium-step-label";
+                stepLabel.textContent = `${position}º`;
+                step.append(podiumSprite, stepLabel);
                 place.append(summary, step);
                 podiumEl.appendChild(place);
             });

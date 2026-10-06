@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="768" height="288" viewBox="0 0 768 288" fill="none">
+  <defs>
+    <linearGradient id="top" x1="94" y1="28" x2="676" y2="125" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset=".3" stop-color="#C9D8EA"/>
+      <stop offset=".64" stop-color="#7389A8"/>
+      <stop offset="1" stop-color="#EFF6FF"/>
+    </linearGradient>
+    <linearGradient id="front" x1="96" y1="104" x2="384" y2="268" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#DDEBFA"/>
+      <stop offset=".52" stop-color="#7287A4"/>
+      <stop offset="1" stop-color="#33445F"/>
+    </linearGradient>
+    <linearGradient id="side" x1="384" y1="100" x2="670" y2="267" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F5F9FF"/>
+      <stop offset=".52" stop-color="#A9BBD1"/>
+      <stop offset="1" stop-color="#465B77"/>
+    </linearGradient>
+    <linearGradient id="face" x1="142" y1="118" x2="626" y2="250" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#344661"/>
+      <stop offset=".5" stop-color="#26354B"/>
+      <stop offset="1" stop-color="#465A74"/>
+    </linearGradient>
+    <filter id="shadow" x="45" y="10" width="680" height="270" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+  </defs>
+  <ellipse cx="385" cy="263" rx="300" ry="15" fill="#080D16" fill-opacity=".55" filter="url(#shadow)"/>
+  <path d="m74 76 310-66 310 66-310 90L74 76Z" fill="url(#top)" stroke="#F4F8FF" stroke-width="7" stroke-linejoin="round"/>
+  <path d="m74 76 310 90v105L74 178V76Z" fill="url(#front)" stroke="#26354B" stroke-width="7" stroke-linejoin="round"/>
+  <path d="m384 166 310-90v102l-310 93V166Z" fill="url(#side)" stroke="#26354B" stroke-width="7" stroke-linejoin="round"/>
+  <path d="m110 91 274 78v74l-274-76V91Z" fill="url(#face)" stroke="#EAF3FF" stroke-width="4"/>
+  <path d="m414 169 244-71v72l-244 74v-75Z" fill="#26354B" fill-opacity=".48" stroke="#E1ECFA" stroke-opacity=".9" stroke-width="4"/>
+  <path d="m88 77 296 86 296-86M74 178l310 93 310-93" stroke="#FFFFFF" stroke-opacity=".9" stroke-width="5"/>
+  <path d="m108 72 276 78 276-78" stroke="#FFFFFF" stroke-opacity=".72" stroke-width="3"/>
+  <path d="m127 110 239 68v46l-239-67v-47ZM431 178l202-59v45l-202 61v-47Z" stroke="#D8E8FA" stroke-opacity=".82" stroke-width="3"/>
+  <path d="m161 121 27 8 8 19-8 14-27-8-8-18 8-15Z" fill="#A8BCD4" stroke="#F4F8FF" stroke-width="3"/>
+  <path d="m191 130 27 8 8 19-8 14-27-8-8-18 8-15ZM221 138l27 8 8 19-8 14-27-8-8-18 8-15Z" fill="#8197B3" stroke="#E7F0FC" stroke-width="3"/>
+  <path d="m511 152 18-5 6 9-6 12-18 5-6-9 6-12ZM544 142l18-5 6 9-6 12-18 5-6-9 6-12ZM577 132l18-5 6 9-6 12-18 5-6-9 6-12Z" fill="#F2F7FF" fill-opacity=".82"/>
+  <path d="M384 188v58" stroke="#FFFFFF" stroke-opacity=".75" stroke-width="3"/>
+  <path d="m66 76 318-68 318 68" stroke="#FFFFFF" stroke-opacity=".82" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M48 275h672l-28 10H76l-28-10Z" fill="#202C40" stroke="#667D9C" stroke-width="4" stroke-linejoin="round"/>
+</svg>

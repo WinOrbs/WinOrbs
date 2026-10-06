@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 24 24" fill="none" role="img"><defs>
+  <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+    <stop stop-color="#fff4bd"/><stop offset=".35" stop-color="#f4be3f"/>
+    <stop offset=".72" stop-color="#b96a18"/><stop offset="1" stop-color="#71310e"/>
+  </linearGradient>
+  <linearGradient id="silver" x1="0" y1="0" x2="1" y2="1">
+    <stop stop-color="#fff"/><stop offset=".42" stop-color="#b9cce2"/>
+    <stop offset=".75" stop-color="#7185a0"/><stop offset="1" stop-color="#30445f"/>
+  </linearGradient>
+  <linearGradient id="red" x1="0" y1="0" x2="1" y2="1">
+    <stop stop-color="#ffc1a6"/><stop offset=".35" stop-color="#ed684c"/>
+    <stop offset=".76" stop-color="#a72b27"/><stop offset="1" stop-color="#551b20"/>
+  </linearGradient>
+  <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1">
+    <stop stop-color="#d6f4ff"/><stop offset=".4" stop-color="#48b9e8"/>
+    <stop offset=".78" stop-color="#17618f"/><stop offset="1" stop-color="#102d50"/>
+  </linearGradient>
+  <linearGradient id="green" x1="0" y1="0" x2="1" y2="1">
+    <stop stop-color="#c9ffd9"/><stop offset=".4" stop-color="#39c978"/>
+    <stop offset=".78" stop-color="#187448"/><stop offset="1" stop-color="#103d37"/>
+  </linearGradient>
+  <linearGradient id="purple" x1="0" y1="0" x2="1" y2="1">
+    <stop stop-color="#f0d4ff"/><stop offset=".4" stop-color="#ae68e8"/>
+    <stop offset=".78" stop-color="#6335a2"/><stop offset="1" stop-color="#301c5d"/>
+  </linearGradient>
+  <linearGradient id="bronze" x1="0" y1="0" x2="1" y2="1">
+    <stop stop-color="#ffe1c5"/><stop offset=".42" stop-color="#d28b5e"/>
+    <stop offset=".78" stop-color="#824936"/><stop offset="1" stop-color="#462629"/>
+  </linearGradient>
+  <linearGradient id="darkMetal" x1="0" y1="0" x2="1" y2="1">
+    <stop stop-color="#7487a1"/><stop offset=".45" stop-color="#293b55"/>
+    <stop offset="1" stop-color="#111a2c"/>
+  </linearGradient>
+  <radialGradient id="shine" cx=".28" cy=".24" r=".85">
+    <stop stop-color="#fff" stop-opacity=".92"/><stop offset=".28" stop-color="#fff" stop-opacity=".38"/>
+    <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+  </radialGradient>
+  <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+    <feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+  <filter id="shadow" x="-40%" y="-40%" width="180%" height="190%">
+    <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#050914" flood-opacity=".65"/>
+  </filter></defs><title>ui bolt</title>
+    <path d="m13 1-9 13h6l-1 9 11-14h-7l2-8h-2Z" fill="url(#gold)" stroke="#fff4bd" stroke-width="1.2" stroke-linejoin="round"/>
+    <path d="m13 4-5 8h5l-1 6 6-8h-5l1-6Z" fill="#fff3ac" fill-opacity=".66"/></svg>

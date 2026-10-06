@@ -188,6 +188,48 @@ check('el HUD muestra las eliminaciones recibidas en gameState',
 check('el resultado final incluye podio y clasificación con puntuación y kills',
     /id="match-podium"/.test(game) && /id="results-list"/.test(game) &&
     /renderFinalStandings\(ranking\)/.test(game) && /player\.eliminations/.test(game));
+const joystickFnStart = game.indexOf('        function actualizarTeclasJoystick(');
+const joystickFnEnd = game.indexOf('\n\n        let mouseX', joystickFnStart);
+assert.ok(joystickFnStart > 0 && joystickFnEnd > joystickFnStart, 'No se encontró actualizarTeclasJoystick()');
+const joystickSource = game.slice(joystickFnStart, joystickFnEnd);
+const actualizarTeclasJoystick = new Function('return function (dx, dy, targetKeys) {' +
+    joystickSource.slice(joystickSource.indexOf('{') + 1, joystickSource.lastIndexOf('}')) +
+    '\n}')();
+const joystickKeys = { w: false, a: false, s: false, d: false };
+actualizarTeclasJoystick(-30, 0, joystickKeys);
+actualizarTeclasJoystick(30, 0, joystickKeys);
+check('el joystick cambia directamente de rumbo durante el mismo toque',
+    joystickKeys.d && !joystickKeys.a);
+actualizarTeclasJoystick(0, 0, joystickKeys);
+check('el deadzone deja el joystick neutro sin conservar rumbo previo',
+    !joystickKeys.w && !joystickKeys.a && !joystickKeys.s && !joystickKeys.d);
+check('Disparar vuelve a la fila inferior derecha y Recargar sigue en otra fila',
+    /\.touch-btn\.shoot\s*\{[^}]*grid-column:\s*3;[^}]*grid-row:\s*3;/s.test(game) &&
+    /#btn-reload-mobile\s*\{[^}]*grid-row:\s*2;/s.test(game));
+const mobileHudStart = game.indexOf('/* HUD tactil:');
+const mobileBannersStart = game.indexOf('            .extract-banner,', mobileHudStart);
+check('los avisos táctiles usan mayor tipografía que el tamaño anterior',
+    mobileBannersStart > mobileHudStart &&
+    /font-size:\s*6px\s*!important/.test(game.slice(mobileBannersStart, mobileBannersStart + 900)));
+for (const sprite of ['podium-gold.svg', 'podium-silver.svg', 'podium-bronze.svg']) {
+    const spritePath = path.join(__dirname, '..', 'public', 'assets', 'game', sprite);
+    check(`sprite ${sprite} existe y contiene SVG válido`, /<svg\b[\s\S]*<\/svg>/.test(fs.readFileSync(spritePath, 'utf8')));
+}
+check('el podio monta un sprite según la medalla del puesto',
+    /podium-\$\{medal\}\.svg/.test(game) && /medal: "silver"/.test(game) &&
+    /medal: "gold"/.test(game) && /medal: "bronze"/.test(game));
+const airdropRenderStart = game.indexOf('(gameState.airdrops || []).forEach(ad => {');
+const airdropRenderEnd = game.indexOf('// Obstáculos destructibles:', airdropRenderStart);
+const airdropRender = game.slice(airdropRenderStart, airdropRenderEnd);
+check('el airdrop muestra paracaídas con balanceo durante el descenso',
+    airdropRender.includes('canopyAlpha') &&
+    airdropRender.includes('Math.sin(Date.now() / 430') &&
+    airdropRender.includes('ctx.bezierCurveTo') &&
+    airdropRender.includes("ctx.globalAlpha = canopyAlpha"));
+check('el paracaídas desaparece al aterrizar y la caja usa sprite separado',
+    /const canopyAlpha = Math\.max\(0, Math\.min\(1, \(1 - prog\) \* 7\)\)/.test(airdropRender) &&
+    /drawSprite\('airdrop', ad\.x, ad\.y - drop/.test(airdropRender) &&
+    airdropRender.indexOf('return;') < airdropRender.indexOf('const porCaducar'));
 
 console.log('\n' + (fallos === 0 ? '✔ Todo correcto' : '✖ ' + fallos + ' fallo(s)'));
 process.exit(fallos === 0 ? 0 : 1);
