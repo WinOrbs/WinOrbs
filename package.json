@@ -12,7 +12,7 @@
     "banda": "node tools/medir_ancho.js",
     "banda:tick": "node tools/medir_tick.js",
     "rules": "node tools/patch_rules.js",
-    "sprites": "node tools/gen_sprites.js && node tools/gen_sprites_vector.js",
+    "sprites": "node tools/gen_sprites_vector.js",
     "servidor": "node tools/cambiar-servidor.js",
     "test:security": "node tests/test_security_config.js",
     "test:validation": "node tests/test_validation.js",
