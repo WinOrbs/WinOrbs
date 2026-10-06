@@ -3402,10 +3402,18 @@
                 cctx.save();
                 cctx.clip();
                 if (skinLista) {
+                    const fondoSkin = cctx.createRadialGradient(orbe.x - r * 0.35, orbe.y - r * 0.35, r * 0.15, orbe.x, orbe.y, r);
+                    fondoSkin.addColorStop(0, skin.c1 || '#38bdf8');
+                    fondoSkin.addColorStop(1, skin.c2 || '#0284c7');
+                    cctx.fillStyle = fondoSkin;
+                    cctx.fill();
                     cctx.save();
                     cctx.translate(orbe.x, orbe.y);
                     cctx.rotate(Math.atan2(orbe.vy, orbe.vx) + Math.PI / 2);
-                    cctx.drawImage(skinImg, -r, -r, r * 2, r * 2);
+                    const escalaSkin = Math.min((r * 2) / skinImg.naturalWidth, (r * 2) / skinImg.naturalHeight);
+                    const anchoSkin = skinImg.naturalWidth * escalaSkin;
+                    const altoSkin = skinImg.naturalHeight * escalaSkin;
+                    cctx.drawImage(skinImg, -anchoSkin / 2, -altoSkin / 2, anchoSkin, altoSkin);
                     cctx.restore();
                 } else {
                     const g = cctx.createRadialGradient(orbe.x - r * 0.35, orbe.y - r * 0.35, r * 0.15, orbe.x, orbe.y, r);
@@ -5071,7 +5079,9 @@
                 const fb = OBSTACULOS_FALLBACK[tipo];
                 const hpRatio = (obs.hp || 0) / (obs.maxHp || 30);
                 const spriteTipo = tipo === 'roca' ? 'obstaculo' : tipo;
-                if (!drawSprite(spriteTipo, obs.x + obs.w / 2, obs.y + obs.h / 2, obs.w, obs.h)) {
+                const spriteAncho = tipo === 'barril' ? obs.w * 1.8 : obs.w;
+                const spriteAlto = tipo === 'barril' ? undefined : obs.h;
+                if (!drawSprite(spriteTipo, obs.x + obs.w / 2, obs.y + obs.h / 2, spriteAncho, spriteAlto)) {
                     ctx.fillStyle = hpRatio > 0.5 ? fb.lleno : fb.roto;
                     ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
                     ctx.strokeStyle = hpRatio < 0.4 ? '#ef4444' : fb.borde;
@@ -5094,7 +5104,7 @@
             // fallback: círculo y cuadrado originales
             (gameState.droppedEnergy || []).forEach(g => {
                 const flotacion = Math.sin(Date.now() / 400 + g.x * 0.05) * 2;
-                if (!drawSprite('orbe', g.x, g.y + flotacion, 24)) {
+                if (!drawSprite('orbe', g.x, g.y + flotacion, 58)) {
                     ctx.beginPath(); ctx.arc(g.x, g.y, 6, 0, Math.PI * 2); ctx.fillStyle = '#facc15'; ctx.fill();
                 }
             });
@@ -5232,12 +5242,18 @@
                     ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
                     ctx.clip();
                     const lado = p.radius * 2;
-                    // La skin gira hacia donde apunta el jugador (p.angle = dirección
-                    // del puntero/disparo). El cuadrado inscrito cubre el círculo
-                    // recortado en cualquier rotación, así que no deja huecos.
+                    const gradOrbe = ctx.createRadialGradient(p.x - p.radius * 0.35, p.y - p.radius * 0.35, p.radius * 0.15, p.x, p.y, p.radius);
+                    gradOrbe.addColorStop(0, skC1);
+                    gradOrbe.addColorStop(1, skC2);
+                    ctx.fillStyle = gradOrbe;
+                    ctx.fill();
+                    // La skin gira con el jugador, pero conserva la proporción de su imagen.
                     ctx.translate(p.x, p.y);
                     ctx.rotate(p.angle || 0);
-                    ctx.drawImage(skImg, -lado / 2, -lado / 2, lado, lado);
+                    const escalaSkin = Math.min(lado / skImg.naturalWidth, lado / skImg.naturalHeight);
+                    const anchoSkin = skImg.naturalWidth * escalaSkin;
+                    const altoSkin = skImg.naturalHeight * escalaSkin;
+                    ctx.drawImage(skImg, -anchoSkin / 2, -altoSkin / 2, anchoSkin, altoSkin);
                     ctx.restore();
                 } else {
                     const gradOrbe = ctx.createRadialGradient(p.x - p.radius * 0.35, p.y - p.radius * 0.35, p.radius * 0.15, p.x, p.y, p.radius);
