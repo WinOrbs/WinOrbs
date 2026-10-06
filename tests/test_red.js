@@ -211,12 +211,14 @@ const mobileBannersStart = game.indexOf('            .extract-banner,', mobileHu
 check('los avisos táctiles usan mayor tipografía que el tamaño anterior',
     mobileBannersStart > mobileHudStart &&
     /font-size:\s*6px\s*!important/.test(game.slice(mobileBannersStart, mobileBannersStart + 900)));
-for (const sprite of ['podium-gold.svg', 'podium-silver.svg', 'podium-bronze.svg']) {
+for (const sprite of ['podium-gold.png', 'podium-silver.png', 'podium-bronze.png']) {
     const spritePath = path.join(__dirname, '..', 'public', 'assets', 'game', sprite);
-    check(`sprite ${sprite} existe y contiene SVG válido`, /<svg\b[\s\S]*<\/svg>/.test(fs.readFileSync(spritePath, 'utf8')));
+    const png = fs.readFileSync(spritePath);
+    check(`sprite ${sprite} existe y contiene PNG válido`,
+        png.length > 24 && png.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])));
 }
 check('el podio monta un sprite según la medalla del puesto',
-    /podium-\$\{medal\}\.svg/.test(game) && /medal: "silver"/.test(game) &&
+    /podium-\$\{medal\}\.png/.test(game) && /medal: "silver"/.test(game) &&
     /medal: "gold"/.test(game) && /medal: "bronze"/.test(game));
 const airdropRenderStart = game.indexOf('(gameState.airdrops || []).forEach(ad => {');
 const airdropRenderEnd = game.indexOf('// Obstáculos destructibles:', airdropRenderStart);
