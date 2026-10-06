@@ -41,8 +41,10 @@
   <filter id="shadow" x="-40%" y="-40%" width="180%" height="190%">
     <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#050914" flood-opacity=".65"/>
   </filter></defs><title>obstacle</title>
-    <path d="m11 30 16-18 19 8 15-12 23 18 2 23-9 13 4 19-22 7-18-7-21 3-9-20 6-15-6-19Z" fill="url(#darkMetal)" stroke="#b4c7df" stroke-width="2.5" filter="url(#shadow)"/>
-    <path d="m11 30 16-18 19 8-4 25-22 12-9-20Zm35-10 15-12 23 18-18 17-25 2 5-25Zm-5 27 25-2 18 17 4 19-22 7-18-7-14-15 7-19Z" fill="#7790ae" fill-opacity=".42"/>
-    <path d="m27 12 19 8-5 27-21 10m26-35 15-12m-20 37 25-2 18 17M41 47 27 70l-19 4" stroke="#d5e3f4" stroke-opacity=".75" stroke-width="2"/>
-    <path d="m42 20 4 18-9 8 11 13-7 12M61 8l-2 20 12 8" stroke="#15243a" stroke-width="2.5"/>
-    <path d="m20 77 7-7 20 8-4 10-18 3-9-5 4-9Z" fill="url(#bronze)" opacity=".72"/></svg>
+    <path d="m11 30 16-18 19 8 15-12 23 18 2 23-9 13 4 19-22 7-18-7-21 3-9-20 6-15-6-19Z" fill="#07101e" stroke="#8ea7c2" stroke-width="2.3" filter="url(#shadow)"/>
+    <path d="m13 30 15-15 17 7-4 22-20 11-8-18Zm34-8 14-10 20 16-17 15-22 2 5-23Zm-4 30 24-2 16 15 3 17-20 6-17-7-13-14 7-15Z" fill="url(#darkMetal)"/>
+    <path d="m27 15 18 7-4 22-20 11m26-34 14-10m-19 36 24-2 16 15M41 49 28 70l-18 4" stroke="#c9dcf0" stroke-opacity=".72" stroke-width="2" stroke-linecap="round"/>
+    <path d="m43 22 4 17-8 9 10 12-7 10M61 11l-2 19 11 7" stroke="#091426" stroke-width="3"/>
+    <path d="m18 76 9-7 19 7-4 11-17 3-10-5Z" fill="url(#bronze)" opacity=".75"/>
+    <circle cx="71" cy="68" r="2.5" fill="#56dfff" opacity=".55" filter="url(#glow)"/>
+  </svg>
