@@ -58,52 +58,71 @@ const sprites = {
     <path d="M0 149.5h150M149.5 0v150" stroke="#91a9ca" stroke-opacity=".24"/>
     <g fill="#8aa0c3" opacity=".16"><circle cx="17" cy="25" r="1"/><circle cx="76" cy="14" r="1"/><circle cx="129" cy="39" r="1"/><circle cx="36" cy="91" r="1"/><circle cx="111" cy="119" r="1"/><circle cx="69" cy="137" r="1"/><circle cx="19" cy="128" r="1"/></g>`],
   'orb-energy.svg': [24, 24, `
-    <circle cx="12" cy="12" r="10.5" fill="#f5b933" opacity=".2" filter="url(#glow)"/>
-    <circle cx="12" cy="12" r="8.5" fill="url(#gold)" stroke="#fff0a3" stroke-width="1.2"/>
-    <path d="m12 4 5.8 5-2.1 8-6.6 2-4.1-5 1.4-7L12 4Z" fill="#ffe879" fill-opacity=".7"/>
-    <path d="m12 4 1.5 7 4.3-2M12 11l-7 3m7-3 3.7 6" stroke="#fff8d4" stroke-opacity=".82" stroke-width=".8"/>
-    <ellipse cx="9" cy="8" rx="3.2" ry="2" fill="url(#shine)"/>`],
+    <circle cx="12" cy="12.5" r="10.2" fill="#24c9ff" opacity=".16" filter="url(#glow)"/>
+    <circle cx="12" cy="12" r="9.1" fill="#091526" stroke="#78eaff" stroke-width="1.2" filter="url(#shadow)"/>
+    <circle cx="12" cy="12" r="7.8" fill="url(#gold)"/>
+    <path d="M12 4.4 17.8 8l-1.1 7.2-5.1 4.2-5.3-4.2L5.2 8 12 4.4Z" fill="none" stroke="#fff4a6" stroke-opacity=".62" stroke-width=".65"/>
+    <path d="M12 5.1v6.5l4.7-3.1M12 11.6 6.2 15m5.8-3.4 3.9 4.8" stroke="#fffde4" stroke-width=".7" stroke-linecap="round" opacity=".9"/>
+    <ellipse cx="8.8" cy="7.7" rx="3.1" ry="1.65" fill="url(#shine)"/>
+    <circle cx="12" cy="12" r="2.1" fill="#fff9c9" opacity=".72" filter="url(#glow)"/>
+  `],
   'health-kit.svg': [32, 32, `
-    <path d="M5 9 8 5h16l3 4 2 17-3 3H6l-3-3 2-17Z" fill="url(#silver)" stroke="#17253c" stroke-width="1.5" filter="url(#shadow)"/>
-    <path d="m5 9 3-4h16l3 4H5Z" fill="#f7fbff" stroke="#7185a0" stroke-width="1"/>
-    <path d="M6 12h20v11H6z" fill="url(#red)" stroke="#63252a" stroke-width="1"/>
-    <path d="M14 13h4v3h3v4h-3v3h-4v-3h-3v-4h3z" fill="#fff" stroke="#f4e8df" stroke-width=".7"/>
-    <path d="m8 6 3-2h10l3 2" stroke="#fff" stroke-opacity=".8" stroke-width="1.2"/>`],
+    <path d="M5 9 8 5h16l3 4 2 17-3 3H6l-3-3 2-17Z" fill="#0b1728" stroke="#9db5d0" stroke-width="1.4" filter="url(#shadow)"/>
+    <path d="M6 10h20l1.7 14-2.3 2H6.6l-2.3-2L6 10Z" fill="url(#silver)"/>
+    <path d="M7 12h18v10.5l-2 2H9l-2-2V12Z" fill="url(#red)"/>
+    <path d="M7 12h18v3H7z" fill="#ff9b85" opacity=".7"/>
+    <path d="M13.2 13.4h5.6v3.2h3.2v5.6h-3.2v3.2h-5.6v-3.2H10v-5.6h3.2z" fill="#fff" stroke="#ffe8e1" stroke-width=".7"/>
+    <path d="M8 6.4h16l2 3.1H6l2-3.1Z" fill="#dcecff" opacity=".8"/>
+    <path d="M9 6.4h8" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/>
+  `],
   'bullet.svg': [20, 20, `
-    <path d="M10 2c-3.2 3-5.2 6.5-5.2 10.1A5.2 5.2 0 0 0 10 17.3a5.2 5.2 0 0 0 5.2-5.2C15.2 8.5 13.2 5 10 2Z" fill="url(#silver)" stroke="#e8f4ff" stroke-width="1" filter="url(#shadow)"/>
-    <path d="M10 3.5v10.8M7.1 8.1l2.9-3 2.9 3" stroke="#fff" stroke-opacity=".76" stroke-width=".8"/>
-    <path d="M6.3 13.5c1.1 2.4 6.3 2.7 7.4-.2" stroke="#8199b8" stroke-width="1"/>`],
+    <path d="M10 1.7c-3.7 3.2-5.7 7-5.7 10.5 0 3.5 2.5 5.8 5.7 5.8s5.7-2.3 5.7-5.8C15.7 8.7 13.7 4.9 10 1.7Z" fill="#0a1424" stroke="#7892b0" stroke-width="1.1" filter="url(#shadow)"/>
+    <path d="M10 2.8c-2.8 3-4.4 6.3-4.4 9.1 0 2.5 1.8 4.2 4.4 4.2s4.4-1.7 4.4-4.2c0-2.8-1.6-6.1-4.4-9.1Z" fill="url(#silver)"/>
+    <path d="M10 3.1v11.2M7.1 7.5l2.9-3.1 2.9 3.1" stroke="#fff" stroke-opacity=".78" stroke-width=".75" stroke-linecap="round"/>
+    <path d="M6.2 13.2c1.2 2.3 6.1 2.7 7.5-.1" stroke="#263a54" stroke-width="1.2" stroke-linecap="round"/>
+  `],
   'bullet-orb.svg': [28, 28, `
-    <circle cx="14" cy="14" r="12" fill="#a768e8" opacity=".24" filter="url(#glow)"/>
-    <circle cx="14" cy="14" r="9.2" fill="url(#purple)" stroke="#e6c9ff" stroke-width="1.4"/>
-    <path d="m14 5 6.1 5-1 7-6.3 5-5-5 .9-7L14 5Z" fill="#ce9aff" fill-opacity=".66"/>
-    <path d="m14 5 1.2 8 4.9-3M15.2 13l-6.5 4m6.5-4 2.9 4" stroke="#f7eaff" stroke-opacity=".86" stroke-width="1"/>
-    <ellipse cx="11" cy="9" rx="3" ry="2" fill="url(#shine)"/>`],
+    <circle cx="14" cy="14" r="12.1" fill="#a95cff" opacity=".2" filter="url(#glow)"/>
+    <circle cx="14" cy="14" r="10.1" fill="#0c1222" stroke="#c68aff" stroke-width="1.1" filter="url(#shadow)"/>
+    <circle cx="14" cy="14" r="8.7" fill="url(#purple)"/>
+    <path d="m14 5.4 6.3 4.4-1.1 7.6-5.2 5.1-5.4-5.1.9-7.6L14 5.4Z" fill="none" stroke="#f4dcff" stroke-opacity=".7" stroke-width=".7"/>
+    <path d="M14 5.8v7.1l5.2-3.1M14 12.9l-6.1 3.9m6.1-3.9 3.8 5.2" stroke="#fff6ff" stroke-width=".85" stroke-linecap="round"/>
+    <ellipse cx="10.5" cy="9" rx="3.5" ry="1.9" fill="url(#shine)"/>
+    <circle cx="14" cy="13.8" r="2.2" fill="#fff0ff" opacity=".58" filter="url(#glow)"/>
+  `],
   'bomb.svg': [32, 32, `
-    <path d="m20 8 5-4" stroke="#c8d4e4" stroke-width="2.6" stroke-linecap="round"/>
-    <path d="m24 3 1-2m2 3 2-1m-1 4 2 1" stroke="#ffcf50" stroke-width="1.7" stroke-linecap="round" filter="url(#glow)"/>
-    <path d="M16 8a12 12 0 1 0 0 24 12 12 0 0 0 0-24Z" transform="translate(0 -2)" fill="url(#red)" stroke="#ffb29b" stroke-width="1.3" filter="url(#shadow)"/>
-    <path d="m16 8 8 4-1 9-8 7-8-6 1-9 8-5Z" fill="#dc5140" fill-opacity=".58"/>
-    <ellipse cx="12" cy="12" rx="4" ry="2.6" fill="url(#shine)"/>
-    <path d="m21 8 3 2-1 3-4-1" fill="url(#darkMetal)" stroke="#dae6f5" stroke-width=".8"/>`],
+    <path d="m19.5 8.5 5.2-4.4" stroke="#aebfd4" stroke-width="2.8" stroke-linecap="round"/>
+    <path d="m24.3 3.2 1-1.8m1.8 3.2 1.8-.8m-1.1 3.2 1.9 1" stroke="#ffd84d" stroke-width="1.5" stroke-linecap="round" filter="url(#glow)"/>
+    <circle cx="16" cy="19" r="12.1" fill="#090f1d" stroke="#8da5bf" stroke-width="1.1" filter="url(#shadow)"/>
+    <circle cx="16" cy="19" r="10.7" fill="url(#red)"/>
+    <path d="m16 8.6 7.7 4.3-1.1 8.5-7.6 6.2-7.5-5.7 1-8.7L16 8.6Z" fill="#ef5b48" opacity=".48"/>
+    <path d="M8 18.5c2.7-5.1 7.4-7.6 13-6.4" stroke="#fff1ea" stroke-opacity=".46" stroke-width="1.2" stroke-linecap="round"/>
+    <ellipse cx="11.6" cy="13.1" rx="3.7" ry="2.2" fill="url(#shine)"/>
+    <path d="m21.2 8.1 3 1.7-1.1 3.3-3.7-1.2" fill="url(#darkMetal)" stroke="#dbe8f5" stroke-width=".7"/>
+  `],
   'explosion.svg': [256, 64, `
     <g transform="translate(0 0)"><circle cx="32" cy="32" r="16" fill="#ffd445" opacity=".5" filter="url(#glow)"/><path d="m32 9 5 13 12-9-3 15 14 2-13 7 8 12-15-4-3 14-7-13-10 9 2-15-14-4 13-6-7-13 14 4 4-12Z" fill="url(#gold)" stroke="#fff5c8" stroke-width="1.4"/><circle cx="32" cy="32" r="8" fill="#fff"/><circle cx="32" cy="32" r="4" fill="#fff8c8"/></g>
     <g transform="translate(64 0)"><circle cx="32" cy="32" r="24" fill="#ff8d35" opacity=".36" filter="url(#glow)"/><path d="m31 5 7 14 12-7-3 14 13 5-13 7 7 13-15-4-7 13-5-15-14 6 5-15-13-7 15-5-1-15 12 9 10-13Z" fill="#f8a52d" stroke="#fff0a0" stroke-width="1.4"/><path d="m32 15 13 8 2 13-10 12-14-5-5-13 5-12 9-3Z" fill="#fff7d4"/></g>
     <g transform="translate(128 0)"><circle cx="32" cy="32" r="27" fill="#ef512d" opacity=".3" filter="url(#glow)"/><path d="m31 4 8 13 10-8 1 14 14 4-12 9 8 12-15-2-4 14-9-12-12 9 2-15-14-4 12-8-7-13 15 3 3-16Z" fill="#d95630" stroke="#ffd78b" stroke-width="1.4"/><path d="m31 15 13 4 5 11-6 12-13 4-9-9 1-13 9-9Z" fill="#ffd16c"/><circle cx="31" cy="31" r="7" fill="#fff4cd"/></g>
     <g transform="translate(192 0)"><circle cx="32" cy="32" r="28" fill="#b94e37" opacity=".25" filter="url(#glow)"/><path d="M9 32c0-13 10-23 23-23s23 10 23 23-10 23-23 23S9 45 9 32Z" fill="none" stroke="#d77c54" stroke-width="7" stroke-dasharray="3 3"/><path d="M15 32c0-9 8-17 17-17s17 8 17 17-8 17-17 17-17-8-17-17Z" fill="none" stroke="#743c36" stroke-width="4"/><path d="m7 16 4-6m46 42 5 4M13 52l-4 5" stroke="#f59e0b" stroke-width="2"/> </g>`],
   'airdrop.svg': [96, 96, `
-    <path d="M13 34 48 25l35 9v43l-35 13-35-13V34Z" fill="url(#gold)" stroke="#ffe9a7" stroke-width="2.5" filter="url(#shadow)"/>
-    <path d="m13 34 35 10v46L13 77V34ZM48 44l35-10v43L48 90V44Z" fill="#8f4c19" fill-opacity=".28" stroke="#704019" stroke-width="1.5"/>
-    <path d="M24 31v50m12-53v57m25-57v57m12-59v55" stroke="#ffeaa6" stroke-opacity=".65" stroke-width="3"/>
-    <path d="M13 47 48 57l35-10M13 66l35 11 35-11" stroke="#8c5118" stroke-width="2"/>
-    <path d="m39 54 9-4 10 4v12l-10 7-9-7V54Z" fill="url(#silver)" stroke="#fff" stroke-width="1.5"/>
-    <path d="M47 54h3v5h5v3h-5v5h-3v-5h-5v-3h5z" fill="#ed4c43"/>`],
+    <path d="M13 34 48 24l35 10v43l-35 14-35-14V34Z" fill="#081321" stroke="#8ca5c0" stroke-width="2.2" filter="url(#shadow)"/>
+    <path d="m14 35 34 10v42L14 76V35ZM48 45l34-10v41L48 87V45Z" fill="url(#darkMetal)"/>
+    <path d="M13 35 48 45 83 35" stroke="#ffe18a" stroke-opacity=".65" stroke-width="2"/>
+    <path d="M23 31v49m13-53v57m25-58v58m12-60v56" stroke="#c8d8e8" stroke-opacity=".48" stroke-width="2.4"/>
+    <path d="M22 52 48 60l26-8M14 67l34 11 34-11" stroke="#07101e" stroke-width="2"/>
+    <path d="m39 54 9-4 10 4v12l-10 7-9-7V54Z" fill="url(#gold)" stroke="#fff0a7" stroke-width="1.3"/>
+    <path d="M47 54h3v5h5v3h-5v5h-3v-5h-5v-3h5z" fill="#fff8c9"/>
+    <path d="m18 38 27 8" stroke="#fff" stroke-opacity=".32" stroke-width="1.4"/>
+  `],
   'obstacle.svg': [96, 96, `
-    <path d="m11 30 16-18 19 8 15-12 23 18 2 23-9 13 4 19-22 7-18-7-21 3-9-20 6-15-6-19Z" fill="url(#darkMetal)" stroke="#b4c7df" stroke-width="2.5" filter="url(#shadow)"/>
-    <path d="m11 30 16-18 19 8-4 25-22 12-9-20Zm35-10 15-12 23 18-18 17-25 2 5-25Zm-5 27 25-2 18 17 4 19-22 7-18-7-14-15 7-19Z" fill="#7790ae" fill-opacity=".42"/>
-    <path d="m27 12 19 8-5 27-21 10m26-35 15-12m-20 37 25-2 18 17M41 47 27 70l-19 4" stroke="#d5e3f4" stroke-opacity=".75" stroke-width="2"/>
-    <path d="m42 20 4 18-9 8 11 13-7 12M61 8l-2 20 12 8" stroke="#15243a" stroke-width="2.5"/>
-    <path d="m20 77 7-7 20 8-4 10-18 3-9-5 4-9Z" fill="url(#bronze)" opacity=".72"/>`],
+    <path d="m11 30 16-18 19 8 15-12 23 18 2 23-9 13 4 19-22 7-18-7-21 3-9-20 6-15-6-19Z" fill="#07101e" stroke="#8ea7c2" stroke-width="2.3" filter="url(#shadow)"/>
+    <path d="m13 30 15-15 17 7-4 22-20 11-8-18Zm34-8 14-10 20 16-17 15-22 2 5-23Zm-4 30 24-2 16 15 3 17-20 6-17-7-13-14 7-15Z" fill="url(#darkMetal)"/>
+    <path d="m27 15 18 7-4 22-20 11m26-34 14-10m-19 36 24-2 16 15M41 49 28 70l-18 4" stroke="#c9dcf0" stroke-opacity=".72" stroke-width="2" stroke-linecap="round"/>
+    <path d="m43 22 4 17-8 9 10 12-7 10M61 11l-2 19 11 7" stroke="#091426" stroke-width="3"/>
+    <path d="m18 76 9-7 19 7-4 11-17 3-10-5Z" fill="url(#bronze)" opacity=".75"/>
+    <circle cx="71" cy="68" r="2.5" fill="#56dfff" opacity=".55" filter="url(#glow)"/>
+  `],
   'car.svg': [80, 48, `
     <path d="M9 7h7v8H9zm55 0h7v8h-7zM9 33h7v8H9zm55 0h7v8h-7z" fill="#101727" stroke="#8296b1" stroke-width="1"/>
     <path d="m7 13 5-7h56l5 7v23l-6 7H13l-6-7V13Z" fill="url(#red)" stroke="#ffd0bb" stroke-width="2" filter="url(#shadow)"/>
@@ -120,22 +139,29 @@ const sprites = {
     <path d="m17 17 12 2-3 5h-8l-4-4m18-8 6-4 5 1m-4 2 3 6" stroke="#d5deeb" stroke-width="1.5" stroke-linecap="round"/>
     <circle cx="10" cy="14" r="1.3" fill="#eaf2ff"/><circle cx="38" cy="14" r="1.3" fill="#eaf2ff"/>`],
   'barrel.svg': [32, 32, `
-    <path d="M7 4h18l3 5v14l-3 5H7l-3-5V9l3-5Z" fill="url(#red)" stroke="#ffbea6" stroke-width="1.5" filter="url(#shadow)"/>
-    <path d="M7 5h18l3 4H4l3-4Zm-3 18h24l-3 5H7l-3-5Z" fill="url(#silver)" stroke="#9bacbf" stroke-width=".8"/>
-    <path d="M5 12h22v7H5z" fill="url(#gold)" stroke="#fff0a4" stroke-width=".8"/>
-    <path d="m9 13 3 2-3 3m8-5 3 2-3 3m5-5 3 2-3 3" stroke="#27354a" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M10 6v20" stroke="#ffd0bb" stroke-opacity=".6" stroke-width="1.5"/>`],
+    <path d="M7 4h18l3 5v14l-3 5H7l-3-5V9l3-5Z" fill="#091221" stroke="#839ab5" stroke-width="1.2" filter="url(#shadow)"/>
+    <path d="M7 5h18l2.3 4H4.7L7 5Zm-2.3 18h22.6L25 28H7l-2.3-5Z" fill="url(#silver)" stroke="#dceaff" stroke-width=".75"/>
+    <path d="M5.2 11.1h21.6v9.7H5.2z" fill="url(#red)"/>
+    <path d="M5.2 11.1h21.6v2.2H5.2z" fill="#ff9a7e" opacity=".55"/>
+    <path d="m9 13.2 3.1 2-3.1 2.5m7.2-4.5 3.1 2-3.1 2.5m5.1-4.5 2.6 2-2.6 2.5" stroke="#3a1820" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M10 6.2v19.6" stroke="#fff" stroke-opacity=".55" stroke-width="1.2"/>
+  `],
   'wall.svg': [96, 96, `
-    <path d="M9 14 48 6l39 8v66l-39 10-39-10V14Z" fill="url(#darkMetal)" stroke="#d5e1f1" stroke-width="2.5" filter="url(#shadow)"/>
-    <path d="m9 14 39 9 39-9M9 35l39 9 39-9M9 57l39 9 39-9M9 79l39 10 39-10" stroke="#15243a" stroke-width="3"/>
-    <path d="m12 17 35 8v14l-35-8V17Zm39 8 34-8v14l-34 8V25Zm-39 14 35 8v14l-35-8V39Zm39 8 34-8v14l-34 8V47Zm-39 14 35 8v15l-35-9V61Zm39 8 34-8v15l-34 9V69Z" fill="url(#silver)" fill-opacity=".56"/>
-    <g fill="#fff0ad" stroke="#24344c" stroke-width="1"><circle cx="15" cy="19" r="2"/><circle cx="81" cy="19" r="2"/><circle cx="15" cy="76" r="2"/><circle cx="81" cy="76" r="2"/></g>
-    <path d="m15 19 2 1m62 54 2 1" stroke="#fff" stroke-width=".8"/>`],
+    <path d="M9 14 48 6l39 8v66l-39 10-39-10V14Z" fill="#07101e" stroke="#a8bed7" stroke-width="2.3" filter="url(#shadow)"/>
+    <path d="m10 15 38 9 38-9M10 36l38 9 38-9M10 58l38 9 38-9M10 80l38 10 38-10" stroke="#0a1628" stroke-width="3.4"/>
+    <path d="m12 17 34 8v13l-34-8V17Zm38 9 34-8v13l-34 8V26Zm-38 14 34 8v13l-34-8V40Zm38 9 34-8v14l-34 8V49Zm-38 14 34 8v14l-34-9V63Zm38 8 34-8v14l-34 9V71Z" fill="url(#silver)" fill-opacity=".66"/>
+    <path d="m14 18 31 7m-31 17 31 7m-31 17 31 8" stroke="#fff" stroke-opacity=".28" stroke-width="1.4"/>
+    <g fill="#66dfff" stroke="#0b1628" stroke-width="1"><circle cx="16" cy="20" r="2"/><circle cx="80" cy="20" r="2"/><circle cx="16" cy="77" r="2"/><circle cx="80" cy="77" r="2"/></g>
+    <path d="m16 20 2 1m62 54 2 1" stroke="#fff" stroke-opacity=".8" stroke-width=".8"/>
+  `],
   'speed-pad.svg': [96, 36, `
-    <path d="m5 5 7-3h72l7 3v26l-7 3H12l-7-3V5Z" fill="url(#gold)" stroke="#fff0a4" stroke-width="2" filter="url(#shadow)"/>
-    <path d="m10 8 4-2h66l5 2v20l-5 2H14l-4-2V8Z" fill="#17243b" stroke="#f7cf58" stroke-width="1.4"/>
-    <path d="m24 10 10 8-10 8h-7l9-8-9-8h7Zm23 0 10 8-10 8h-7l9-8-9-8h7Zm23 0 10 8-10 8h-7l9-8-9-8h7Z" fill="url(#gold)" stroke="#fff3c2" stroke-width=".8"/>
-    <path d="M14 7h67" stroke="#fff" stroke-opacity=".58" stroke-width="1"/>`],
+    <path d="m5 5 7-3h72l7 3v26l-7 3H12l-7-3V5Z" fill="#06101f" stroke="#6ddfff" stroke-width="1.7" filter="url(#shadow)"/>
+    <path d="m9 7 5-2h68l5 2v22l-5 2H14l-5-2V7Z" fill="#10263d" stroke="#238bc0" stroke-width="1"/>
+    <path d="m18 9h61l5 2v14l-5 2H18l-5-2V11l5-2Z" fill="#0b1728"/>
+    <path d="m24 10 10 8-10 8h-7l9-8-9-8h7Zm23 0 10 8-10 8h-7l9-8-9-8h7Zm23 0 10 8-10 8h-7l9-8-9-8h7Z" fill="url(#blue)" stroke="#baf5ff" stroke-width=".7" filter="url(#glow)"/>
+    <path d="M16 7h65" stroke="#fff" stroke-opacity=".5" stroke-width="1"/>
+    <circle cx="12" cy="18" r="1.2" fill="#62e8ff"/><circle cx="84" cy="18" r="1.2" fill="#62e8ff"/>
+  `],
   'shop.svg': [96, 96, `
     <path d="M19 36 24 15h48l5 21v49H19V36Z" fill="url(#blue)" stroke="#d9f5ff" stroke-width="2.5" filter="url(#shadow)"/>
     <path d="M12 31h72l-5 16H17l-5-16Z" fill="url(#red)" stroke="#ffd7c9" stroke-width="2"/>
@@ -155,12 +181,15 @@ const sprites = {
     <path d="M48 49v18m-8-9h16m-14-6 12 12m0-12L42 64" stroke="#e9fff0" stroke-width="1.6"/>
     <path d="m20 30 28-15 28 15" stroke="#fff" stroke-opacity=".72" stroke-width="2"/>`],
   'orb-gun.svg': [32, 32, `
-    <path d="M4 10h16l4 4h5v8h-7l-5 4H9v-6H4V10Z" fill="url(#purple)" stroke="#e8d2ff" stroke-width="1.5" filter="url(#shadow)"/>
-    <path d="M6 12h13l3 3h7v3H6v-6Z" fill="#d9adff" stroke="#f7edff" stroke-width="1"/>
-    <path d="M9 20h6v6h-4l-2-6Zm10-6h4v7h-4z" fill="url(#darkMetal)" stroke="#e2eaf5" stroke-width=".8"/>
-    <circle cx="27" cy="18.5" r="3.4" fill="#b871f4" opacity=".6" filter="url(#glow)"/>
-    <circle cx="27" cy="18.5" r="2" fill="#f1d5ff" stroke="#fff" stroke-width=".7"/>
-    <path d="M11 12h7" stroke="#fff" stroke-width="1" stroke-linecap="round"/>`],
+    <path d="M4 10h15.5l4.3 3.8H29v8h-6.7l-4.9 4H8.8v-5.5H4V10Z" fill="#090f1d" stroke="#9bb0ca" stroke-width="1.2" filter="url(#shadow)"/>
+    <path d="M5.8 11.8h13.4l3.5 3.1h5v4.1H5.8v-7.2Z" fill="url(#purple)"/>
+    <path d="M7 12.2h11.5l2.2 2.1H7v-2.1Z" fill="#f0c8ff" opacity=".55"/>
+    <path d="M9 20.2h6.5v6H10l-1-6Zm10-5.8h4.1v7.2H19z" fill="url(#darkMetal)" stroke="#e6f1ff" stroke-width=".7"/>
+    <circle cx="27" cy="17.6" r="4.3" fill="#b457ff" opacity=".28" filter="url(#glow)"/>
+    <circle cx="27" cy="17.6" r="2.5" fill="url(#purple)" stroke="#f5dfff" stroke-width=".8"/>
+    <circle cx="26.2" cy="16.8" r=".7" fill="#fff"/>
+    <path d="M9 12h7" stroke="#fff" stroke-opacity=".8" stroke-width="1" stroke-linecap="round"/>
+  `],
   'ui-heart.svg': [24, 24, `
     <path d="M12 21 3.8 13.5C-1 8.5 6.1 2.4 11 7l1 1 1-1c4.9-4.6 12 1.5 7.2 6.5L12 21Z" fill="url(#red)" stroke="#ffd7ca" stroke-width="1.2"/>
     <path d="M5 11c0-2.8 3.2-4.2 5.4-2.4" stroke="#fff" stroke-opacity=".82" stroke-width="1.3" stroke-linecap="round"/>
