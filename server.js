@@ -788,6 +788,7 @@ class GameRoom {
         this.entryFee = entryFee;
         this.isPrivate = isPrivate;
         this.password = password;
+        this.mode = 'ffa'; // Todas las salas actuales usan reglas todos-contra-todos.
 
         this.players = {};
         this.bullets = [];
@@ -2373,6 +2374,7 @@ class GameRoom {
         return {
             id: this.id,
             nombre: this.name,
+            mode: this.mode,
             maxJugadores: this.maxPlayers,
             jugadoresConectados: Object.keys(this.players).length,
             precioEntrada: this.entryFee,

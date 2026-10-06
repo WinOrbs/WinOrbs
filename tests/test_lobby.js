@@ -44,6 +44,8 @@ class Element {
   set className(v) { this.attrs.class = String(v); }
   get id() { return this.attrs.id || ''; }
   set id(v) { this.attrs.id = String(v); }
+  get disabled() { return Object.prototype.hasOwnProperty.call(this.attrs, 'disabled'); }
+  setAttribute(name, value) { this.attrs[name] = String(value); }
   get hidden() { return Object.prototype.hasOwnProperty.call(this.attrs, 'hidden'); }
   set hidden(v) { if (v) this.attrs.hidden = ''; else delete this.attrs.hidden; }
   get dataset() {
@@ -229,6 +231,7 @@ function payload({ llenarTier05 = false } = {}) {
     for (let i = 1; i <= 5; i++) {
       salas.push({
         id: `${pre}_${i}`, nombre: `Rápida $${precio.toFixed(2)} · #${i}`,
+        mode: 'ffa',
         maxJugadores: 10, jugadoresConectados: i - 1, precioEntrada: precio,
         pozoActual: +(precio * (i - 1)).toFixed(2), esPrivada: false, iniciada: false
       });
@@ -236,7 +239,7 @@ function payload({ llenarTier05 = false } = {}) {
   });
   salas.find((s) => s.id === 'p1_5').jugadoresConectados = 10;   // sala LLENA
   salas.find((s) => s.id === 'p3_2').iniciada = true;            // sala INICIADA
-  salas.push({ id: 'vip_1', nombre: 'VIP Privada', maxJugadores: 4, jugadoresConectados: 1, precioEntrada: 2, pozoActual: 2, esPrivada: true, iniciada: false });
+  salas.push({ id: 'vip_1', nombre: 'VIP Privada', mode: 'ffa', maxJugadores: 4, jugadoresConectados: 1, precioEntrada: 2, pozoActual: 2, esPrivada: true, iniciada: false });
   if (llenarTier05) salas.forEach((s) => { if (s.id.startsWith('p05')) s.jugadoresConectados = s.maxJugadores; });
   return salas;
 }
@@ -269,6 +272,12 @@ module.exports = { payload, chips, grupos, vacio, clickChip, setCupo, setOrden, 
 // Aserciones del lobby (usa el harness que ejecuta el script real de index.html)
 
 // 1) Carga inicial: 20 salas de tier + 1 privada
+const botonesModo = document.querySelectorAll('.mode-portal');
+log('selector SOLO/FFA/TEAMS ordenado con FFA disponible y modos no implementados deshabilitados',
+  botonesModo.length === 3 &&
+  botonesModo[0].dataset.modo === 'solo' && Object.prototype.hasOwnProperty.call(botonesModo[0].attrs, 'disabled') &&
+  botonesModo[1].dataset.modo === 'ffa' && botonesModo[1].attrs['aria-pressed'] === 'true' &&
+  botonesModo[2].dataset.modo === 'teams' && Object.prototype.hasOwnProperty.call(botonesModo[2].attrs, 'disabled'));
 socket.trigger('roomsList', payload());
 let ch = chips();
 log('chips generados con conteos: ' + ch.map((c) => `${c.label}(${c.n})`).join(' | '),
@@ -340,11 +349,25 @@ log('categoría desaparecida -> se vuelve a "Todas": ' + ch.map((c) => c.txt).jo
 // 7) Lobby sin salas
 socket.trigger('roomsList', []);
 log('sin salas -> estado vacío informativo y barra de filtros oculta: "' + limpiar(vacio().textContent).slice(0, 40) + '"',
-  !!vacio() && /No hay salas activas/.test(vacio().textContent) && limpiar(contador.textContent) === '0 salas' && barra.style.display === 'none');
+  !!vacio() && /No hay salas FFA activas/.test(vacio().textContent) && limpiar(contador.textContent) === '0 salas' && barra.style.display === 'none');
 socket.trigger('roomsList', null);
 log('roomsList nulo no rompe el render (defensivo)', !!vacio() && contador.textContent === '0 salas');
 socket.trigger('roomsList', payload());
 log('la barra de filtros vuelve al haber salas', barra.style.display === '' && grupos().length === 5);
+
+const roomsWithOtherModes = payload();
+roomsWithOtherModes.push({
+  id: 'teams_decoy', nombre: 'Sala FFA por nombre, Teams por contrato', mode: 'teams',
+  maxJugadores: 10, jugadoresConectados: 0, precioEntrada: 0.5, pozoActual: 0, esPrivada: false, iniciada: false
+});
+roomsWithOtherModes.push({
+  id: 'missing_mode', nombre: 'Sala sin modo explícito',
+  maxJugadores: 10, jugadoresConectados: 0, precioEntrada: 0.5, pozoActual: 0, esPrivada: false, iniciada: false
+});
+socket.trigger('roomsList', roomsWithOtherModes);
+log('solo se muestran salas con mode explícito FFA; no se infiere por el nombre',
+  limpiar(contador.textContent) === '21 salas' &&
+  !grupos().some((grupo) => grupo.salas.includes('teams_decoy') || grupo.salas.includes('missing_mode')));
 
 console.log(`\n=== RESUMEN ===\nTotal: ${resultados.length} | Pasaron: ${resultados.filter(Boolean).length} | Fallaron: ${resultados.filter((r) => !r).length}`);
 process.exit(resultados.every(Boolean) ? 0 : 1);

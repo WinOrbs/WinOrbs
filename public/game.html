@@ -830,7 +830,7 @@
             display: block;
             width: 100%;
             height: 100%;
-            object-fit: fill;
+            object-fit: contain;
             pointer-events: none;
         }
 
@@ -3950,9 +3950,9 @@
         const skinImages = {};
         let shakeIntensity = 0;
 
-        // ==== SPRITES DEL JUEGO (SVG facetado en alta resolución) ====
+        // ==== SPRITES PNG DEL JUEGO ====
         // Manifest: clave → { src, tile?, frames?, frameW?, frameH? }.
-        // Cada SVG se precarga al abrir la página; si falta o falla,
+        // Cada PNG se precarga al abrir la página; si falta o falla,
         // sprites[clave] queda null y render() usa el dibujo procedural
         // original (fallback grácil, mismo patrón que las skins sin foto).
         const SPRITES_MANIFEST = {
@@ -3962,7 +3962,7 @@
             bala: { src: 'assets/game/bullet.png' },
             balaOrbe: { src: 'assets/game/bullet-orb.png' },
             bomba: { src: 'assets/game/bomb.png' },
-            explosion: { src: 'assets/game/explosion.png', frameW: 256, frameH: 256, frames: 4 },
+            explosion: { src: 'assets/game/explosion.png', frameW: 64, frameH: 64, frames: 4 },
             airdrop: { src: 'assets/game/airdrop.png' },
             obstaculo: { src: 'assets/game/obstacle.png' },
             coche: { src: 'assets/game/car.png' },
@@ -3993,19 +3993,22 @@
             });
         })();
 
-        // Dibuja el sprite SVG `clave` centrado en (x, y) con ancho w y alto
-        // proporcional (o alto h fijo), rotación opcional `rot` en radianes
-        // y suavizado adecuado al tamaño vectorial. Devuelve true si se
-        // dibujó; false si no hay sprite (el caller aplica su fallback).
+        // Dibuja el sprite PNG `clave` centrado en (x, y), contenido en la caja
+        // indicada sin deformar su proporción, con rotación opcional `rot`.
+        // Devuelve true si se dibujó; false si no hay sprite (el caller aplica
+        // su fallback).
         function drawSprite(clave, x, y, w, h, rot) {
             const img = sprites[clave];
             if (!img || !img.complete || !img.naturalWidth) return false;
-            const alto = h || (w * img.naturalHeight / img.naturalWidth);
+            const maxAlto = h || (w * img.naturalHeight / img.naturalWidth);
+            const escala = Math.min(w / img.naturalWidth, maxAlto / img.naturalHeight);
+            const ancho = img.naturalWidth * escala;
+            const alto = img.naturalHeight * escala;
             ctx.save();
             ctx.imageSmoothingEnabled = true;
             ctx.translate(x, y);
             if (rot) ctx.rotate(rot);
-            ctx.drawImage(img, -w / 2, -alto / 2, w, alto);
+            ctx.drawImage(img, -ancho / 2, -alto / 2, ancho, alto);
             ctx.restore();
             return true;
         }

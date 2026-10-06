@@ -21,6 +21,8 @@ assert.match(source, /modo: FIREBASE_ECONOMY \? 'ECONOMIA' : 'DESHABILITADA'/);
 assert.match(source, /salas con entrada monetaria requieren economía server-side configurada/);
 assert.match(source, /Esta sala de pago no está disponible temporalmente/);
 assert.doesNotMatch(source, /Cobro\/premio los gestiona el cliente/);
+assert.match(source, /this\.mode = 'ffa'/);
+assert.match(source, /mode: this\.mode/);
 
 assert.doesNotMatch(walletHtml, /runTransaction/);
 assert.doesNotMatch(walletHtml, /updateDoc\([^)]*usuarios/);
