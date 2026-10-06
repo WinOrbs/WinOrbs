@@ -41,9 +41,12 @@
   <filter id="shadow" x="-40%" y="-40%" width="180%" height="190%">
     <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#050914" flood-opacity=".65"/>
   </filter></defs><title>orb gun</title>
-    <path d="M4 10h16l4 4h5v8h-7l-5 4H9v-6H4V10Z" fill="url(#purple)" stroke="#e8d2ff" stroke-width="1.5" filter="url(#shadow)"/>
-    <path d="M6 12h13l3 3h7v3H6v-6Z" fill="#d9adff" stroke="#f7edff" stroke-width="1"/>
-    <path d="M9 20h6v6h-4l-2-6Zm10-6h4v7h-4z" fill="url(#darkMetal)" stroke="#e2eaf5" stroke-width=".8"/>
-    <circle cx="27" cy="18.5" r="3.4" fill="#b871f4" opacity=".6" filter="url(#glow)"/>
-    <circle cx="27" cy="18.5" r="2" fill="#f1d5ff" stroke="#fff" stroke-width=".7"/>
-    <path d="M11 12h7" stroke="#fff" stroke-width="1" stroke-linecap="round"/></svg>
+    <path d="M4 10h15.5l4.3 3.8H29v8h-6.7l-4.9 4H8.8v-5.5H4V10Z" fill="#090f1d" stroke="#9bb0ca" stroke-width="1.2" filter="url(#shadow)"/>
+    <path d="M5.8 11.8h13.4l3.5 3.1h5v4.1H5.8v-7.2Z" fill="url(#purple)"/>
+    <path d="M7 12.2h11.5l2.2 2.1H7v-2.1Z" fill="#f0c8ff" opacity=".55"/>
+    <path d="M9 20.2h6.5v6H10l-1-6Zm10-5.8h4.1v7.2H19z" fill="url(#darkMetal)" stroke="#e6f1ff" stroke-width=".7"/>
+    <circle cx="27" cy="17.6" r="4.3" fill="#b457ff" opacity=".28" filter="url(#glow)"/>
+    <circle cx="27" cy="17.6" r="2.5" fill="url(#purple)" stroke="#f5dfff" stroke-width=".8"/>
+    <circle cx="26.2" cy="16.8" r=".7" fill="#fff"/>
+    <path d="M9 12h7" stroke="#fff" stroke-opacity=".8" stroke-width="1" stroke-linecap="round"/>
+  </svg>
