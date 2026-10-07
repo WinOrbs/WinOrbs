@@ -273,11 +273,11 @@ module.exports = { payload, chips, grupos, vacio, clickChip, setCupo, setOrden, 
 
 // 1) Carga inicial: 20 salas de tier + 1 privada
 const botonesModo = document.querySelectorAll('.mode-portal');
-log('selector SOLO/FFA/TEAMS ordenado con FFA disponible y modos no implementados deshabilitados',
+log('selector SOLO/FFA/TEAMS muestra los modos implementados y selecciona FFA',
   botonesModo.length === 3 &&
-  botonesModo[0].dataset.modo === 'solo' && Object.prototype.hasOwnProperty.call(botonesModo[0].attrs, 'disabled') &&
+  botonesModo[0].dataset.modo === 'solo' && !Object.prototype.hasOwnProperty.call(botonesModo[0].attrs, 'disabled') &&
   botonesModo[1].dataset.modo === 'ffa' && botonesModo[1].attrs['aria-pressed'] === 'true' &&
-  botonesModo[2].dataset.modo === 'teams' && Object.prototype.hasOwnProperty.call(botonesModo[2].attrs, 'disabled'));
+  botonesModo[2].dataset.modo === 'teams' && !Object.prototype.hasOwnProperty.call(botonesModo[2].attrs, 'disabled'));
 socket.trigger('roomsList', payload());
 let ch = chips();
 log('chips generados con conteos: ' + ch.map((c) => `${c.label}(${c.n})`).join(' | '),

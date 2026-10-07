@@ -1,7 +1,7 @@
 const { io } = require('socket.io-client');
 // El password de admin viene de .env (dotenv) y NO debe quedar fijo en los tests.
 try { require('dotenv').config(); } catch (e) { /* dotenv opcional */ }
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 
 const results = [];
 function log(msg, ok) { results.push({ msg, ok }); console.log(`[${ok ? 'PASS' : 'FAIL'}] ${msg}`); }

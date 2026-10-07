@@ -5,6 +5,7 @@
 // Ejecutar desde la raíz del proyecto:  node test_bombas.js
 const fs = require('fs');
 const assert = require('assert');
+const { validateShoot } = require('../apps/server/transport/command');
 const out = [];
 let fallos = 0;
 function check(nombre, cond) {
@@ -38,7 +39,7 @@ const io = {
 };
 const MAP_SIZE = 5000;
 const sandboxBase = {
-  io, MAP_SIZE, Date, console, Math, isFinite,
+  io, MAP_SIZE, Date, console, Math, isFinite, validateShoot,
   SHOOT_COOLDOWN: { 1: 120, 2: 400, 3: 500 },
   BOMBA_VEL: 12, BOMBA_FRICCION: 0.95, BOMBA_COOLDOWN_MS: 400,
   ITEM_COSTOS: { medkit: 30, shield: 50, bomb: 40, orbGun: 100 },

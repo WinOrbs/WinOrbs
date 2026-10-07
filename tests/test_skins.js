@@ -24,6 +24,7 @@ function check(nombre, cond) {
     const sandbox = {
         FIREBASE_ECONOMY: false,
         FIREBASE_DB: null,
+        PROGRESSION_RUNTIME: null,
         PROGRESSION_REWARDS: [],
         recompensaVisualEquipada: async () => null
     };

@@ -4,6 +4,7 @@
 const fs = require('fs');
 const assert = require('assert');
 const express = require('express');
+const { createAuditLogger } = require('../apps/server/platform/audit');
 const out = [];
 let fallos = 0;
 function check(nombre, cond) {
@@ -45,7 +46,8 @@ async function main() {
       })
     },
     io: { emit: (ev, data) => { if (ev === 'retirosList') emitidos.push(data); } },
-    console, setTimeout
+    console, setTimeout,
+    createAuditLogger: (logger) => createAuditLogger(logger)
   };
   // sanitización real de server.js (la necesita normalizarRetiro)
   sandbox.sanitizeNick = function (nick) {

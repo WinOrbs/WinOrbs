@@ -21,7 +21,7 @@ const { io } = require('socket.io-client');
 const fs = require('fs');
 const path = require('path');
 try { require('dotenv').config(); } catch (e) { /* dotenv opcional */ }
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 
 const URL = 'http://localhost:3000';
 const ROOM = 'rzl_' + Date.now();

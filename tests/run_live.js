@@ -20,6 +20,12 @@ const TESTS = [
 
 const resumen = [];
 let srv = null;
+let suiteFailed = false;
+
+if (!process.env.ADMIN_PASSWORD) {
+    console.error('ADMIN_PASSWORD must be set explicitly before running live admin/gameplay tests.');
+    process.exit(2);
+}
 
 function apagar() {
     // OJO: solo se mata el servidor que lanzó ESTE runner. Un taskkill global
@@ -47,7 +53,7 @@ const esperarArranque = (n) => new Promise(res => {
 
     srv = spawn(process.execPath, ['server.js'], {
         cwd: RAIZ,
-        env: { ...process.env, PORT: String(PUERTO) },
+        env: { ...process.env, NODE_ENV: 'test', PORT: String(PUERTO) },
         stdio: ['ignore', 'pipe', 'pipe']
     });
     let errServ = '';
@@ -70,12 +76,15 @@ const esperarArranque = (n) => new Promise(res => {
         const pass = (out.match(/\[PASS\]/g) || []).length;
         const fail = (out.match(/\[FAIL\]/g) || []).length;
         const colgado = r.signal === 'SIGTERM' || r.status === null;
+        const passed = r.status === 0 && !colgado && fail === 0;
         const total = out.split('\n').find(l => /Total:|RESUMEN/.test(l)) || '';
-        resumen.push({ nombre, pass, fail, colgado, total: total.trim().slice(0, 70) });
+        resumen.push({ nombre, pass, fail, colgado, passed, total: total.trim().slice(0, 70) });
+        if (!passed) suiteFailed = true;
         console.log(nombre.padEnd(24) +
             ' PASS=' + String(pass).padStart(2) +
             '  FAIL=' + String(fail).padStart(2) +
             (colgado ? '  [TIMEOUT/COLGADO]' : '  [exit=' + r.status + ']'));
+        if (!passed && out.trim()) console.log(out.trim());
     }
 
     apagar();
@@ -84,7 +93,7 @@ const esperarArranque = (n) => new Promise(res => {
         x.nombre.padEnd(24) + ' PASS=' + String(x.pass).padStart(2) +
         ' FAIL=' + String(x.fail).padStart(2) +
         (x.colgado ? ' COLGADO' : '') + '  ' + x.total));
-    process.exit(0);
+    process.exitCode = suiteFailed ? 1 : 0;
 })();
 
 process.on('exit', apagar);
