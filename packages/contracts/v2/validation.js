@@ -37,6 +37,19 @@ const EVENT_PAYLOAD_KEYS = Object.freeze({
     MatchFinished: ['resultId', 'finishReason']
 });
 
+const ACTOR_EVENT_TYPES = Object.freeze([
+    'PlayerMoved',
+    'ShotFired',
+    'DamageApplied',
+    'PlayerKilled',
+    'PlayerDied',
+    'OrbDropped',
+    'OrbCollected',
+    'LootCollected',
+    'PlayerRespawned',
+    'ScoreUpdated'
+]);
+
 const FORBIDDEN_KEY_PARTS = Object.freeze([
     'wallet',
     'balance',
@@ -243,6 +256,24 @@ function validateGameEvent(value) {
         return failure(CONTRACT_ERRORS.INVALID_PAYLOAD, '$.payload');
     }
     return success(value);
+}
+
+function validateNewGameEvent(value) {
+    const validation = validateGameEvent(value);
+    if (!validation.ok) return validation;
+    if (ACTOR_EVENT_TYPES.includes(value.type) && !nonEmptyString(value.actorId)) {
+        return failure(CONTRACT_ERRORS.INVALID_EVENT, '$.actorId');
+    }
+    if (['PlayerMoved', 'ShotFired', 'PlayerDied', 'OrbCollected', 'LootCollected',
+        'PlayerRespawned', 'ScoreUpdated'].includes(value.type) &&
+        value.actorId !== value.payload.actorId) {
+        return failure(CONTRACT_ERRORS.INVALID_EVENT, '$.actorId');
+    }
+    if (value.type === 'PlayerKilled' &&
+        value.actorId !== (value.payload.killerId || value.payload.actorId)) {
+        return failure(CONTRACT_ERRORS.INVALID_EVENT, '$.actorId');
+    }
+    return validation;
 }
 
 function validIdMap(value, validateEntry) {
@@ -500,6 +531,7 @@ function validateAuthenticatedPrincipal(value) {
 module.exports = Object.freeze({
     validateGameCommand,
     validateGameEvent,
+    validateNewGameEvent,
     validateGameState,
     validateMatchResult,
     validateAuthenticatedPrincipal

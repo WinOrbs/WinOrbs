@@ -8,7 +8,7 @@ const {
 } = require('../../contracts/v2');
 const {
     validateGameCommand,
-    validateGameEvent,
+    validateNewGameEvent,
     validateGameState,
     validateMatchResult
 } = require('../../contracts/v2/validation');
@@ -294,7 +294,7 @@ function createGameEngine(initialState, inputRules = {}, dependencies = {}) {
         if (candidate.timestamp === null) {
             throw new TypeError('clock must return a finite non-negative timestamp');
         }
-        const validation = validateGameEvent(candidate);
+        const validation = validateNewGameEvent(candidate);
         if (!validation.ok) {
             throw new TypeError(`Engine produced invalid ${type} event at ${validation.error.path}`);
         }

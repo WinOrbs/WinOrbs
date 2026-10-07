@@ -7,6 +7,7 @@ const {
 } = require('../../contracts/v2');
 const {
     validateGameEvent,
+    validateNewGameEvent,
     validateGameState,
     validateMatchResult
 } = require('../../contracts/v2/validation');
@@ -502,7 +503,7 @@ function createMatchPersistence({ persistence, clock = Date.now } = {}) {
                         payload: clone(input.payload),
                         ...(input.actorId === undefined ? {} : { actorId: input.actorId })
                     };
-                    if (!validateGameEvent(event).ok) {
+                    if (!validateNewGameEvent(event).ok) {
                         return failure(MATCH_PERSISTENCE_ERRORS.INVALID_EVENT);
                     }
                     additions.push(event);

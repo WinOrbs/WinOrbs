@@ -1,5 +1,7 @@
 'use strict';
 
+const { validateGameCommand } = require('../../../contracts/v2/validation');
+
 const CLIENT_EVENTS = Object.freeze({
     'match:join': 'joinMatch',
     'match:leave': 'leaveMatch',
@@ -92,11 +94,19 @@ function requestForEvent(event, payload, principal) {
             Object.prototype.hasOwnProperty.call(command, key))) {
             return { ok: false, response: errorResponse('INVALID_PAYLOAD') };
         }
+        if (payload.matchId !== undefined &&
+            (typeof payload.matchId !== 'string' || !payload.matchId.trim() ||
+                payload.matchId.length > 128)) {
+            return { ok: false, response: errorResponse('INVALID_PAYLOAD') };
+        }
         if (command.actorId !== principal.userId) {
             return { ok: false, response: errorResponse('ACTOR_MISMATCH') };
         }
         if (command.sessionId !== principal.sessionId) {
             return { ok: false, response: errorResponse('SESSION_MISMATCH') };
+        }
+        if (!validateGameCommand(command).ok) {
+            return { ok: false, response: errorResponse('INVALID_PAYLOAD') };
         }
 
         return {

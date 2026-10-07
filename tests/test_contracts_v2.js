@@ -125,6 +125,9 @@ function expectError(result, code) {
 }
 
 assert.strictEqual(validators.validateGameCommand(validCommand()).ok, true);
+assert.strictEqual(validators.validateGameCommand(validCommand({
+    clientTimestamp: 150
+})).ok, true);
 for (const [field, code] of [
     ['commandId', CONTRACT_ERRORS.INVALID_COMMAND],
     ['actorId', CONTRACT_ERRORS.INVALID_COMMAND],
@@ -138,9 +141,12 @@ expectError(validators.validateGameCommand(validCommand({ sequence: 0 })), CONTR
 expectError(validators.validateGameCommand(validCommand({ sequence: 1.5 })), CONTRACT_ERRORS.INVALID_SEQUENCE);
 expectError(validators.validateGameCommand(validCommand({ type: 'Teleport' })), CONTRACT_ERRORS.INVALID_COMMAND);
 expectError(validators.validateGameCommand(validCommand({ schemaVersion: 2 })), CONTRACT_ERRORS.UNSUPPORTED_SCHEMA_VERSION);
+expectError(validators.validateGameCommand(validCommand({ schemaVersion: '1' })), CONTRACT_ERRORS.UNSUPPORTED_SCHEMA_VERSION);
 expectError(validators.validateGameCommand(validCommand({ payload: { direction: { x: 1 } } })), CONTRACT_ERRORS.INVALID_PAYLOAD);
 expectError(validators.validateGameCommand(validCommand({ payload: { direction: { x: 1, y: 0 }, score: 500 } })), CONTRACT_ERRORS.INVALID_PAYLOAD);
 expectError(validators.validateGameCommand(validCommand({ type: 'Shoot', payload: { angle: 0, damage: 100 } })), CONTRACT_ERRORS.INVALID_PAYLOAD);
+expectError(validators.validateGameCommand(validCommand({ unexpected: true })), CONTRACT_ERRORS.INVALID_COMMAND);
+expectError(validators.validateGameCommand(validCommand({ sequence: '1' })), CONTRACT_ERRORS.INVALID_SEQUENCE);
 
 assert.strictEqual(validators.validateGameEvent(validEvent()).ok, true);
 for (const field of ['eventId', 'matchId', 'sequence']) {
@@ -152,6 +158,20 @@ expectError(validators.validateGameEvent(validEvent({ sequence: 0 })), CONTRACT_
 expectError(validators.validateGameEvent(validEvent({ type: 'UnknownEvent' })), CONTRACT_ERRORS.INVALID_EVENT);
 expectError(validators.validateGameEvent(validEvent({ payload: {} })), CONTRACT_ERRORS.INVALID_PAYLOAD);
 expectError(validators.validateGameEvent(validEvent({ payload: { ...validEvent().payload, balance: 10 } })), CONTRACT_ERRORS.INVALID_EVENT);
+expectError(validators.validateGameEvent(validEvent({ unexpected: true })), CONTRACT_ERRORS.INVALID_EVENT);
+expectError(validators.validateGameEvent(validEvent({ timestamp: '100' })), CONTRACT_ERRORS.INVALID_EVENT);
+expectError(validators.validateNewGameEvent(validEvent({ actorId: 'another-player' })), CONTRACT_ERRORS.INVALID_EVENT);
+const systemEvent = validEvent({
+    type: 'ZoneUpdated',
+    payload: { center: { x: 10, y: 20 }, radius: 50, phase: 1 }
+});
+delete systemEvent.actorId;
+assert.strictEqual(validators.validateGameEvent(systemEvent).ok, true);
+assert.strictEqual(validators.validateNewGameEvent(systemEvent).ok, true);
+const actorEventWithoutActor = validEvent();
+delete actorEventWithoutActor.actorId;
+assert.strictEqual(validators.validateGameEvent(actorEventWithoutActor).ok, true);
+expectError(validators.validateNewGameEvent(actorEventWithoutActor), CONTRACT_ERRORS.INVALID_EVENT);
 
 assert.strictEqual(validators.validateGameState(validState()).ok, true);
 for (const field of ['match', 'players', 'teams', 'zone', 'timers', 'sequence']) {
@@ -177,6 +197,11 @@ expectError(validators.validateMatchResult(validResult({
 expectError(validators.validateMatchResult(validResult({
     rankings: [{ rank: 1, actorIds: ['not-a-participant'], teamId: null }]
 })), CONTRACT_ERRORS.INVALID_RESULT);
+assert.strictEqual(validators.validateMatchResult(validResult({
+    policyReference: 'policy-1'
+})).ok, true);
+expectError(validators.validateMatchResult(validResult({ unexpected: true })), CONTRACT_ERRORS.INVALID_RESULT);
+expectError(validators.validateMatchResult(validResult({ finishedAt: '200' })), CONTRACT_ERRORS.INVALID_RESULT);
 
 assert.strictEqual(validators.validateAuthenticatedPrincipal(validPrincipal()).ok, true);
 expectError(validators.validateAuthenticatedPrincipal(validPrincipal({ userId: '' })), CONTRACT_ERRORS.INVALID_PRINCIPAL);
@@ -184,5 +209,7 @@ expectError(validators.validateAuthenticatedPrincipal(validPrincipal({ sessionId
 expectError(validators.validateAuthenticatedPrincipal(validPrincipal({ expiresAt: 100 })), CONTRACT_ERRORS.INVALID_PRINCIPAL);
 expectError(validators.validateAuthenticatedPrincipal(validPrincipal({ roles: ['player', 3] })), CONTRACT_ERRORS.INVALID_PRINCIPAL);
 expectError(validators.validateAuthenticatedPrincipal(validPrincipal({ admin: true })), CONTRACT_ERRORS.INVALID_PRINCIPAL);
+expectError(validators.validateAuthenticatedPrincipal(validPrincipal({ schemaVersion: 2 })), CONTRACT_ERRORS.UNSUPPORTED_SCHEMA_VERSION);
+expectError(validators.validateAuthenticatedPrincipal(validPrincipal({ unexpected: true })), CONTRACT_ERRORS.INVALID_PRINCIPAL);
 
 console.log('OK contracts v2: commands, events, state, results and principals validate strictly.');

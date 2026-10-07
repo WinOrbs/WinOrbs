@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('assert');
+const { SCHEMA_VERSION } = require('../packages/contracts/v2');
 const {
     MATCH_PERMISSIONS,
     createIdentityService
@@ -171,7 +172,7 @@ async function run() {
     }
 
     const command = {
-        schemaVersion: '2.0',
+        schemaVersion: SCHEMA_VERSION,
         commandId: 'command-1',
         sessionId: principal.sessionId,
         matchId: 'match-1',
@@ -187,6 +188,21 @@ async function run() {
     assert.strictEqual(commandResponse.ok, true);
     assert.strictEqual(calls.at(-1).method, 'submitGameCommand');
     assert.strictEqual(calls.at(-1).request.command, command);
+    const priorCallCount = calls.length;
+    assert.strictEqual((await socket.trigger('game:command', {
+        command: { ...command, schemaVersion: '2.0' }
+    })).error.code, 'INVALID_PAYLOAD');
+    assert.strictEqual((await socket.trigger('game:command', {
+        command: { ...command, payload: { direction: { x: 1, y: 0 }, health: 100 } }
+    })).error.code, 'INVALID_PAYLOAD');
+    assert.strictEqual((await socket.trigger('game:command', {
+        command: { ...command, unexpected: true }
+    })).error.code, 'INVALID_PAYLOAD');
+    assert.strictEqual((await socket.trigger('game:command', {
+        matchId: [],
+        command
+    })).error.code, 'INVALID_PAYLOAD');
+    assert.strictEqual(calls.length, priorCallCount);
 
     assert.strictEqual((await socket.trigger('match:join', {
         actorId: 'another-player'
