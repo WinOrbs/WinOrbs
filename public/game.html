@@ -998,6 +998,122 @@
             overflow-y: auto;
         }
 
+        #team-lobby-panel {
+            display: none;
+            width: min(620px, 100%);
+            margin: 12px auto 0;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .team-lobby-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .team-lobby-card {
+            min-width: 0;
+            padding: 10px;
+            border: 1px solid var(--team-color, var(--border));
+            background: rgba(8, 14, 28, .8);
+            text-align: left;
+        }
+
+        .team-lobby-card button {
+            width: 100%;
+            margin: 0 0 6px;
+            border: 1px solid var(--team-color, var(--border));
+            background: color-mix(in srgb, var(--team-color, #38bdf8) 14%, transparent);
+            color: #fff;
+            padding: 8px;
+            font: 700 11px var(--font-display);
+            cursor: pointer;
+        }
+
+        .team-lobby-members {
+            min-height: 38px;
+            line-height: 1.7;
+            overflow-wrap: anywhere;
+        }
+
+        #team-profile-form {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+
+        #team-profile-form input[type="text"] {
+            width: 150px;
+            min-height: 34px;
+            color: #fff;
+            background: #0b1220;
+            border: 1px solid var(--border);
+            padding: 5px 8px;
+        }
+
+        #team-profile-form input[type="color"] {
+            width: 42px;
+            height: 34px;
+            padding: 2px;
+            background: #0b1220;
+            border: 1px solid var(--border);
+        }
+
+        #team-action-status {
+            min-height: 17px;
+            margin-top: 6px;
+            color: var(--primary);
+        }
+
+        #spectator-controls {
+            display: none;
+            position: fixed;
+            left: 50%;
+            bottom: calc(18px + env(safe-area-inset-bottom));
+            z-index: 20;
+            transform: translateX(-50%);
+            align-items: center;
+            gap: 8px;
+            padding: 8px;
+            border: 2px solid var(--pix-border, #3d517f);
+            background: rgba(5, 8, 15, .94);
+            color: #fff;
+            font: 10px var(--font-pixel, monospace);
+        }
+
+        #spectator-controls button {
+            min-height: 36px;
+            border: 1px solid #3d517f;
+            background: #101a30;
+            color: #fff;
+            padding: 6px 9px;
+            touch-action: none;
+        }
+
+        #spectator-pad {
+            display: grid;
+            grid-template-columns: repeat(3, 34px);
+            grid-template-rows: repeat(2, 32px);
+            gap: 3px;
+        }
+
+        #spectator-pad button { padding: 2px; }
+        #spectator-up { grid-column: 2; }
+        #spectator-left { grid-column: 1; grid-row: 2; }
+        #spectator-down { grid-column: 2; grid-row: 2; }
+        #spectator-right { grid-column: 3; grid-row: 2; }
+
+        @media (max-width: 560px) {
+            .team-lobby-grid { gap: 6px; }
+            .team-lobby-card { padding: 7px; }
+            #spectator-controls { gap: 5px; padding: 5px; }
+            #spectator-controls button { min-height: 32px; padding: 4px 6px; font-size: 8px; }
+        }
+
         @media (max-height: 560px) {
             #lobby-overlay .death-card {
                 padding: 12px;
@@ -2941,6 +3057,26 @@
                 <div id="lobby-seats"
                     style="display:flex; gap:6px; justify-content:center; margin-top:8px; flex-wrap:wrap;"></div>
             </div>
+            <section id="team-lobby-panel" aria-label="Selección de equipo">
+                    <div class="team-lobby-grid">
+                        <div class="team-lobby-card" id="team-card-A" style="--team-color:#38bdf8">
+                            <button type="button" onclick="seleccionarEquipo('A')" id="team-select-A">Equipo Azul · 0/5</button>
+                            <div class="team-lobby-members" id="team-members-A"></div>
+                        </div>
+                        <div class="team-lobby-card" id="team-card-B" style="--team-color:#fb7185">
+                            <button type="button" onclick="seleccionarEquipo('B')" id="team-select-B">Equipo Rojo · 0/5</button>
+                            <div class="team-lobby-members" id="team-members-B"></div>
+                        </div>
+                    </div>
+                    <form id="team-profile-form" onsubmit="guardarPerfilEquipo(event)">
+                        <label for="team-profile-name">Nombre</label>
+                        <input id="team-profile-name" type="text" maxlength="20" pattern="[\p{L}\p{N} _.-]{1,20}" required>
+                        <label for="team-profile-color">Color</label>
+                        <input id="team-profile-color" type="color" value="#38bdf8">
+                        <button type="submit">Guardar perfil</button>
+                    </form>
+                    <div id="team-action-status" role="status" aria-live="polite"></div>
+            </section>
             <div id="lobby-pot-wrap"
                 style="display:none; margin: 2px 0 12px; font-size: 12.5px; color: var(--muted); letter-spacing: 0.4px;">
                 Bote de la sala
@@ -2983,6 +3119,16 @@
             </div>
             <button class="btn-respawn" id="btn-respawn-action" onclick="respawnPlayer()">DESPLEGAR NUEVO ORBE
                 🔄</button>
+        </div>
+    </div>
+    <div id="spectator-controls" aria-label="Controles de espectador">
+        <button type="button" onclick="seguirSiguienteAliado()">Ver aliado</button>
+        <button type="button" onclick="activarCamaraLibre()">Cámara libre</button>
+        <div id="spectator-pad" aria-label="Mover cámara">
+            <button id="spectator-up" onpointerdown="moverCamaraEspectador(event,'w')" onpointerup="pararCamaraEspectador(event,'w')" onpointercancel="pararCamaraEspectador(event,'w')" onlostpointercapture="pararCamaraEspectador(event,'w')" aria-label="Arriba">▲</button>
+            <button id="spectator-left" onpointerdown="moverCamaraEspectador(event,'a')" onpointerup="pararCamaraEspectador(event,'a')" onpointercancel="pararCamaraEspectador(event,'a')" onlostpointercapture="pararCamaraEspectador(event,'a')" aria-label="Izquierda">◀</button>
+            <button id="spectator-down" onpointerdown="moverCamaraEspectador(event,'s')" onpointerup="pararCamaraEspectador(event,'s')" onpointercancel="pararCamaraEspectador(event,'s')" onlostpointercapture="pararCamaraEspectador(event,'s')" aria-label="Abajo">▼</button>
+            <button id="spectator-right" onpointerdown="moverCamaraEspectador(event,'d')" onpointerup="pararCamaraEspectador(event,'d')" onpointercancel="pararCamaraEspectador(event,'d')" onlostpointercapture="pararCamaraEspectador(event,'d')" aria-label="Derecha">▶</button>
         </div>
     </div>
 
@@ -3620,6 +3766,7 @@
         let joystickCenter = { x: 0, y: 0 };
         let joystickRadius = 42;
         const keys = { w: false, a: false, s: false, d: false, space: false, angle: 0 };
+        const spectatorPanKeys = { w: false, a: false, s: false, d: false };
         function actualizarTeclasJoystick(dx, dy, targetKeys) {
             if (Math.hypot(dx, dy) <= 14) {
                 targetKeys.w = false;
@@ -4094,6 +4241,114 @@
         }
         let isDead = false;
         let isGameOver = false;
+        let spectatorActive = false;
+        let spectatorFollowId = null;
+        const spectatorCamera = { x: 2500, y: 2500 };
+
+        function seleccionarEquipo(teamId) {
+            if (gameState?.mode !== 'teams' || gameState.gameStarted || gameState.lobbyActive) return;
+            socket.emit('selectTeam', { teamId });
+        }
+
+        function guardarPerfilEquipo(event) {
+            event.preventDefault();
+            const name = document.getElementById('team-profile-name').value.trim();
+            const color = document.getElementById('team-profile-color').value;
+            socket.emit('updateTeamProfile', { name, color });
+        }
+
+        function updateTeamLobby(me) {
+            const panel = document.getElementById('team-lobby-panel');
+            const isTeamLobby = gameState.mode === 'teams' && !gameState.gameStarted;
+            panel.style.display = isTeamLobby ? 'block' : 'none';
+            if (!isTeamLobby) return;
+            const teams = gameState.teams || {};
+            for (const teamId of ['A', 'B']) {
+                const team = teams[teamId] || {
+                    name: teamId === 'A' ? 'Equipo Azul' : 'Equipo Rojo',
+                    color: teamId === 'A' ? '#38bdf8' : '#fb7185',
+                    count: 0, capacity: 5, members: []
+                };
+                const button = document.getElementById(`team-select-${teamId}`);
+                const card = document.getElementById(`team-card-${teamId}`);
+                const members = document.getElementById(`team-members-${teamId}`);
+                card.style.setProperty('--team-color', team.color);
+                button.innerText = `${team.name} · ${team.count}/${team.capacity}`;
+                button.disabled = gameState.lobbyActive ||
+                    (team.count >= team.capacity && me.teamId !== teamId);
+                members.textContent = (team.members || []).map((member) =>
+                    `${member.nick}${member.id === me.id ? ' (tú)' : ''}${member.id === team.leaderId ? ' · líder' : ''}`
+                ).join(' · ') || 'Aún sin integrantes';
+            }
+            const activeTeam = teams[me.teamId];
+            const canEdit = !gameState.lobbyActive && activeTeam && activeTeam.leaderId === myPlayerId;
+            const form = document.getElementById('team-profile-form');
+            form.style.display = canEdit ? 'flex' : 'none';
+            if (canEdit) {
+                const nameInput = document.getElementById('team-profile-name');
+                const colorInput = document.getElementById('team-profile-color');
+                if (document.activeElement !== nameInput) nameInput.value = activeTeam.name;
+                if (document.activeElement !== colorInput) colorInput.value = activeTeam.color;
+            }
+        }
+
+        function vivosDelEquipo() {
+            if (!gameState || !myPlayerId) return [];
+            const myTeam = gameState.players[myPlayerId]?.teamId;
+            return Object.values(gameState.players).filter((player) =>
+                player.teamId === myTeam && player.id !== myPlayerId && !player.isDead
+            );
+        }
+
+        function seguirSiguienteAliado() {
+            const vivos = vivosDelEquipo();
+            if (!vivos.length) {
+                activarCamaraLibre();
+                return;
+            }
+            const currentIndex = vivos.findIndex((player) => player.id === spectatorFollowId);
+            const next = vivos[(currentIndex + 1) % vivos.length];
+            spectatorFollowId = next.id;
+            spectatorCamera.x = next.x;
+            spectatorCamera.y = next.y;
+        }
+
+        function activarCamaraLibre() {
+            spectatorFollowId = null;
+        }
+
+        function moverCamaraEspectador(event, direction) {
+            if (!spectatorActive) return;
+            event.preventDefault();
+            event.currentTarget.setPointerCapture?.(event.pointerId);
+            activarCamaraLibre();
+            spectatorPanKeys[direction] = true;
+        }
+
+        function pararCamaraEspectador(event, direction) {
+            event.preventDefault();
+            spectatorPanKeys[direction] = false;
+        }
+
+        function actualizarModoEspectador(me) {
+            const active = gameState.mode === 'teams' && gameState.gameStarted &&
+                me.isDead && !isGameOver;
+            const controls = document.getElementById('spectator-controls');
+            controls.style.display = active ? 'flex' : 'none';
+            if (active && !spectatorActive) {
+                spectatorCamera.x = me.x;
+                spectatorCamera.y = me.y;
+                spectatorFollowId = null;
+                seguirSiguienteAliado();
+            }
+            if (active && spectatorFollowId && !vivosDelEquipo().some((player) => player.id === spectatorFollowId)) {
+                spectatorFollowId = null;
+            }
+            spectatorActive = active;
+            if (!active) {
+                Object.keys(spectatorPanKeys).forEach((key) => { spectatorPanKeys[key] = false; });
+            }
+        }
 
         function triggerShake(amount) { shakeIntensity = Math.min(shakeIntensity + amount, 25); }
 
@@ -4172,7 +4427,15 @@
             if (['a', 'arrowleft'].includes(k)) keys.a = true;
             if (['s', 'arrowdown'].includes(k)) keys.s = true;
             if (['d', 'arrowright'].includes(k)) keys.d = true;
-            if (e.key === ' ' || e.key === 'Spacebar') { keys.space = true; e.preventDefault(); socket.emit('playerDash'); }
+            if (spectatorActive && ['w', 'a', 's', 'd', 'arrowup', 'arrowleft', 'arrowdown', 'arrowright'].includes(k)) {
+                e.preventDefault();
+                activarCamaraLibre();
+            }
+            if (e.key === ' ' || e.key === 'Spacebar') {
+                keys.space = true;
+                e.preventDefault();
+                if (!spectatorActive) socket.emit('playerDash');
+            }
 
             if (k === 'e' && !isDead && !isGameOver) intentarAbrirTienda();
             if (k === 'r') {
@@ -4272,6 +4535,12 @@
         socket.on('errorMsg', (msg) => {
             alert(msg);
             window.location.href = "index.html";
+        });
+
+        socket.on('teamActionResult', (result) => {
+            const status = document.getElementById('team-action-status');
+            status.textContent = result?.message || 'No se pudo actualizar el equipo.';
+            status.style.color = result?.ok ? 'var(--green)' : 'var(--red)';
         });
 
         // Expulsion: partida finalizada o sala cerrada por el admin
@@ -4566,6 +4835,8 @@
 
             isDead = me.isDead;
             document.body.classList.toggle("dead", !!isDead);
+            actualizarModoEspectador(me);
+            updateTeamLobby(me);
             document.getElementById("hud-kills").innerText =
                 String(Math.max(0, Math.floor(Number(me.eliminations) || 0)));
 
@@ -4582,10 +4853,12 @@
                 ocultarPlazas();
             } else if (gameState.lobbyActive) {
                 lobbyOverlay.style.display = "flex";
-                lobbyTitle.innerText = "¡PARTIDA EN MARCHA!";
+                lobbyTitle.innerText = gameState.mode === 'teams' ? "¡EQUIPOS LISTOS!" : "¡PARTIDA EN MARCHA!";
                 lobbyCountdown.style.display = "block";
                 lobbyCountdown.innerText = gameState.countdown || 0;
-                lobbyText.innerText = "Prepárate para extraer energía...";
+                lobbyText.innerText = gameState.mode === 'teams'
+                    ? "La partida comienza cuando llegue a cero. Si un equipo pierde un integrante, volverán a la selección."
+                    : "Prepárate para extraer energía...";
                 lobbyPotWrap.style.display = "none";
                 ocultarPlazas();
             } else {
@@ -4596,17 +4869,17 @@
                 const waiting = typeof gameState.waitingTimer === 'number' && gameState.waitingTimer >= 0;
                 lobbyTitle.innerText = gameState.isPractice
                     ? "PRÁCTICA CONTRA BOTS"
-                    : "ESPERANDO JUGADORES";
+                    : gameState.mode === 'teams' ? "ELIGE TU EQUIPO" : "ESPERANDO JUGADORES";
                 lobbyCountdown.style.display = waiting ? "block" : "none";
                 if (waiting) lobbyCountdown.innerText = gameState.waitingTimer;
                 lobbyText.innerText = gameState.isPractice
                     ? "Entrenamiento gratuito · 5 bots · sin premios."
                     : waiting
                         ? (gameState.mode === 'teams'
-                            ? "La partida TEAM inicia al terminar el contador. Los equipos se equilibran automáticamente."
+                            ? "Ambos equipos están completos. La cuenta atrás para iniciar es de 30 segundos."
                             : "La partida inicia cuando el contador llegue a 0. ¡Cada inscripción lo reinicia a 30s!")
                         : (gameState.mode === 'teams'
-                            ? "Necesitamos jugadores en ambos equipos para comenzar."
+                            ? "Escoge un grupo: la partida comenzará con 5 jugadores en cada equipo y una cuenta atrás de 30 segundos."
                             : "Necesitamos 2 jugadores para comenzar. La partida iniciará automáticamente.");
                 lobbyPotWrap.style.display = gameState.isPractice ? "none" : "block";
                 const total = gameState.maxPlayers || 10;
@@ -4634,6 +4907,9 @@
             if (teamEliminationBanner) {
                 teamEliminationBanner.style.display =
                     gameState.mode === 'teams' && isDead && !isGameOver ? "block" : "none";
+                if (gameState.mode === 'teams' && isDead && !isGameOver) {
+                    teamEliminationBanner.innerText = "ELIMINADO · MODO ESPECTADOR · WASD/FLECHAS PARA MOVER LA CÁMARA";
+                }
             }
 
             // ── Bote: ESTÁTICO durante la partida/lobby (no baja con abandonos);
@@ -4827,10 +5103,13 @@
                 const li = document.createElement("li");
                 if (p.id === myPlayerId) li.className = "you";
                 const equipo = gameState.mode === 'teams'
-                    ? `${p.teamId === 'A' ? '🔵' : '🔴'} `
+                    ? `${gameState.teams?.[p.teamId]?.name || (p.teamId === 'A' ? 'Equipo Azul' : 'Equipo Rojo')} · `
                     : '';
                 const bot = p.isBot ? 'BOT · ' : '';
                 li.innerText = `${equipo}${bot}${p.nick}: ${p.bankedScore || 0} pts (+${p.charge || 0})`;
+                if (gameState.mode === 'teams' && gameState.teams?.[p.teamId]?.color) {
+                    li.style.color = gameState.teams[p.teamId].color;
+                }
                 listEl.appendChild(li);
             });
         }
@@ -4841,6 +5120,32 @@
             if (!gameState || !myPlayerId) return;
 
             const me = gameState.players[myPlayerId] || { x: 2500, y: 2500 };
+            const mapBounds = gameState.mapSize || 5000;
+            const viewZoom = isTouchDevice ? 0.72 : 0.92;
+            let cameraX = me.x;
+            let cameraY = me.y;
+            if (spectatorActive) {
+                const followed = spectatorFollowId && gameState.players[spectatorFollowId];
+                if (followed && !followed.isDead) {
+                    spectatorCamera.x = followed.x;
+                    spectatorCamera.y = followed.y;
+                } else {
+                    spectatorFollowId = null;
+                    const horizontal = Number(keys.d || spectatorPanKeys.d) - Number(keys.a || spectatorPanKeys.a);
+                    const vertical = Number(keys.s || spectatorPanKeys.s) - Number(keys.w || spectatorPanKeys.w);
+                    if (horizontal || vertical) {
+                        const length = Math.hypot(horizontal, vertical);
+                        spectatorCamera.x += horizontal / length * 13;
+                        spectatorCamera.y += vertical / length * 13;
+                    }
+                }
+                const cameraInsetX = Math.min(mapBounds / 2, window.innerWidth / (2 * viewZoom));
+                const cameraInsetY = Math.min(mapBounds / 2, window.innerHeight / (2 * viewZoom));
+                spectatorCamera.x = Math.max(cameraInsetX, Math.min(mapBounds - cameraInsetX, spectatorCamera.x));
+                spectatorCamera.y = Math.max(cameraInsetY, Math.min(mapBounds - cameraInsetY, spectatorCamera.y));
+                cameraX = spectatorCamera.x;
+                cameraY = spectatorCamera.y;
+            }
 
             // Fuente única de la geometría del mapa para el render. Si hay roomConfig se
             // combina con el hp del frame; si no (reversión o paquete perdido) se
@@ -4859,14 +5164,13 @@
 
             if (gameState.lobbyActive || !gameState.gameStarted) return;
 
-            const viewZoom = isTouchDevice ? 0.72 : 0.92;
             const margenVista = 160;
             const mitadVistaX = window.innerWidth / (2 * viewZoom) + margenVista;
             const mitadVistaY = window.innerHeight / (2 * viewZoom) + margenVista;
-            const vistaIzquierda = me.x - mitadVistaX;
-            const vistaDerecha = me.x + mitadVistaX;
-            const vistaArriba = me.y - mitadVistaY;
-            const vistaAbajo = me.y + mitadVistaY;
+            const vistaIzquierda = cameraX - mitadVistaX;
+            const vistaDerecha = cameraX + mitadVistaX;
+            const vistaArriba = cameraY - mitadVistaY;
+            const vistaAbajo = cameraY + mitadVistaY;
             const visible = (x, y, radio = 0) =>
                 x + radio >= vistaIzquierda && x - radio <= vistaDerecha &&
                 y + radio >= vistaArriba && y - radio <= vistaAbajo;
@@ -4888,7 +5192,7 @@
             // de la pantalla (personaje "en la esquina") en moviles de alta densidad.
             ctx.translate(window.innerWidth / 2, window.innerHeight / 2);
             ctx.scale(viewZoom, viewZoom);
-            ctx.translate(-me.x + offsetX / viewZoom, -me.y + offsetY / viewZoom);
+            ctx.translate(-cameraX + offsetX / viewZoom, -cameraY + offsetY / viewZoom);
 
             // Fondo del mapa: textura teselada (la rejilla va incluida en el tile).
             // Fallback: rejilla de líneas original si el sprite no cargó.
@@ -5002,7 +5306,7 @@
             const zR = gameState.zoneRadius || 0;
             const zx = gameState.zoneCx ?? MAP_SIZE / 2;
             const zy = gameState.zoneCy ?? MAP_SIZE / 2;
-            const meFueraZona = Math.hypot(me.x - zx, me.y - zy) > zR;
+            const meFueraZona = Math.hypot(cameraX - zx, cameraY - zy) > zR;
             if (zR > 0) {
                 ctx.fillStyle = meFueraZona ? 'rgba(239, 68, 68, 0.22)' : 'rgba(239, 68, 68, 0.12)';
                 ctx.beginPath();
@@ -5400,7 +5704,8 @@
                 if (p.teamId) {
                     ctx.beginPath();
                     ctx.arc(p.x, p.y, p.radius + 5, 0, Math.PI * 2);
-                    ctx.strokeStyle = p.teamId === 'A' ? '#38bdf8' : '#fb7185';
+                    ctx.strokeStyle = gameState.teams?.[p.teamId]?.color ||
+                        (p.teamId === 'A' ? '#38bdf8' : '#fb7185');
                     ctx.lineWidth = p.id === myPlayerId ? 4 : 2;
                     ctx.stroke();
                 }
@@ -5483,7 +5788,8 @@
                 miniCtx.fillStyle = p.id === myPlayerId
                     ? '#ffffff'
                     : gameState.mode === 'teams'
-                        ? (p.teamId === gameState.players[myPlayerId]?.teamId ? '#38bdf8' : '#f87171')
+                        ? (gameState.teams?.[p.teamId]?.color ||
+                            (p.teamId === gameState.players[myPlayerId]?.teamId ? '#38bdf8' : '#f87171'))
                         : '#ef4444';
                 miniCtx.beginPath(); miniCtx.arc(p.x * scale, p.y * scale, p.id === myPlayerId ? 4 : 3, 0, Math.PI * 2); miniCtx.fill();
             });
@@ -5519,7 +5825,7 @@
                 rank.textContent = position === 1 ? "CAMPEÓN" : `${position}º LUGAR`;
                 const nick = document.createElement("span");
                 nick.className = "podium-nick";
-                nick.textContent = `${player.teamId ? `TEAM ${player.teamId} · ` : ''}${player.isBot ? 'BOT · ' : ''}${String(player.nick || "Jugador")}`;
+                nick.textContent = `${player.teamId ? `${gameState.teams?.[player.teamId]?.name || `TEAM ${player.teamId}`} · ` : ''}${player.isBot ? 'BOT · ' : ''}${String(player.nick || "Jugador")}`;
                 const stats = document.createElement("span");
                 stats.className = "podium-stats";
                 appendStat(stats, player);
@@ -5548,7 +5854,7 @@
                 position.textContent = `${index + 4}º`;
                 const nick = document.createElement("span");
                 nick.className = "result-player";
-                nick.textContent = `${player.teamId ? `TEAM ${player.teamId} · ` : ''}${player.isBot ? 'BOT · ' : ''}${String(player.nick || "Jugador")}`;
+                nick.textContent = `${player.teamId ? `${gameState.teams?.[player.teamId]?.name || `TEAM ${player.teamId}`} · ` : ''}${player.isBot ? 'BOT · ' : ''}${String(player.nick || "Jugador")}`;
                 const stats = document.createElement("span");
                 stats.className = "result-stats";
                 appendStat(stats, player);

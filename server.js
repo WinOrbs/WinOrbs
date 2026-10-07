@@ -17,8 +17,14 @@ const { applyDamage } = require('./apps/server/game/combat');
 const {
     assignBalancedTeam,
     canDamagePlayer,
+    createTeamProfiles,
+    isTeamLobbyFull,
     rankTeams,
-    splitPrize
+    selectPlayerTeam,
+    serializeTeamState,
+    splitPrize,
+    TEAM_START_COUNTDOWN_SECONDS,
+    updateTeamProfile
 } = require('./apps/server/game/team_mode');
 const { extractIdToken, canBindUid } = require('./apps/server/identity');
 const { lockResult } = require('./apps/server/game/results');
@@ -834,6 +840,7 @@ class GameRoom {
         if (mode === 'teams') this.mode = 'teams';
         this.isPractice = isPractice === true;
         this.nextTeamOnTie = 'A';
+        this.teamProfiles = createTeamProfiles();
         this.teamParticipants = [];
         this.winnerTeamId = null;
         this.practiceWinnerId = null;
@@ -1203,6 +1210,9 @@ class GameRoom {
             turboTimer: 0,
             turboCooldown: 0
         };
+        if (teamId && !this.teamProfiles[teamId].leaderId) {
+            this.teamProfiles[teamId].leaderId = socketId;
+        }
     }
 
     addBotPlayer(botId, nick, skin) {
@@ -1225,7 +1235,28 @@ class GameRoom {
                 });
             }
             delete this.players[socketId];
+            const teamId = p.teamId;
+            if (teamId && this.teamProfiles[teamId]?.leaderId === socketId) {
+                const nextLeader = Object.values(this.players).find((player) => player.teamId === teamId);
+                this.teamProfiles[teamId].leaderId = nextLeader ? nextLeader.id : null;
+            }
         }
+    }
+
+    selectTeam(socketId, teamId) {
+        return this.mode === 'teams' && selectPlayerTeam(
+            this.players, this.teamProfiles, socketId, teamId, this.gameStarted || this.lobbyActive
+        );
+    }
+
+    updateTeamProfile(socketId, input) {
+        return this.mode === 'teams' && updateTeamProfile(
+            this.players, this.teamProfiles, socketId, input, this.gameStarted || this.lobbyActive
+        );
+    }
+
+    teamState() {
+        return serializeTeamState(this.players, this.teamProfiles);
     }
 
     handleInput(socketId, inputData) {
@@ -1534,7 +1565,13 @@ class GameRoom {
             } else if (this.lobbyActive && this.countdown > 0) {
                 this.countdown--;
                 // Si durante el arranque queda 1 solo jugador, el inicio se cancela
-                if (playerCount < 2 || (this.mode === 'teams' && rankTeams(this.players).length < 2)) {
+                if (this.mode === 'teams' && !isTeamLobbyFull(this.players)) {
+                    this.lobbyActive = false;
+                    this.countdown = 0;
+                    this.waitingTimer = null;
+                    this.matchStatus = MATCH_STATUS.WAITING;
+                    io.to(this.id).emit('announcement', '⚠️ Cuenta atrás cancelada: ambos equipos deben conservar sus 5 jugadores.');
+                } else if (this.mode !== 'teams' && playerCount < 2) {
                     this.lobbyActive = false;
                     this.countdown = 0;
                     this.matchStatus = MATCH_STATUS.WAITING;
@@ -1577,11 +1614,16 @@ class GameRoom {
             }
 
             // ── Espera con contador de 30 s ──
-            // Arranca al cubrir el cupo mínimo (2), se reinicia a 30 con cada
-            // inscrito nuevo; si la sala baja de 2, el contador desaparece.
+            // TEAM espera a 5 miembros en ambos grupos y da 30 s para comenzar.
+            if (!this.gameStarted && !this.lobbyActive && this.mode === 'teams') {
+                this.waitingTimer = null;
+                if (isTeamLobbyFull(this.players)) this.startLobby(TEAM_START_COUNTDOWN_SECONDS);
+                this.lastPlayerCount = playerCount;
+                return;
+            }
+            // FFA arranca al cubrir el cupo mínimo (2) y conserva su espera.
             if (!this.gameStarted && !this.lobbyActive) {
-                const canFillMatch = playerCount >= 2 &&
-                    (this.mode !== 'teams' || rankTeams(this.players).length >= 2);
+                const canFillMatch = playerCount >= 2;
                 if (canFillMatch) {
                     if (this.lastPlayerCount > 0 && playerCount > this.lastPlayerCount && this.waitingTimer !== null) {
                         this.waitingTimer = 30;
@@ -1620,12 +1662,12 @@ class GameRoom {
         }, 1000);
     }
 
-    startLobby() {
+    startLobby(countdownSeconds = 5) {
         if (!canTransition(this.matchStatus, MATCH_STATUS.STARTING)) return false;
-        if (this.mode === 'teams' && rankTeams(this.players).length < 2) return false;
+        if (this.mode === 'teams' && !isTeamLobbyFull(this.players)) return false;
         this.matchStatus = MATCH_STATUS.STARTING;
         this.lobbyActive = true;
-        this.countdown = 5;
+        this.countdown = countdownSeconds;
         this.pendingStart = null;
         this.winnerTeamId = null;
         // Bote ESTÁTICO: se fija una sola vez con los inscritos al arrancar la
@@ -1641,8 +1683,8 @@ class GameRoom {
         if (this.gameStarted || this.lobbyActive) return false;
         const playerCount = Object.keys(this.players).length;
         if (playerCount < 2) return false;
-        if (this.mode === 'teams' && rankTeams(this.players).length < 2) return false;
-        return this.startLobby();
+        if (this.mode === 'teams' && !isTeamLobbyFull(this.players)) return false;
+        return this.startLobby(this.mode === 'teams' ? TEAM_START_COUNTDOWN_SECONDS : 5);
     }
 
     spawnAirdrop() {
@@ -1953,6 +1995,7 @@ class GameRoom {
         this.progressionEvents = [];
         this.lobbyActive = false;
         this.countdown = 0;
+        Object.values(this.teamProfiles).forEach((profile) => { profile.leaderId = null; });
         this.pendingStart = null;
         this.gameTime = 300;
         this.zoneRadius = ZONA_RADIO_INICIAL;
@@ -2758,6 +2801,8 @@ class GameRoom {
         return {
             players: this.jugadoresRed(),
             mode: this.mode,
+            teams: this.mode === 'teams' ? this.teamState() : null,
+            teamLobbyFull: this.mode === 'teams' && isTeamLobbyFull(this.players),
             isPractice: this.isPractice,
             droppedOrbGuns: this.droppedOrbGuns,
             zoneFase: this.zoneFase,
@@ -3458,6 +3503,9 @@ io.on('connection', (socket) => {
         if (room.gameStarted) {
             return socket.emit('errorMsg', 'La partida ya ha comenzado.');
         }
+        if (room.mode === 'teams' && room.lobbyActive && !room.players[socket.id]) {
+            return socket.emit('errorMsg', 'La cuenta atrás TEAM ya comenzó; espera a la siguiente partida.');
+        }
         if (room.isPractice && room.practiceOwnerJoined && socket.roomId !== room.id) {
             return socket.emit('errorMsg', 'Esta práctica pertenece a otro jugador.');
         }
@@ -3566,6 +3614,23 @@ io.on('connection', (socket) => {
         room.emitirConfig(socket);
         // Anticheat de skins: si la skin no es básica ni está en el inventario del jugador → básica
         const skinValidada = await validarSkinCliente(skin, socket.verifiedUid);
+        if (room.players[socket.id]) {
+            return socket.emit('joinedSuccess', { playerId: socket.id, roomId: room.id });
+        }
+        if (room.gameStarted || (room.mode === 'teams' && room.lobbyActive) ||
+            Object.keys(room.players).length >= room.maxPlayers) {
+            socket.leave(room.id);
+            delete socket.roomId;
+            if (socket.__entradaCobrada?.salaId === room.id) {
+                await servidorReembolsar(
+                    socket.verifiedUid,
+                    socket.__entradaCobrada.entradasId,
+                    socket.__entradaCobrada.monto
+                );
+                delete socket.__entradaCobrada;
+            }
+            return socket.emit('errorMsg', 'La sala completó sus plazas mientras se validaba tu ingreso.');
+        }
         room.addPlayer(socket.id, nickFinal, skinValidada, socket.verifiedUid);
         const nuevoP = room.players[socket.id];
         nuevoP.__ip = ip;
@@ -3641,6 +3706,31 @@ io.on('connection', (socket) => {
         rooms[socket.roomId].handleInput(socket.id, command.payload);
     });
 
+    socket.on('selectTeam', (data = {}) => {
+        const room = rooms[socket.roomId];
+        if (!room || !room.players[socket.id] || room.mode !== 'teams') return;
+        const teamId = data && data.teamId;
+        const selected = room.selectTeam(socket.id, teamId);
+        socket.emit('teamActionResult', {
+            ok: selected,
+            message: selected ? 'Equipo actualizado.' : 'No hay cupo en ese equipo o la partida ya está bloqueada.'
+        });
+        if (selected) io.to(room.id).volatile.emit('gameState', room.getState());
+    });
+
+    socket.on('updateTeamProfile', (profile) => {
+        const room = rooms[socket.roomId];
+        if (!room || !room.players[socket.id] || room.mode !== 'teams') return;
+        const updated = room.updateTeamProfile(socket.id, profile);
+        socket.emit('teamActionResult', {
+            ok: updated,
+            message: updated
+                ? 'Nombre y color del equipo actualizados.'
+                : 'Solo el líder puede editar nombre y color antes de la cuenta atrás.'
+        });
+        if (updated) io.to(room.id).volatile.emit('gameState', room.getState());
+    });
+
     socket.on('playerShoot', (shootData) => {
         if (!validateShoot(shootData).ok) return;
         if (socket.roomId && rooms[socket.roomId]) {
@@ -3708,7 +3798,9 @@ io.on('connection', (socket) => {
             return socket.emit('errorMsg', 'La sala no existe.');
         }
         if (!room.startGame()) {
-            return socket.emit('errorMsg', 'No se puede iniciar la partida (necesita al menos 2 jugadores).');
+            return socket.emit('errorMsg', room.mode === 'teams'
+                ? 'No se puede iniciar TEAM: necesita 5 jugadores en cada equipo.'
+                : 'No se puede iniciar la partida (necesita al menos 2 jugadores).');
         }
         io.to(roomId).emit('playSound', 'explosion');
     });

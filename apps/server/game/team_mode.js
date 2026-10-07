@@ -1,14 +1,86 @@
 'use strict';
 
-function assignBalancedTeam(players, tieTeam = 'A') {
+const TEAM_IDS = Object.freeze(['A', 'B']);
+const TEAM_SIZE = 5;
+const TEAM_START_COUNTDOWN_SECONDS = 30;
+
+function createTeamProfiles() {
+    return {
+        A: { name: 'Equipo Azul', color: '#38bdf8', leaderId: null },
+        B: { name: 'Equipo Rojo', color: '#fb7185', leaderId: null }
+    };
+}
+
+function teamMemberCounts(players) {
     const counts = { A: 0, B: 0 };
     Object.values(players || {}).forEach((player) => {
-        if (player && (player.teamId === 'A' || player.teamId === 'B')) {
-            counts[player.teamId]++;
-        }
+        if (player && TEAM_IDS.includes(player.teamId)) counts[player.teamId]++;
     });
+    return counts;
+}
+
+function isTeamLobbyFull(players) {
+    const counts = teamMemberCounts(players);
+    return counts.A === TEAM_SIZE && counts.B === TEAM_SIZE;
+}
+
+function assignBalancedTeam(players, tieTeam = 'A') {
+    const counts = teamMemberCounts(players);
     if (counts.A === counts.B) return tieTeam === 'B' ? 'B' : 'A';
     return counts.A < counts.B ? 'A' : 'B';
+}
+
+function validateTeamProfile(input) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+    const name = typeof input.name === 'string' ? input.name.trim() : '';
+    const color = typeof input.color === 'string' ? input.color : '';
+    if (!/^[\p{L}\p{N} _.-]{1,20}$/u.test(name) || !/^#[0-9a-f]{6}$/i.test(color)) return null;
+    return Object.freeze({ name, color: color.toLowerCase() });
+}
+
+function selectPlayerTeam(players, profiles, socketId, teamId, locked = false) {
+    const player = players && players[socketId];
+    if (locked || !player || !TEAM_IDS.includes(teamId)) return false;
+    if (player.teamId === teamId) return true;
+    if (!profiles || !profiles[teamId] || teamMemberCounts(players)[teamId] >= TEAM_SIZE) return false;
+
+    const previousTeamId = player.teamId;
+    player.teamId = teamId;
+    if (TEAM_IDS.includes(previousTeamId) && profiles[previousTeamId].leaderId === socketId) {
+        const nextLeader = Object.values(players).find((member) => member.teamId === previousTeamId);
+        profiles[previousTeamId].leaderId = nextLeader ? nextLeader.id : null;
+    }
+    if (!profiles[teamId].leaderId) profiles[teamId].leaderId = socketId;
+    return true;
+}
+
+function updateTeamProfile(players, profiles, socketId, input, locked = false) {
+    const player = players && players[socketId];
+    if (locked || !player || !TEAM_IDS.includes(player.teamId) ||
+        profiles?.[player.teamId]?.leaderId !== socketId) return false;
+    const profile = validateTeamProfile(input);
+    if (!profile) return false;
+    profiles[player.teamId] = { ...profiles[player.teamId], ...profile };
+    return true;
+}
+
+function serializeTeamState(players, profiles) {
+    const counts = teamMemberCounts(players);
+    const teams = {};
+    for (const teamId of TEAM_IDS) {
+        const profile = profiles[teamId];
+        teams[teamId] = {
+            name: profile.name,
+            color: profile.color,
+            leaderId: profile.leaderId,
+            count: counts[teamId],
+            capacity: TEAM_SIZE,
+            members: Object.values(players)
+                .filter((player) => player.teamId === teamId)
+                .map((player) => ({ id: player.id, nick: player.nick }))
+        };
+    }
+    return teams;
 }
 
 function rankTeams(players) {
@@ -73,6 +145,15 @@ function splitPrize(total, participants) {
 module.exports = Object.freeze({
     assignBalancedTeam,
     canDamagePlayer,
+    createTeamProfiles,
+    isTeamLobbyFull,
     rankTeams,
-    splitPrize
+    selectPlayerTeam,
+    serializeTeamState,
+    splitPrize,
+    TEAM_START_COUNTDOWN_SECONDS,
+    teamMemberCounts,
+    updateTeamProfile,
+    validateTeamProfile,
+    TEAM_SIZE
 });
