@@ -19,6 +19,7 @@ function check(nombre, cond) {
 
 const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 const socketServer = fs.readFileSync(path.join(__dirname, '..', 'apps/server/realtime/socket_server.js'), 'utf8');
+const configDefaults = fs.readFileSync(path.join(__dirname, '..', 'apps/server/config/defaults.js'), 'utf8');
 const game = fs.readFileSync(path.join(__dirname, '..', 'public', 'game.html'), 'utf8');
 
 // ── 1) Extraer jugadoresRed() y montarlo como método con `this` controlado ──
@@ -105,7 +106,9 @@ check('las eliminaciones resuelven empates de puntos',
     ranked[1].eliminations === 3 && ranked[2].eliminations === 1);
 
 // ── 6) Fase 2: simulación 60 Hz, emisión 30 Hz ──
-check('la constante de emisión existe', /const TICK_EMITIR_CADA = \d+;/.test(server));
+check('la constante de emisión viene de configuración central',
+    /const TICK_EMITIR_CADA = config\.timing\.ticksPerEmission/.test(server) &&
+    /ticksPerEmission:\s*2/.test(configDefaults));
 check('update() se sigue llamando ANTES de decidir si se emite (simulación a 60 Hz)',
     /this\.update\(\);[\s\S]{0,400}this\.tick\+\+/.test(server));
 check('el intervalo reduce estados a 1 Hz fuera de partida y mantiene 30 Hz en juego',
@@ -116,7 +119,8 @@ check('sigue usando volatile (no encola estados atrasados)',
 check('las salas en espera no ejecutan la simulación',
     /if \(this\.gameStarted\) this\.update\(\);/.test(server));
 check('Socket.IO conserva la sesión para recuperarse de cortes breves',
-    /connectionStateRecovery:\s*\{\s*maxDisconnectionDuration:\s*120_000/.test(socketServer));
+    /socketConfig = SOCKET_IO_DEFAULTS/.test(socketServer) &&
+    /maxDisconnectionDuration:\s*120_000/.test(configDefaults));
 check('una desconexión transitoria conserva el asiento durante la ventana de recuperación',
     /player\.disconnectTimer = setTimeout\(async \(\) => \{[\s\S]*DISCONNECT_GRACE_MS/.test(server));
 // La simulación debe seguir a 60 Hz: se mide sobre el bloque de startLoop
@@ -130,7 +134,9 @@ check('la simulación sigue a 60 Hz (update dentro de un setInterval de 1000/60)
     /setInterval\(\(\) => \{[\s\S]*?this\.update\(\);[\s\S]*?\}, 1000 \/ 60\);/.test(cuerpoLoop));
 check('la emisión va por debajo de la simulación (30 Hz < 60 Hz)',
     /this\.update\(\);[\s\S]*this\.tick\+\+;[\s\S]*volatile\.emit\('gameState'/.test(cuerpoLoop));
-check('TICK_EMITIR_CADA divide 2 → 30 Hz de emisión', /TICK_EMITIR_CADA = 2;/.test(server));
+check('TICK_EMITIR_CADA divide 2 → 30 Hz de emisión',
+    /TICK_EMITIR_CADA = config\.timing\.ticksPerEmission/.test(server) &&
+    /ticksPerEmission:\s*2/.test(configDefaults));
 
 // ── 7) El estado de juego se mantiene a 30 Hz ──
 const dibujaCrudo = /ctx\.arc\(p\.x, p\.y/.test(game);

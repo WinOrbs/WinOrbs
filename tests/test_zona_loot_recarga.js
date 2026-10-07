@@ -202,6 +202,10 @@ async function parte2(p1, admin, m) {
     // 45 s + alcance de bala ~990 px): no es determinista por red, así que se
     // verifica el contrato del servidor en el código fuente.
     const src = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+    const configDefaults = fs.readFileSync(
+        path.join(__dirname, '..', 'apps/server/config/defaults.js'),
+        'utf8'
+    );
     log('openAirdrop suelta 5 orbes ×25 SIEMPRE',
         /for \(let i = 0; i < 5; i\+\+\)/.test(src) && /val: 25,/.test(src));
     log('Botín: botiquín 65% y Lanza-Orbes 35%',
@@ -211,7 +215,9 @@ async function parte2(p1, admin, m) {
     log('Recarga del Lanza-Orbes cuesta 25 gemas NO aseguradas AL COMPLETAR',
         src.includes('RECARGA_ORBES_COSTE = 25') && /p\.charge -= RECARGA_ORBES_COSTE/.test(src));
     log('Recarga temporizada de 150 ticks (~2.5 s)',
-        src.includes('RELOAD_TICKS = 150') && src.includes('p.reloadTimer = RELOAD_TICKS'));
+        src.includes('RELOAD_TICKS = config.timing.reloadTicks') &&
+        configDefaults.includes('reloadTicks: 150') &&
+        src.includes('p.reloadTimer = RELOAD_TICKS'));
     log('Recoger Lanza-Orbes del suelo da arma 2 con cargador lleno',
         /droppedOrbGuns\[i\][\s\S]{0,400}p\.ammo2 = p\.maxAmmo2;/.test(src));
     log('getState expone droppedOrbGuns / zoneFase / zoneDps',

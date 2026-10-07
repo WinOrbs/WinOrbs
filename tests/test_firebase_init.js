@@ -5,6 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { initializeFirebase } = require('../apps/server/infrastructure/firebase');
+const { createConfig } = require('../apps/server/config/env');
 
 const saValido = {
     type: 'service_account',
@@ -62,7 +63,7 @@ function run(env, baseDir, {
         baseDir,
         io: io || { emit: (...args) => logs.push(['emit', ...args]) },
         progression: makeProgression(),
-        env,
+        firebaseConfig: createConfig(env).firebase,
         fsModule,
         adminModule: admin,
         onRewardsChanged,

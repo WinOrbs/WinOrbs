@@ -2,6 +2,7 @@
 
 const express = require('express');
 const http = require('http');
+const { SERVER_DEFAULTS } = require('../config/defaults');
 
 function createStatusHandler({ getFirebaseRuntime, now = () => Date.now() } = {}) {
     if (typeof getFirebaseRuntime !== 'function') {
@@ -45,7 +46,7 @@ function createStatusHandler({ getFirebaseRuntime, now = () => Date.now() } = {}
 function createHttpServer({
     rootDir,
     isOriginAllowed,
-    corsAllowAll,
+    trustProxy = SERVER_DEFAULTS.trustProxy,
     getFirebaseRuntime
 } = {}) {
     if (typeof rootDir !== 'string' || !rootDir) {
@@ -56,11 +57,11 @@ function createHttpServer({
     }
 
     const app = express();
-    app.set('trust proxy', 1);
+    app.set('trust proxy', trustProxy);
     app.use((req, res, next) => {
         const origin = req.headers.origin;
-        if (isOriginAllowed(origin)) {
-            res.setHeader('Access-Control-Allow-Origin', corsAllowAll && !origin ? '*' : (origin || '*'));
+        if (origin && isOriginAllowed(origin)) {
+            res.setHeader('Access-Control-Allow-Origin', origin);
             res.setHeader('Vary', 'Origin');
         }
         res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');

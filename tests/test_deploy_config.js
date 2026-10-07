@@ -10,6 +10,7 @@ const frontendConfig = fs.readFileSync(
     'utf8'
 );
 const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+const defaults = fs.readFileSync(path.join(root, 'apps/server/config/defaults.js'), 'utf8');
 const httpServer = fs.readFileSync(path.join(root, 'apps/server/http/index.js'), 'utf8');
 const changer = fs.readFileSync(path.join(root, 'tools/cambiar-servidor.js'), 'utf8');
 const indexHtml = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
@@ -45,8 +46,9 @@ for (const [name, html] of [['index.html', indexHtml], ['game.html', gameHtml]])
     assert.ok(socketPos > configPos, name + ' must load backend config before creating Socket.IO');
 }
 
-assert.ok(server.includes("server.listen(PORT, '0.0.0.0'"), 'Render server must bind publicly');
-assert.ok(server.includes("const PORT = Number(process.env.PORT) || 3000"), 'server must honor Render PORT');
+assert.ok(server.includes('server.listen(PORT, config.server.host'), 'server must bind using centralized host configuration');
+assert.ok(server.includes('const PORT = config.server.port'), 'server must honor validated centralized PORT configuration');
+assert.ok(defaults.includes("host: '0.0.0.0'"), 'server default host must remain publicly bindable');
 assert.ok(packageJson.scripts.build.includes("fs.copyFileSync('sw.js','dist/sw.js')"), 'Cloudflare Pages build must publish the Monetag service worker');
 assert.ok(httpServer.includes("app.get('/sw.js', (req, res) => res.sendFile(rootDir + '/sw.js'))"), 'Express static hosting must expose the root service worker');
 assert.ok(indexHtml.includes("script.dataset.zone = '11978865'"), 'SOLO must load the configured Monetag vignette zone');

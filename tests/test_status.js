@@ -5,6 +5,7 @@ const http = require('http');
 const { createHttpServer } = require('../apps/server/http');
 const { createSocketServer } = require('../apps/server/realtime/socket_server');
 const { io: createClient } = require('socket.io-client');
+const { createConfig } = require('../apps/server/config/env');
 
 function request(url, options = {}) {
     return new Promise((resolve, reject) => {
@@ -23,14 +24,23 @@ function request(url, options = {}) {
 }
 
 async function main() {
+    const config = createConfig({
+        NODE_ENV: 'production',
+        CORS_ORIGIN: 'https://allowed.example',
+        TRUST_PROXY: '2'
+    });
     let firebaseRuntime = { economy: false, database: null };
-    const { server } = createHttpServer({
+    const { app, server } = createHttpServer({
         rootDir: process.cwd(),
-        isOriginAllowed: () => true,
-        corsAllowAll: false,
+        isOriginAllowed: config.cors.isOriginAllowed,
+        trustProxy: config.server.trustProxy,
         getFirebaseRuntime: () => firebaseRuntime,
     });
-    const socketServer = createSocketServer(server, { isOriginAllowed: () => true });
+    const socketServer = createSocketServer(server, {
+        isOriginAllowed: config.cors.isOriginAllowed,
+        socketConfig: config.socketIO
+    });
+    assert.strictEqual(app.get('trust proxy'), 2);
 
     await new Promise((resolve, reject) => {
         server.once('error', reject);
@@ -47,6 +57,16 @@ async function main() {
         assert.strictEqual(response.statusCode, 200);
         assert.strictEqual(JSON.parse(response.body).ok, true);
         assert.strictEqual(response.headers['access-control-allow-origin'], 'https://allowed.example');
+
+        response = await request(`${origin}/ping`, {
+            headers: { Origin: 'https://blocked.example' }
+        });
+        assert.strictEqual(response.statusCode, 200);
+        assert.strictEqual(response.headers['access-control-allow-origin'], undefined);
+
+        response = await request(`${origin}/ping`);
+        assert.strictEqual(response.statusCode, 200);
+        assert.strictEqual(response.headers['access-control-allow-origin'], undefined);
 
         response = await request(`${origin}/status`, {
             headers: { Origin: 'https://allowed.example' }

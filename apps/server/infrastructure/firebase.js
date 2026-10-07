@@ -1,11 +1,13 @@
 'use strict';
 
 const fs = require('fs');
+const { FIREBASE_DEFAULTS } = require('../config/defaults');
 
 function initializeFirebase({
     baseDir,
     io,
     progression,
+    firebaseConfig,
     env = process.env,
     fsModule = fs,
     adminModule,
@@ -33,42 +35,52 @@ function initializeFirebase({
     let economy = false;
     let progressionRuntime = null;
     let progressionRewards = sanitizeVisualRewards(DEFAULT_VISUAL_REWARDS);
+    const resolvedFirebaseConfig = firebaseConfig || {
+        googleApplicationCredentials: env.GOOGLE_APPLICATION_CREDENTIALS || '',
+        serviceAccount: env.FIREBASE_SERVICE_ACCOUNT || '',
+        serviceAccountBase64: env.FIREBASE_SERVICE_ACCOUNT_B64 || '',
+        serviceAccountFileName: FIREBASE_DEFAULTS.serviceAccountFileName,
+        secretDirectory: FIREBASE_DEFAULTS.secretDirectory
+    };
+    const credentialEnv = {
+        GOOGLE_APPLICATION_CREDENTIALS: resolvedFirebaseConfig.googleApplicationCredentials,
+        FIREBASE_SERVICE_ACCOUNT: resolvedFirebaseConfig.serviceAccount,
+        FIREBASE_SERVICE_ACCOUNT_B64: resolvedFirebaseConfig.serviceAccountBase64
+    };
 
     try {
         firebaseAdmin = adminModule || require('firebase-admin');
+        const secretDirectory = resolvedFirebaseConfig.secretDirectory;
         const candidates = [
-            env.FIREBASE_SERVICE_ACCOUNT,
-            baseDir + '/serviceAccountKey.json',
-            '/etc/secrets/serviceAccountKey.json'
+            credentialEnv.FIREBASE_SERVICE_ACCOUNT,
+            baseDir + '/' + resolvedFirebaseConfig.serviceAccountFileName,
+            secretDirectory + '/' + resolvedFirebaseConfig.serviceAccountFileName
         ].filter(Boolean);
         let serviceAccount = null;
-        if (env.GOOGLE_APPLICATION_CREDENTIALS) {
+        if (credentialEnv.GOOGLE_APPLICATION_CREDENTIALS) {
             firebaseAdmin.initializeApp({
                 credential: firebaseAdmin.credential.applicationDefault()
             });
             serviceAccount = true;
         } else {
-            if (env.FIREBASE_SERVICE_ACCOUNT_B64) {
+            if (credentialEnv.FIREBASE_SERVICE_ACCOUNT_B64) {
                 try {
                     serviceAccount = JSON.parse(
-                        Buffer.from(env.FIREBASE_SERVICE_ACCOUNT_B64, 'base64').toString('utf8')
+                        Buffer.from(credentialEnv.FIREBASE_SERVICE_ACCOUNT_B64, 'base64').toString('utf8')
                     );
                 } catch (error) {
-                    logger.warn(
-                        '[FIREBASE] FIREBASE_SERVICE_ACCOUNT_B64 presente pero no es Base64/JSON válido:',
-                        error.message
-                    );
+                    logger.warn('[FIREBASE] FIREBASE_SERVICE_ACCOUNT_B64 is not valid Base64/JSON.');
                 }
-            } else if (env.FIREBASE_SERVICE_ACCOUNT &&
-                env.FIREBASE_SERVICE_ACCOUNT.trim().startsWith('{')) {
+            } else if (credentialEnv.FIREBASE_SERVICE_ACCOUNT &&
+                credentialEnv.FIREBASE_SERVICE_ACCOUNT.trim().startsWith('{')) {
                 try {
-                    serviceAccount = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT);
+                    serviceAccount = JSON.parse(credentialEnv.FIREBASE_SERVICE_ACCOUNT);
                 } catch (error) {
-                    logger.warn('[FIREBASE] FIREBASE_SERVICE_ACCOUNT es JSON inválido:', error.message);
+                    logger.warn('[FIREBASE] FIREBASE_SERVICE_ACCOUNT is not valid JSON.');
                 }
             }
-            if (!serviceAccount && env.FIREBASE_SERVICE_ACCOUNT) {
-                let text = env.FIREBASE_SERVICE_ACCOUNT.trim();
+            if (!serviceAccount && credentialEnv.FIREBASE_SERVICE_ACCOUNT) {
+                let text = credentialEnv.FIREBASE_SERVICE_ACCOUNT.trim();
                 if (text.length >= 2 && text.startsWith('"') && text.endsWith('"')) {
                     text = text.slice(1, -1);
                 }
@@ -90,21 +102,21 @@ function initializeFirebase({
                         logger.log('[FIREBASE] Clave de servicio cargada desde: ' + candidate);
                         break;
                     } catch (error) {
-                        logger.warn('[FIREBASE] No se pudo usar la clave en ' + candidate + ':', error.message);
+                        logger.warn('[FIREBASE] Could not read a configured Firebase service-account file.');
                     }
                 }
             }
             if (!serviceAccount) {
                 try {
-                    if (fsModule.existsSync('/etc/secrets')) {
-                        const secretFiles = fsModule.readdirSync('/etc/secrets')
+                    if (fsModule.existsSync(secretDirectory)) {
+                        const secretFiles = fsModule.readdirSync(secretDirectory)
                             .filter((file) => file.endsWith('.json'));
                         for (const file of secretFiles) {
                             try {
-                                const text = fsModule.readFileSync('/etc/secrets/' + file, 'utf8');
+                                const text = fsModule.readFileSync(secretDirectory + '/' + file, 'utf8');
                                 if (text.includes('"private_key"') && text.includes('"client_email"')) {
                                     serviceAccount = JSON.parse(text);
-                                    logger.log('[FIREBASE] Clave de servicio detectada en /etc/secrets/' + file);
+                                    logger.log('[FIREBASE] Clave de servicio detectada en ' + secretDirectory + '/' + file);
                                     break;
                                 }
                             } catch (error) {
@@ -146,7 +158,7 @@ function initializeFirebase({
             logger.log('[FIREBASE] FIX Render: Firebase Console → Cuentas de servicio → Generar clave privada → en Render crea un Secret File "serviceAccountKey.json" (o la env FIREBASE_SERVICE_ACCOUNT_B64 con el JSON en Base64) y reinicia el servicio. Verifica en GET /status.');
         }
     } catch (error) {
-        logger.warn('[FIREBASE] firebase-admin no disponible:', error.message);
+        logger.warn('[FIREBASE] Firebase Admin initialization failed; economy remains disabled.');
     }
 
     return Object.freeze({

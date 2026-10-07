@@ -1,7 +1,8 @@
 // Carga variables de entorno desde .env (si existe) — debe ir primero
 require('./apps/server/config/environment').loadEnvironment();
 
-const { corsAllowAll, isOriginAllowed, adminPassword } = require('./apps/server/config');
+const config = require('./apps/server/config');
+const { isOriginAllowed, adminPassword } = config;
 const { createHttpServer } = require('./apps/server/http');
 const { createSocketServer } = require('./apps/server/realtime/socket_server');
 const { initializeFirebase } = require('./apps/server/infrastructure/firebase');
@@ -60,18 +61,21 @@ let firebaseRuntime = null;
 const { app, server } = createHttpServer({
     rootDir: __dirname,
     isOriginAllowed,
-    corsAllowAll,
+    trustProxy: config.server.trustProxy,
     getFirebaseRuntime: () => firebaseRuntime
 });
-const io = createSocketServer(server, { isOriginAllowed });
+const io = createSocketServer(server, {
+    isOriginAllowed,
+    socketConfig: config.socketIO
+});
 
 const MAP_SIZE = 5000;
 const rooms = {};
 
 const ADMIN_PASSWORD = adminPassword;
-const ADMIN_SESSION_MS = 30 * 60 * 1000;
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
+const ADMIN_SESSION_MS = config.timing.adminSessionMs;
+const TELEGRAM_BOT_TOKEN = config.telegram.botToken;
+const TELEGRAM_CHAT_ID = config.telegram.chatId;
 // ── FIREBASE ADMIN (inflado/anticheat de dinero) ─────────────────────────────
 // Modo ECONOMÍA ACTIVA: si hay clave de servicio (serviceAccountKey.json o
 // GOOGLE_APPLICATION_CREDENTIALS), el SERVIDOR cobra entradas y paga premios con
@@ -84,6 +88,7 @@ let PROGRESSION_REWARDS = sanitizeVisualRewards(DEFAULT_VISUAL_REWARDS);
 firebaseRuntime = initializeFirebase({
     baseDir: __dirname,
     io,
+    firebaseConfig: config.firebase,
     progression: {
         DEFAULT_LEVEL_CURVE,
         DEFAULT_VISUAL_REWARDS,
@@ -100,20 +105,20 @@ const FIREBASE_ECONOMY = firebaseRuntime.economy;
 const PROGRESSION_RUNTIME = firebaseRuntime.progressionRuntime;
 
 // Límites de seguridad
-const MAX_SOCKETS_PER_IP = 3;          // en salas de pago
-const INPUT_MIN_INTERVAL = 8;          // ms entre eventos playerInput
-const DISCONNECT_GRACE_MS = 125_000;
-const SHOOT_COOLDOWN = { 1: 120, 2: 400, 3: 500 }; // ms por arma (3 = Bombas de Plasma)
+const MAX_SOCKETS_PER_IP = config.limits.maxSocketsPerIp; // en salas de pago
+const INPUT_MIN_INTERVAL = config.limits.inputMinIntervalMs;
+const DISCONNECT_GRACE_MS = config.timing.disconnectGraceMs;
+const SHOOT_COOLDOWN = config.timing.shootCooldownMs;
 // ── BOMBAS DE PLASMA (arma 3: Q equipa · clic lanza hacia el cursor) ─────────
 const BOMBA_VEL = 12;          // velocidad inicial de lanzamiento (px/tick)
 const BOMBA_FRICCION = 0.95;   // rodadura: pierde ~5% de velocidad por tick
-const BOMBA_COOLDOWN_MS = 400; // anti-spam entre lanzamientos (botón directo móvil)
+const BOMBA_COOLDOWN_MS = config.timing.bombCooldownMs; // anti-spam entre lanzamientos (botón directo móvil)
 const ITEM_COSTOS = { medkit: 30, shield: 50, bomb: 40, orbGun: 100 };
 
 // ── RECARGA (tecla R) ────────────────────────────────────────────────────────
 // Ya NO existe auto-recarga en el cliente: sin balas no se dispara hasta
 // recargar. La recarga tarda RELOAD_TICKS (~2.5 s) y bloquea el disparo.
-const RELOAD_TICKS = 150;           // ~2.5 s a 60 fps
+const RELOAD_TICKS = config.timing.reloadTicks; // ~2.5 s a 60 fps
 const RECARGA_ORBES_COSTE = 25;     // gemas NO aseguradas por recargar el Lanza-Orbes
 
 // La SIMULACIÓN corre a 60 Hz, pero el gameState se EMITE 1 de cada 2 ticks
@@ -121,7 +126,7 @@ const RECARGA_ORBES_COSTE = 25;     // gemas NO aseguradas por recargar el Lanza
 // respuesta a teclado/joystick no depende de esto; lo que baja a la mitad es el
 // ancho de banda. Con volatile, si un móvil se satura se descarta el estado
 // atrasado en vez de acumular cola.
-const TICK_EMITIR_CADA = 2;
+const TICK_EMITIR_CADA = config.timing.ticksPerEmission;
 
 // ── roomConfig: geometría estática separada del estado mutable ───────────────
 // El mapa NO es estático: los muros y obstáculos se destruyen (el cliente ve las
@@ -717,7 +722,7 @@ async function servidorReclamarPremiosDeUsuario(uid) {
     }
 }
 
-const CONCILIAR_CADA_MS = Math.max(60000, Number(process.env.PREMIOS_AUTO_MS || 2 * 60 * 1000));
+const CONCILIAR_CADA_MS = config.timing.prizeReconciliationIntervalMs;
 setInterval(() => { servidorConciliarPremiosPendientes('worker').catch(() => { }); }, CONCILIAR_CADA_MS);
 
 function randID() {
@@ -3844,8 +3849,8 @@ io.on('connection', (socket) => {
     });
 });
 
-const PORT = Number(process.env.PORT) || 3000;
-server.listen(PORT, '0.0.0.0', () => {
+const PORT = config.server.port;
+server.listen(PORT, config.server.host, () => {
     // El mensaje antes decía "localhost" fijo, que en Render (donde PORT lo
     // inyecta la plataforma) daba a entender que escuchaba en local. Se imprime
     // el puerto real para que el log diga la verdad.
