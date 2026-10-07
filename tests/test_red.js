@@ -107,10 +107,17 @@ check('las eliminaciones resuelven empates de puntos',
 check('la constante de emisión existe', /const TICK_EMITIR_CADA = \d+;/.test(server));
 check('update() se sigue llamando ANTES de decidir si se emite (simulación a 60 Hz)',
     /this\.update\(\);[\s\S]{0,400}this\.tick\+\+/.test(server));
-check('la emisión se salta los ticks que no tocan turno',
-    /this\.tick % TICK_EMITIR_CADA !== 0\) return;/.test(server));
+check('el intervalo reduce estados a 1 Hz fuera de partida y mantiene 30 Hz en juego',
+    /const ticksPerEmission = this\.gameStarted \? TICK_EMITIR_CADA : 60;/.test(server) &&
+    /this\.tick % ticksPerEmission !== 0\) return;/.test(server));
 check('sigue usando volatile (no encola estados atrasados)',
     /volatile\.emit\('gameState'/.test(server));
+check('las salas en espera no ejecutan la simulación',
+    /if \(this\.gameStarted\) this\.update\(\);/.test(server));
+check('Socket.IO conserva la sesión para recuperarse de cortes breves',
+    /connectionStateRecovery:\s*\{\s*maxDisconnectionDuration:\s*120_000/.test(server));
+check('una desconexión transitoria conserva el asiento durante la ventana de recuperación',
+    /player\.disconnectTimer = setTimeout\(async \(\) => \{[\s\S]*DISCONNECT_GRACE_MS/.test(server));
 // La simulación debe seguir a 60 Hz: se mide sobre el bloque de startLoop
 // entero (no un rango fijo de caracteres, que se rompe al editar los
 // comentarios de dentro). El bloque acaba donde empieza el setInterval del
@@ -124,10 +131,10 @@ check('la emisión va por debajo de la simulación (30 Hz < 60 Hz)',
     /this\.update\(\);[\s\S]*this\.tick\+\+;[\s\S]*volatile\.emit\('gameState'/.test(cuerpoLoop));
 check('TICK_EMITIR_CADA divide 2 → 30 Hz de emisión', /TICK_EMITIR_CADA = 2;/.test(server));
 
-// ── 7) El cliente no interpola: la nota de riesgo está documentada ──
+// ── 7) El estado de juego se mantiene a 30 Hz ──
 const dibujaCrudo = /ctx\.arc\(p\.x, p\.y/.test(game);
-check('el cliente dibuja p.x/p.y sin interpolar (riesgo 30 Hz asumido a conciencia)',
-    dibujaCrudo && /NO interpola posiciones/.test(server));
+check('el cliente dibuja posiciones del estado, emitido a 30 Hz durante la partida',
+    dibujaCrudo && /emisión a 30 Hz/.test(server));
 
 // ── 8) roomConfig: la geometría viaja una vez, no en cada gameState ──
 // El mapa NO es estático (muros/obstáculos se destruyen, tiendas se reubican),

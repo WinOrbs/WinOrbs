@@ -13,6 +13,7 @@ const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 const changer = fs.readFileSync(path.join(root, 'tools/cambiar-servidor.js'), 'utf8');
 const indexHtml = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
 const gameHtml = fs.readFileSync(path.join(root, 'public/game.html'), 'utf8');
+const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 
 assert.match(
     frontendConfig,
@@ -45,5 +46,7 @@ for (const [name, html] of [['index.html', indexHtml], ['game.html', gameHtml]])
 
 assert.ok(server.includes("server.listen(PORT, '0.0.0.0'"), 'Render server must bind publicly');
 assert.ok(server.includes("const PORT = Number(process.env.PORT) || 3000"), 'server must honor Render PORT');
+assert.ok(packageJson.scripts.build.includes("fs.copyFileSync('sw.js','dist/sw.js')"), 'Cloudflare Pages build must publish the Monetag service worker');
+assert.ok(server.includes("app.get('/sw.js', (req, res) => res.sendFile(__dirname + '/sw.js'))"), 'Express static hosting must expose the root service worker');
 
-console.log('OK deploy config: Render backend, frontend-only CORS helper, script ordering, and Render port binding.');
+console.log('OK deploy config: Render backend, Cloudflare service worker, frontend-only CORS helper, script ordering, and Render port binding.');

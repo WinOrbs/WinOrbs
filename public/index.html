@@ -1037,19 +1037,11 @@
         const socket = io(window.SERVIDOR_URL || undefined, { transports: ['websocket'] });
         window.__lobbySocket = socket;
         const contenedorSalas = document.getElementById("lista-salas");
-        let rewardedAdsConfig = null;
-        let resolveRewardedAdsConfig;
-        const rewardedAdsConfigReady = new Promise((resolve) => {
-            resolveRewardedAdsConfig = resolve;
-        });
 
         socket.on('serverConfig', (cfg) => {
             // true = el servidor cobra entradas y paga premios vía Admin SDK
             window.__economyMode = !!(cfg && cfg.economy);
             window.__progresionConfig = cfg && cfg.progression;
-            rewardedAdsConfig = cfg && cfg.rewardedAds;
-            window.__rewardedAdsConfig = rewardedAdsConfig;
-            resolveRewardedAdsConfig(rewardedAdsConfig);
             if (window.__progresionActual) window.__renderProgresion(window.__progresionActual);
         });
 
@@ -1624,100 +1616,7 @@
             renderLobby();
         });
 
-        let gptLoadPromise = null;
-        let gptServicesEnabled = false;
-
-        function loadGooglePublisherTag() {
-            if (window.googletag && window.googletag.apiReady) return Promise.resolve();
-            if (gptLoadPromise) return gptLoadPromise;
-            gptLoadPromise = new Promise((resolve, reject) => {
-                window.googletag = window.googletag || { cmd: [] };
-                const script = document.createElement('script');
-                script.async = true;
-                script.src = 'https://securepubads.g.doubleclick.net/tag/js/gpt.js';
-                const timeout = setTimeout(() => {
-                    script.remove();
-                    reject(new Error('Google Publisher Tag tardó demasiado en responder.'));
-                }, 10000);
-                script.onload = () => {
-                    clearTimeout(timeout);
-                    resolve();
-                };
-                script.onerror = () => {
-                    clearTimeout(timeout);
-                    script.remove();
-                    reject(new Error('No se pudo cargar Google Publisher Tag.'));
-                };
-                document.head.appendChild(script);
-            }).catch((error) => {
-                gptLoadPromise = null;
-                throw error;
-            });
-            return gptLoadPromise;
-        }
-
-        function requestRewardedPracticeAd(adUnitPath) {
-            return loadGooglePublisherTag().then(() => new Promise((resolve) => {
-                let slot = null;
-                let settled = false;
-                let rewardGranted = false;
-                let requestTimeout;
-                const pubads = () => window.googletag.pubads();
-
-                const settle = (result) => {
-                    if (settled) return;
-                    settled = true;
-                    clearTimeout(requestTimeout);
-                    if (slot && window.googletag && window.googletag.apiReady) {
-                        pubads().removeEventListener('rewardedSlotReady', onReady);
-                        pubads().removeEventListener('rewardedSlotGranted', onGranted);
-                        pubads().removeEventListener('rewardedSlotClosed', onClosed);
-                        pubads().removeEventListener('slotRenderEnded', onRenderEnded);
-                        window.googletag.destroySlots([slot]);
-                    }
-                    resolve(result);
-                };
-                const onReady = (event) => {
-                    if (event.slot !== slot) return;
-                    clearTimeout(requestTimeout);
-                    if (!event.makeRewardedVisible()) return settle('unavailable');
-                    requestTimeout = setTimeout(() => {
-                        settle(rewardGranted ? 'completed' : 'closed');
-                    }, 180000);
-                };
-                const onGranted = (event) => {
-                    if (event.slot === slot) rewardGranted = true;
-                };
-                const onClosed = (event) => {
-                    if (event.slot === slot) settle(rewardGranted ? 'completed' : 'closed');
-                };
-                const onRenderEnded = (event) => {
-                    if (event.slot === slot && event.isEmpty) settle('unavailable');
-                };
-
-                requestTimeout = setTimeout(() => settle('unavailable'), 15000);
-                window.googletag.cmd.push(() => {
-                    if (settled) return;
-                    const format = window.googletag.enums &&
-                        window.googletag.enums.OutOfPageFormat.REWARDED;
-                    if (!format) return settle('unavailable');
-                    slot = window.googletag.defineOutOfPageSlot(adUnitPath, format);
-                    if (!slot) return settle('unavailable');
-                    slot.addService(pubads());
-                    pubads().addEventListener('rewardedSlotReady', onReady);
-                    pubads().addEventListener('rewardedSlotGranted', onGranted);
-                    pubads().addEventListener('rewardedSlotClosed', onClosed);
-                    pubads().addEventListener('slotRenderEnded', onRenderEnded);
-                    if (!gptServicesEnabled) {
-                        window.googletag.enableServices();
-                        gptServicesEnabled = true;
-                    }
-                    window.googletag.display(slot);
-                });
-            }));
-        }
-
-        function crearSalaPracticaBots(adStatus) {
+        function crearSalaPracticaBots() {
             return new Promise((resolve) => {
                 const timeout = setTimeout(() => {
                     socket.off('practiceRoomCreated', onCreated);
@@ -1729,12 +1628,12 @@
                     resolve(result);
                 };
                 socket.on('practiceRoomCreated', onCreated);
-                socket.emit('createPracticeRoom', { adStatus });
+                socket.emit('createPracticeRoom');
             });
         }
 
-        async function entrarPracticaBots(nick, adStatus) {
-            const result = await crearSalaPracticaBots(adStatus);
+        async function entrarPracticaBots(nick) {
+            const result = await crearSalaPracticaBots();
             if (!result || result.ok !== true || !result.roomId || !result.password) {
                 alert((result && result.error) || 'No se pudo crear la práctica con bots.');
                 return;
@@ -1745,17 +1644,6 @@
             sessionStorage.setItem('mi_sala_password', result.password);
             sessionStorage.setItem('room_pot', '0.00');
             window.location.href = `game.html?sala=${encodeURIComponent(result.roomId)}`;
-        }
-
-        function esperarConfiguracionAnuncios(timeoutMs) {
-            if (rewardedAdsConfig !== null) return Promise.resolve(rewardedAdsConfig);
-            return new Promise((resolve) => {
-                const timeout = setTimeout(() => resolve(null), timeoutMs);
-                rewardedAdsConfigReady.then((config) => {
-                    clearTimeout(timeout);
-                    resolve(config);
-                });
-            });
         }
 
         async function iniciarPracticaBots() {
@@ -1769,35 +1657,7 @@
             practicaPendiente = true;
             botonModoSolo.disabled = true;
             try {
-                const configured = await esperarConfiguracionAnuncios(5000);
-                if (!configured) {
-                    alert('No se pudo obtener la configuración del servidor. Revisa tu conexión e inténtalo de nuevo.');
-                    return;
-                }
-                let adStatus = 'unavailable';
-                if (configured.enabled && configured.adUnitPath) {
-                    if (!window.confirm('Para desbloquear una partida individual gratuita contra 5 bots, acepta ver un anuncio recompensado de Google. La partida se desbloquea cuando Google confirma la recompensa. ¿Continuar?')) {
-                        return;
-                    }
-                    let adResult = 'unavailable';
-                    try {
-                        adResult = await requestRewardedPracticeAd(configured.adUnitPath);
-                    } catch (error) {
-                        console.error('No se pudo cargar Google Publisher Tag:', error);
-                    }
-                    if (adResult === 'closed') {
-                        alert('El anuncio se cerró antes de completar la recompensa. No se inició la partida.');
-                        return;
-                    }
-                    if (adResult === 'completed') {
-                        adStatus = 'completed';
-                    } else if (
-                        !window.confirm('Google no pudo entregar un anuncio recompensado ahora. ¿Quieres iniciar esta práctica gratis?')) {
-                        return;
-                    }
-                }
-
-                await entrarPracticaBots(nick, adStatus);
+                await entrarPracticaBots(nick);
             } finally {
                 practicaPendiente = false;
                 botonModoSolo.disabled = false;

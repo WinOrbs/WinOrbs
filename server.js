@@ -33,10 +33,6 @@ const { lockResult } = require('./apps/server/game/results');
 const { finalizeAfterProgression } = require('./apps/server/game/finalization');
 const { createAuditEvent } = require('./apps/server/platform/audit');
 const {
-    rewardedAdsConfig,
-    validPracticeAdStatus
-} = require('./apps/server/platform/rewarded_ads');
-const {
     DEFAULT_LEVEL_CURVE,
     DEFAULT_VISUAL_REWARDS,
     COLLECTIONS,
@@ -81,6 +77,10 @@ app.use((req, res, next) => {
     next();
 });
 const io = new Server(server, {
+    connectionStateRecovery: {
+        maxDisconnectionDuration: 120_000,
+        skipMiddlewares: false
+    },
     cors: {
         origin: (origin, cb) => {
             if (isOriginAllowed(origin)) return cb(null, true);
@@ -92,6 +92,7 @@ const io = new Server(server, {
 });
 
 app.use(express.static(__dirname + '/public'));
+app.get('/sw.js', (req, res) => res.sendFile(__dirname + '/sw.js'));
 
 // Endpoint ligero para keep-alive externo (UptimeRobot / cron-job.org)
 app.get('/ping', (req, res) => res.json({ ok: true, ts: Date.now() }));
@@ -135,8 +136,6 @@ const ADMIN_PASSWORD = adminPassword;
 const ADMIN_SESSION_MS = 30 * 60 * 1000;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
-const REWARDED_ADS_CONFIG = rewardedAdsConfig(process.env.GAM_REWARDED_AD_UNIT_PATH);
-
 // ── FIREBASE ADMIN (inflado/anticheat de dinero) ─────────────────────────────
 // Modo ECONOMÍA ACTIVA: si hay clave de servicio (serviceAccountKey.json o
 // GOOGLE_APPLICATION_CREDENTIALS), el SERVIDOR cobra entradas y paga premios con
@@ -257,6 +256,7 @@ try {
 // Límites de seguridad
 const MAX_SOCKETS_PER_IP = 3;          // en salas de pago
 const INPUT_MIN_INTERVAL = 8;          // ms entre eventos playerInput
+const DISCONNECT_GRACE_MS = 125_000;
 const SHOOT_COOLDOWN = { 1: 120, 2: 400, 3: 500 }; // ms por arma (3 = Bombas de Plasma)
 // ── BOMBAS DE PLASMA (arma 3: Q equipa · clic lanza hacia el cursor) ─────────
 const BOMBA_VEL = 12;          // velocidad inicial de lanzamiento (px/tick)
@@ -1231,6 +1231,7 @@ class GameRoom {
     removePlayer(socketId) {
         if (this.players[socketId]) {
             let p = this.players[socketId];
+            if (p.disconnectTimer) clearTimeout(p.disconnectTimer);
             if (p.charge > 0) {
                 this.droppedEnergy.push({
                     id: 'e_' + randID(),
@@ -1492,33 +1493,22 @@ class GameRoom {
     }
 
     startLoop() {
-        // SIMULACIÓN a 60 Hz, EMISIÓN a 30 Hz. Son dos relojes distintos y a
-        // propósito: el juego (movimiento, balas, colisiones, timers) sigue a
-        // 60 Hz para no cambiar la sensación, pero el estado sale a la mitad.
-        // El input del cliente ya viaja por su propio setInterval de 60 FPS
-        // (game.html → bucle de envío de inputs), así que la respuesta a
-        // teclado/joystick NO depende de la tasa de emisión.
-        //
-        // OJO: el cliente NO interpola posiciones (dibuja p.x/p.y tal cual), así
-        // que con 30 Hz el movimiento se ve a 33 ms por paso: aceptable en
-        // escritorio, algo escalonado en móvil. Si molesta, la solución NO es
-        // subir la frecuencia, es interpolar en el render (pendiente de
-        // decidir con el usuario, ver nota de riesgo en el historial).
+        // Simulación a 60 Hz durante la partida y emisión a 30 Hz. En lobby no
+        // hay física que simular y basta con enviar el estado una vez por segundo.
+        // El input del cliente conserva su frecuencia de 60 FPS.
         this.tick = 0;
         this.interval = setInterval(() => {
             const jugadores = Object.keys(this.players).length;
 
-            // Sala VACÍA: no hay nada que simular ni a quién enviar. La sala sigue
-            // existiendo (hay 40 automáticas), pero dejar de tickear evita quemar
-            // CPU del proceso entero: antes esto corría a 60 Hz en TODAS las salas
-            // (vacías incluidas) = ~1200 getState()/s y presión de GC constante.
+            // Sala vacía: no hay estado que simular ni emitir. Las salas siguen
+            // existiendo, pero no serializan ni transmiten snapshots sin jugadores.
             if (jugadores === 0) return;
 
-            this.update();
+            if (this.gameStarted) this.update();
 
-            // Solo se emite 1 de cada 2 ticks de simulación (30 Hz).
             this.tick++;
-            if (this.tick % TICK_EMITIR_CADA !== 0) return;
+            const ticksPerEmission = this.gameStarted ? TICK_EMITIR_CADA : 60;
+            if (this.tick % ticksPerEmission !== 0) return;
 
             // volatile: si el cliente va saturado se DESCARTA el estado atrasado
             // en lugar de encolarlo. Sin esto, un móvil lento acumula cola y su
@@ -1971,6 +1961,9 @@ class GameRoom {
                 }
 
                 // Vaciar jugadores y resetear la sala para nuevos registros
+                Object.values(this.players).forEach((player) => {
+                    if (player.disconnectTimer) clearTimeout(player.disconnectTimer);
+                });
                 this.players = {};
                 this.matchStatus = MATCH_STATUS.COMPLETED;
                 this.resetForLobby();
@@ -2961,6 +2954,8 @@ async function salirDeSala(socket, room) {
         }
     }
     room.removePlayer(socket.id);
+    if (socket.roomId === room.id) delete socket.roomId;
+    if (socket.data?.roomId === room.id) delete socket.data.roomId;
     if (room.isPractice) {
         if (room.practiceExpiryTimer) clearTimeout(room.practiceExpiryTimer);
         room.stopLoop();
@@ -3061,9 +3056,19 @@ function ipDeSocket(socket) {
 io.on('connection', (socket) => {
     socket.isAdmin = false;
     socket.adminAuthenticatedAt = 0;
+    if (socket.recovered && socket.data?.roomId) {
+        const room = rooms[socket.data.roomId];
+        const player = room?.players[socket.id];
+        if (room && player) {
+            if (player.disconnectTimer) clearTimeout(player.disconnectTimer);
+            player.disconnectTimer = null;
+            delete player.disconnectedAt;
+            socket.roomId = room.id;
+            socket.emit('joinedSuccess', { playerId: socket.id, roomId: room.id, recovered: true });
+        }
+    }
     socket.emit('serverConfig', {
         economy: FIREBASE_ECONOMY,
-        rewardedAds: REWARDED_ADS_CONFIG,
         progression: {
             dailyMissions: missionConfig(),
             maxLevel: MAX_LEVEL,
@@ -3409,10 +3414,14 @@ io.on('connection', (socket) => {
                 sockets.forEach(s => {
                     s.leave(roomId);
                     delete s.roomId;
+                    if (s.data?.roomId === roomId) delete s.data.roomId;
                 });
             }).catch(() => { });
 
             registrarAuditoria('ADMIN_DESTROY_ROOM', socket.id, { roomId });
+            Object.values(room.players).forEach((player) => {
+                if (player.disconnectTimer) clearTimeout(player.disconnectTimer);
+            });
             room.stopLoop();
             delete rooms[roomId];
             emitirSalasPublicas(true);
@@ -3455,15 +3464,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('createPracticeRoom', (request) => {
-        const adStatus = request && request.adStatus;
-        if (!request || typeof request !== 'object' ||
-            !validPracticeAdStatus(adStatus)) {
-            return socket.emit('practiceRoomCreated', {
-                ok: false,
-                error: 'La práctica requiere completar el anuncio o confirmar que no hay anuncios disponibles.'
-            });
-        }
+    socket.on('createPracticeRoom', () => {
         const now = Date.now();
         const activePracticeRooms = Object.values(rooms).filter((room) => room.isPractice).length;
         if (now - (socket.__lastPracticeAt || 0) < 3000) {
@@ -3564,7 +3565,9 @@ io.on('connection', (socket) => {
 
         // Cambio de sala: salir automáticamente de la sala anterior (con reembolso si aplica)
         if (socket.roomId && rooms[socket.roomId] && socket.roomId !== room.id) {
-            await salirDeSala(socket, rooms[socket.roomId]);
+            const previousRoom = rooms[socket.roomId];
+            await salirDeSala(socket, previousRoom);
+            socket.leave(previousRoom.id);
         }
 
         // Verificar identidad (modo economía: ID token de Firebase)
@@ -3630,6 +3633,7 @@ io.on('connection', (socket) => {
 
         socket.join(room.id);
         socket.roomId = room.id;
+        socket.data.roomId = room.id;
         // Geometría del mapa para este cliente concreto (recién unido o
         // reconectado). Va antes que nada de gameState para que tenga el mapa
         // ya montado cuando empiece a dibujar.
@@ -3637,12 +3641,14 @@ io.on('connection', (socket) => {
         // Anticheat de skins: si la skin no es básica ni está en el inventario del jugador → básica
         const skinValidada = await validarSkinCliente(skin, socket.verifiedUid);
         if (room.players[socket.id]) {
+            socket.data.roomId = room.id;
             return socket.emit('joinedSuccess', { playerId: socket.id, roomId: room.id });
         }
         if (room.gameStarted || (room.mode === 'teams' && room.lobbyActive) ||
             Object.keys(room.players).length >= room.maxPlayers) {
             socket.leave(room.id);
             delete socket.roomId;
+            delete socket.data.roomId;
             if (socket.__entradaCobrada?.salaId === room.id) {
                 await servidorReembolsar(
                     socket.verifiedUid,
@@ -3832,9 +3838,11 @@ io.on('connection', (socket) => {
     socket.on('leaveRoom', async () => {
         if (socket.roomId && rooms[socket.roomId]) {
             const room = rooms[socket.roomId];
+            const roomId = socket.roomId;
             await salirDeSala(socket, room);
-            socket.leave(socket.roomId);
+            socket.leave(roomId);
             delete socket.roomId;
+            delete socket.data.roomId;
             emitirSalasPublicas();
         }
     });
@@ -3842,8 +3850,16 @@ io.on('connection', (socket) => {
     socket.on('disconnect', async () => {
         if (socket.roomId && rooms[socket.roomId]) {
             const room = rooms[socket.roomId];
-            await salirDeSala(socket, room);
-            emitirSalasPublicas();
+            const player = room.players[socket.id];
+            if (!player) return;
+            player.disconnectedAt = Date.now();
+            player.disconnectTimer = setTimeout(async () => {
+                if (rooms[room.id] !== room || room.players[socket.id] !== player ||
+                    io.sockets.sockets.has(socket.id)) return;
+                player.disconnectTimer = null;
+                await salirDeSala(socket, room);
+                emitirSalasPublicas();
+            }, DISCONNECT_GRACE_MS);
         }
     });
 });
