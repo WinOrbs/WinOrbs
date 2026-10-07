@@ -2863,6 +2863,7 @@
     <div class="zone-warning" id="zone-warning">COLAPSO EXTREMO DE LA ZONA · MUÉVETE AL CENTRO</div>
     <div class="announcement-banner" id="announcement-banner">AIRDROP INMINENTE</div>
     <div class="solo-banner" id="solo-banner" style="display:none;">⏳ SOLO EN LA SALA · VICTORIA EN 10s</div>
+    <div class="solo-banner" id="team-elimination-banner" style="display:none;">EQUIPO ELIMINADO · OBSERVANDO LA PARTIDA</div>
 
     <div class="ability-hud">
         <div class="ability-icon"><img class="pix" src="assets/game/ui-bolt.png" alt="" style="width:18px;height:18px;"></div>
@@ -3519,7 +3520,8 @@
                 'pointer-events:none;white-space:pre;';
             document.body.appendChild(el);
 
-            let rtt = [], kb = 0, estados = 0, frames = 0, fps = 0;
+            let rtt = [], kb = 0, estados = 0, estadosSinMuestra = 0, tamanoMuestraKB = 0, frames = 0, fps = 0;
+            let ultimaMuestra = 0;
             let t0 = performance.now();
 
             setInterval(() => {                       // RTT (mismo probe que test_latencia.js)
@@ -3533,7 +3535,16 @@
 
             window.socket.on('gameState', (st) => {   // volumen real de datos
                 estados++;
-                try { kb += JSON.stringify(st).length / 1024; } catch (e) { }
+                estadosSinMuestra++;
+                const ahora = performance.now();
+                if (ahora - ultimaMuestra >= 1000) {
+                    try {
+                        tamanoMuestraKB = JSON.stringify(st).length / 1024;
+                        kb += tamanoMuestraKB * estadosSinMuestra;
+                        estadosSinMuestra = 0;
+                        ultimaMuestra = ahora;
+                    } catch (e) { }
+                }
             });
 
             (function contar() { frames++; requestAnimationFrame(contar); })();
@@ -3547,14 +3558,15 @@
                 let transporte = '?';
                 try { transporte = window.socket.io.engine.transport.name; } catch (e) { }
                 fps = Math.round(frames / seg) || 0;
+                const kbEstimados = kb + tamanoMuestraKB * estadosSinMuestra;
                 el.textContent =
                     'RTT     ' + (isFinite(media) ? media.toFixed(0) + ' ms' : '—') + '\n' +
                     'jitter  ' + (isFinite(jit) ? jit.toFixed(0) + ' ms' : '—') + '\n' +
                     'FPS     ' + fps + '\n' +
                     'tick    ' + (estados / seg).toFixed(1) + ' Hz\n' +
-                    'datos   ' + (kb / seg).toFixed(0) + ' KB/s\n' +
+                    'datos   ' + (kbEstimados / seg).toFixed(0) + ' KB/s aprox.\n' +
                     'transp. ' + transporte;
-                rtt = []; estados = 0; kb = 0; frames = 0; t0 = performance.now();
+                rtt = []; estados = 0; kb = 0; estadosSinMuestra = 0; frames = 0; t0 = performance.now();
             }, 2000);
         })();
         const canvas = document.getElementById("gameCanvas");
@@ -3582,10 +3594,11 @@
             window.location.href = "index.html";
         }
 
+        const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
         function resize() {
-            // Renderiza a la densidad real del dispositivo (nitidez en moviles).
-            // setTransform(dpr) mantiene la escala visual identica a 1x.
-            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            // En móvil, limitar a 1x reduce a una cuarta parte los píxeles de
+            // render frente a 2x, sin cambiar el tamaño lógico del juego.
+            const dpr = isTouchDevice ? 1 : Math.min(window.devicePixelRatio || 1, 2);
             canvas.width = Math.round(window.innerWidth * dpr);
             canvas.height = Math.round(window.innerHeight * dpr);
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -3597,7 +3610,6 @@
         resize();
 
         // Detección de dispositivo táctil y controles
-        const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
         const joystickContainer = document.getElementById("joystick-container");
         const joystickHandle = document.getElementById("joystick-handle");
         const touchControls = document.getElementById("touch-controls");
@@ -3911,6 +3923,7 @@
         // ESTADO MULTIJUGADOR GLOBAL
         let myPlayerId = null;
         let gameState = null;
+        let ultimoMinimapa = 0;
         // Geometría del mapa, separada del estado volátil. Llega una vez por
         // partida en 'roomConfig' (server.js → configEstatica()). No cambia al
         // dispararse ni al reubicarse las tiendas, así que no tiene sentido
@@ -3949,6 +3962,46 @@
         // Caché de imágenes de skins (PNG/JPG/GIF)
         const skinImages = {};
         let shakeIntensity = 0;
+
+        function actualizarSkins(state) {
+            const urls = new Set();
+            const urlsVivas = new Set();
+            Object.values(state.players || {}).forEach((p) => {
+                const reward = p.skin && p.skin.progressionReward;
+                if (p.skin && p.skin.imagenUrl) {
+                    urls.add(p.skin.imagenUrl);
+                    if (!p.isDead) urlsVivas.add(p.skin.imagenUrl);
+                }
+                if (reward && reward.imageUrl) {
+                    urls.add(reward.imageUrl);
+                    if (!p.isDead) urlsVivas.add(reward.imageUrl);
+                }
+            });
+
+            urls.forEach((url) => {
+                if (!skinImages[url]) {
+                    const img = new Image();
+                    try { img.referrerPolicy = 'no-referrer'; } catch (e) { }
+                    img.src = url;
+                    skinImages[url] = img;
+                }
+            });
+            let listas = 0;
+            urlsVivas.forEach((url) => {
+                const img = skinImages[url];
+                if (img && img.complete && img.naturalWidth > 0) listas++;
+            });
+
+            const bar = document.getElementById("skins-carga");
+            if (!bar) return;
+            if (urlsVivas.size > listas) {
+                document.getElementById("skins-carga-texto").innerText = `⏳ Cargando skins ${listas}/${urlsVivas.size}`;
+                document.getElementById("skins-carga-fill").style.width = Math.round((listas / urlsVivas.size) * 100) + "%";
+                bar.classList.add("visible");
+            } else {
+                bar.classList.remove("visible");
+            }
+        }
 
         // ==== SPRITES PNG DEL JUEGO ====
         // Manifest: clave → { src, tile?, frames?, frameW?, frameH? }.
@@ -4291,8 +4344,27 @@
             roomConfig = cfg;
         });
 
+        let ultimaActualizacionHUD = 0;
+        let hudPendiente = false;
+        function solicitarActualizacionHUD() {
+            const ahora = performance.now();
+            const espera = 75 - (ahora - ultimaActualizacionHUD);
+            if (espera <= 0) {
+                ultimaActualizacionHUD = ahora;
+                updateHUD();
+            } else if (!hudPendiente) {
+                hudPendiente = true;
+                setTimeout(() => {
+                    hudPendiente = false;
+                    ultimaActualizacionHUD = performance.now();
+                    updateHUD();
+                }, espera);
+            }
+        }
+
         socket.on('gameState', (state) => {
             gameState = state;
+            actualizarSkins(state);
             // Primer estado recibido = arranque completo (sumar() es idempotente)
             window.__intro && window.__intro.sumar('estado');
             // Autocuracion: si el servidor ya no me registra, regresar al lobby
@@ -4301,7 +4373,7 @@
                 window.location.href = "index.html";
                 return;
             }
-            updateHUD();
+            solicitarActualizacionHUD();
             // Si el gameState trae hp indexado es que la geometría viene por
             // roomConfig; si aún no la tengo, la pido una vez (configPedida
             // impide el bucle si el servidor está en reversión y no contesta).
@@ -4314,11 +4386,12 @@
         socket.on('gameOver', (data) => {
             isGameOver = true;
             document.getElementById("solo-banner").style.display = "none";
+            document.getElementById("team-elimination-banner").style.display = "none";
             // Compat: payload nuevo {gameId, entryFee, leaderboard} o array antiguo
             const ranking = Array.isArray(data) ? data : ((data && data.leaderboard) || []);
             finalizarJuego(ranking, Array.isArray(data) ? null : data);
             // Premio: 80% del pozo al 1er lugar, 20% comisión de la casa
-            if (!Array.isArray(data) && data && data.gameId) pagarPremio(data);
+            if (!Array.isArray(data) && data && data.gameId && Number(data.entryFee) > 0) pagarPremio(data);
             // El servidor expulsa a todos en ~10s: cuenta regresiva de salida
             const btn = document.getElementById("btn-respawn-action");
             let restante = 10;
@@ -4371,6 +4444,10 @@
 
                 if (window.__economyMode === true) {
                     if (!premioOk) {
+                        if (data.mode === 'teams') {
+                            console.error("No se encontró la liquidación del equipo. Se requiere revisar el premio del lado servidor.");
+                            return;
+                        }
                         // Red de seguridad: el servidor no alcanzó a escribir → marcador + pendiente admin
                         await fs.setDoc(refPartida, {
                             gameId: data.gameId, salaId: roomId, pozo, comision, neto,
@@ -4517,13 +4594,21 @@
                 const fee = Number(gameState.entryFee) || 0;
                 const pot = (nJugadores * fee).toFixed(2);
                 const waiting = typeof gameState.waitingTimer === 'number' && gameState.waitingTimer >= 0;
-                lobbyTitle.innerText = "ESPERANDO JUGADORES";
+                lobbyTitle.innerText = gameState.isPractice
+                    ? "PRÁCTICA CONTRA BOTS"
+                    : "ESPERANDO JUGADORES";
                 lobbyCountdown.style.display = waiting ? "block" : "none";
                 if (waiting) lobbyCountdown.innerText = gameState.waitingTimer;
-                lobbyText.innerText = waiting
-                    ? "La partida inicia cuando el contador llegue a 0. ¡Cada inscripción lo reinicia a 30s!"
-                    : "Necesitamos 2 jugadores para comenzar. La partida iniciará automáticamente.";
-                lobbyPotWrap.style.display = "block";
+                lobbyText.innerText = gameState.isPractice
+                    ? "Entrenamiento gratuito · 5 bots · sin premios."
+                    : waiting
+                        ? (gameState.mode === 'teams'
+                            ? "La partida TEAM inicia al terminar el contador. Los equipos se equilibran automáticamente."
+                            : "La partida inicia cuando el contador llegue a 0. ¡Cada inscripción lo reinicia a 30s!")
+                        : (gameState.mode === 'teams'
+                            ? "Necesitamos jugadores en ambos equipos para comenzar."
+                            : "Necesitamos 2 jugadores para comenzar. La partida iniciará automáticamente.");
+                lobbyPotWrap.style.display = gameState.isPractice ? "none" : "block";
                 const total = gameState.maxPlayers || 10;
                 document.getElementById("lobby-pot").innerText = `$${pot} USD`;
                 const detailEl = document.getElementById("lobby-pot-detail");
@@ -4545,6 +4630,11 @@
                     soloEl.style.display = "none";
                 }
             }
+            const teamEliminationBanner = document.getElementById("team-elimination-banner");
+            if (teamEliminationBanner) {
+                teamEliminationBanner.style.display =
+                    gameState.mode === 'teams' && isDead && !isGameOver ? "block" : "none";
+            }
 
             // ── Bote: ESTÁTICO durante la partida/lobby (no baja con abandonos);
             // en vivo (inscritos × entrada) solo mientras se inscriben. ──
@@ -4559,7 +4649,9 @@
                 potEl.innerText = `$${Number(pozo).toFixed(2)} USD`;
             }
 
-            if (isDead && !isGameOver) {
+            if (isDead && !isGameOver && gameState.mode === 'teams') {
+                document.getElementById("death-screen").style.display = "none";
+            } else if (isDead && !isGameOver) {
                 const respawnSec = me.canRespawn ? "¡RESPONDE!" : `...${Math.ceil((300 - (me.respawnTimer || 0)) / 60)}s`;
                 document.getElementById("death-title").innerText = "NÚCLEO DESTRUIDO";
                 document.getElementById("death-subtext").innerText = "Perdiste todas las gemas no aseguradas. " + respawnSec;
@@ -4643,10 +4735,17 @@
             mobileCurrentWeapon = me.currentWeapon || 1;
 
             // Timer
-            const mins = Math.floor(gameState.gameTime / 60);
-            const secs = gameState.gameTime % 60;
             const timerEl = document.getElementById("hud-timer");
-            timerEl.innerText = `${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
+            if (gameState.mode === 'teams' && gameState.gameTime <= 0) {
+                const elapsed = Math.abs(gameState.gameTime);
+                const overtimeMins = Math.floor(elapsed / 60);
+                const overtimeSecs = elapsed % 60;
+                timerEl.innerText = `OT ${overtimeMins < 10 ? '0' : ''}${overtimeMins}:${overtimeSecs < 10 ? '0' : ''}${overtimeSecs}`;
+            } else {
+                const mins = Math.floor(gameState.gameTime / 60);
+                const secs = gameState.gameTime % 60;
+                timerEl.innerText = `${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
+            }
             // Parpadeo arcade cuando la partida está a punto de terminar
             timerEl.classList.toggle('critico', gameState.gameStarted && gameState.gameTime <= 30);
 
@@ -4727,7 +4826,11 @@
             allPlayers.forEach(p => {
                 const li = document.createElement("li");
                 if (p.id === myPlayerId) li.className = "you";
-                li.innerText = `${p.nick}: ${p.bankedScore || 0} pts (+${p.charge || 0})`;
+                const equipo = gameState.mode === 'teams'
+                    ? `${p.teamId === 'A' ? '🔵' : '🔴'} `
+                    : '';
+                const bot = p.isBot ? 'BOT · ' : '';
+                li.innerText = `${equipo}${bot}${p.nick}: ${p.bankedScore || 0} pts (+${p.charge || 0})`;
                 listEl.appendChild(li);
             });
         }
@@ -4756,6 +4859,21 @@
 
             if (gameState.lobbyActive || !gameState.gameStarted) return;
 
+            const viewZoom = isTouchDevice ? 0.72 : 0.92;
+            const margenVista = 160;
+            const mitadVistaX = window.innerWidth / (2 * viewZoom) + margenVista;
+            const mitadVistaY = window.innerHeight / (2 * viewZoom) + margenVista;
+            const vistaIzquierda = me.x - mitadVistaX;
+            const vistaDerecha = me.x + mitadVistaX;
+            const vistaArriba = me.y - mitadVistaY;
+            const vistaAbajo = me.y + mitadVistaY;
+            const visible = (x, y, radio = 0) =>
+                x + radio >= vistaIzquierda && x - radio <= vistaDerecha &&
+                y + radio >= vistaArriba && y - radio <= vistaAbajo;
+            const visibleRect = (x, y, w, h, margen = 0) =>
+                x + w + margen >= vistaIzquierda && x - margen <= vistaDerecha &&
+                y + h + margen >= vistaArriba && y - margen <= vistaAbajo;
+
             if (shakeIntensity > 0) shakeIntensity *= 0.9;
 
             // En px CSS: el transform base (dpr) los escala para cubrir todo el canvas.
@@ -4765,7 +4883,6 @@
             let offsetX = (Math.random() - 0.5) * shakeIntensity;
             let offsetY = (Math.random() - 0.5) * shakeIntensity;
             // Cámara alejada en táctil para más visión de campo; centrada en el jugador.
-            const viewZoom = isTouchDevice ? 0.72 : 0.92;
             // Centro en px CSS: el transform base (dpr) lo lleva a px de dispositivo.
             // Usar canvas.width/2 aqui multiplicaria dpr dos veces y sacaria la camara
             // de la pantalla (personaje "en la esquina") en moviles de alta densidad.
@@ -4790,6 +4907,7 @@
 
             // Zonas Peligrosas
             (gameState.hazardZones || []).forEach(hz => {
+                if (!visible(hz.x, hz.y, hz.radius)) return;
                 ctx.beginPath(); ctx.arc(hz.x, hz.y, hz.radius, 0, Math.PI * 2);
                 ctx.fillStyle = 'rgba(34, 197, 94, 0.15)'; ctx.fill();
                 ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2; ctx.stroke();
@@ -4798,6 +4916,7 @@
             // Speed Pads (turbo): sprite estático + chevrones animados encima.
             // Fallback: rectángulo con chevrones originales si el PNG no cargó.
             turbos.forEach(pad => {
+                if (!visibleRect(pad.x, pad.y, pad.w, pad.h, 16)) return;
                 const conSprite = drawSprite('turbo', pad.x + pad.w / 2, pad.y + pad.h / 2, pad.w + 16, pad.h + 6);
                 if (!conSprite) {
                     ctx.fillStyle = 'rgba(250, 204, 21, 0.16)';
@@ -4822,6 +4941,7 @@
             // daño (fallback: rectángulo original). La barra de vida sigue igual.
             // Los muros FINOS (hp 15) se tiñen más oscuros para distinguirlos.
             muros.forEach(wl => {
+                if (!visibleRect(wl.x, wl.y, wl.w, wl.h, 16)) return;
                 if (wl.hp <= 0) return;
                 const pctW = (wl.hp || 0) / (wl.maxHp || 30);
                 const fino = wl.tipo === 'fino' || (wl.maxHp || 30) < 20;
@@ -4851,6 +4971,7 @@
             // CUENTA ATRÁS (cuando se agota, la caseta salta a otro punto de la
             // zona segura). El flujo de compra sigue siendo por proximidad.
             (gameState.shopZones || []).forEach(sz => {
+                if (!visible(sz.x, sz.y, Math.max(sz.radius + 16, 260))) return;
                 ctx.beginPath(); ctx.arc(sz.x, sz.y, sz.radius, 0, Math.PI * 2);
                 ctx.fillStyle = 'rgba(56, 189, 248, 0.12)'; ctx.fill();
                 ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2; ctx.stroke();
@@ -4930,7 +5051,7 @@
 
             // Banco Central (círculo de zona + icono del sprite)
             const bankZone = banco;
-            if (bankZone) {
+            if (bankZone && visible(bankZone.x, bankZone.y, bankZone.radius + 48)) {
                 ctx.beginPath(); ctx.arc(bankZone.x, bankZone.y, bankZone.radius, 0, Math.PI * 2);
                 ctx.fillStyle = 'rgba(34, 197, 94, 0.15)'; ctx.fill();
                 ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 3; ctx.stroke();
@@ -4941,6 +5062,7 @@
             // con vida; hay que dispararle para abrir el botín.
             (gameState.airdrops || []).forEach(ad => {
                 const r = ad.radius || 40;
+                if (ad.landed && !visible(ad.x, ad.y, r * 2.4 + 30)) return;
                 if (!ad.landed) {
                     // Objetivo marcado en el suelo (punteado, con pulso)
                     const pulso = 1 + 0.08 * Math.sin(Date.now() / 150);
@@ -4953,6 +5075,7 @@
                     const prog = Math.max(0, Math.min(1, 1 - (ad.landTimer || 0) / 240));
                     const drop = (1 - prog) * 1500;
                     const size = r * (0.55 + 0.45 * prog) * 1.2;
+                    if (!visible(ad.x, ad.y, r + 12) && !visible(ad.x, ad.y - drop, r * 4)) return;
                     ctx.fillStyle = 'rgba(0,0,0,0.35)';
                     ctx.beginPath(); ctx.ellipse(ad.x, ad.y, r * 0.8 * prog, r * 0.3 * prog, 0, 0, Math.PI * 2); ctx.fill();
                     const canopyAlpha = Math.max(0, Math.min(1, (1 - prog) * 7));
@@ -5077,6 +5200,7 @@
                 barril: { lleno: '#b91c1c', roto: '#7f1d1d', borde: '#fca5a5' }
             };
             obstaculos.forEach(obs => {
+                if (!visibleRect(obs.x, obs.y, obs.w, obs.h, 80)) return;
                 if (obs.hp <= 0) return;
                 const tipo = OBSTACULOS_FALLBACK[obs.tipo] ? obs.tipo : 'roca'; // sin tipo = roca
                 const fb = OBSTACULOS_FALLBACK[tipo];
@@ -5106,12 +5230,14 @@
             // Orbes y Medicinas: sprites con animación suave (flotación/latido);
             // fallback: círculo y cuadrado originales
             (gameState.droppedEnergy || []).forEach(g => {
+                if (!visible(g.x, g.y, 40)) return;
                 const flotacion = Math.sin(Date.now() / 400 + g.x * 0.05) * 2;
                 if (!drawSprite('orbe', g.x, g.y + flotacion, 58)) {
                     ctx.beginPath(); ctx.arc(g.x, g.y, 6, 0, Math.PI * 2); ctx.fillStyle = '#facc15'; ctx.fill();
                 }
             });
             (gameState.healthKits || []).forEach(h => {
+                if (!visible(h.x, h.y, 24)) return;
                 const latido = 1 + 0.06 * Math.sin(Date.now() / 300 + h.x);
                 if (!drawSprite('kit', h.x, h.y, 32 * latido)) {
                     ctx.fillStyle = '#22c55e'; ctx.fillRect(h.x - 7, h.y - 7, 14, 14);
@@ -5121,6 +5247,7 @@
             // Lanza-Orbes en el suelo (botín de airdrop): rombo violeta giratorio
             // si el sprite no está disponible.
             (gameState.droppedOrbGuns || []).forEach(g => {
+                if (!visible(g.x, g.y, 32)) return;
                 const flotacion = Math.sin(Date.now() / 350 + g.x * 0.03) * 3;
                 const latido = 1 + 0.08 * Math.sin(Date.now() / 260 + g.y);
                 if (!drawSprite('orbGun', g.x, g.y + flotacion, 38 * latido)) {
@@ -5139,16 +5266,20 @@
             // Bombas (sprite con latido) y Explosiones (tira de 4 frames);
             // fallbacks: círculos originales
             (gameState.bombs || []).forEach(bm => {
+                if (!visible(bm.currentX, bm.currentY, 32)) return;
                 const latido = 1 + 0.08 * Math.sin(Date.now() / 120);
                 if (!drawSprite('bomba', bm.currentX, bm.currentY, 32 * latido)) {
                     ctx.beginPath(); ctx.arc(bm.currentX, bm.currentY, 10, 0, Math.PI * 2); ctx.fillStyle = '#ef4444'; ctx.fill();
                 }
             });
-            (gameState.explosions || []).forEach(exp => dibujarExplosion(exp));
+            (gameState.explosions || []).forEach(exp => {
+                if (visible(exp.x, exp.y, exp.radius * 2.1)) dibujarExplosion(exp);
+            });
 
             // Proyectiles: sprites orientados a su velocidad (el servidor envía
             // vx/vy); fallback: círculos originales
             (gameState.bullets || []).forEach(b => {
+                if (!visible(b.x, b.y, b.isOrbBullet ? 24 : 40)) return;
                 if (b.isOrbBullet) {
                     if (!drawSprite('balaOrbe', b.x, b.y, 28)) {
                         ctx.beginPath(); ctx.arc(b.x, b.y, 8, 0, Math.PI * 2);
@@ -5163,52 +5294,9 @@
                 }
             });
 
-            // Caché de imágenes de skins (PNG/JPG/GIF) — precarga perezosa
-            Object.values(gameState.players).forEach(p => {
-                const visual = p.skin && p.skin.progressionReward;
-                const imageUrls = [
-                    p.skin && p.skin.imagenUrl,
-                    visual && visual.imageUrl
-                ].filter(Boolean);
-                imageUrls.forEach((imageUrl) => {
-                    if (skinImages[imageUrl]) return;
-                    const img = new Image();
-                    try { img.referrerPolicy = 'no-referrer'; } catch (e) { }
-                    img.src = imageUrl;
-                    skinImages[imageUrl] = img;
-                });
-            });
-
-            // Barra de estado: cuántas fotos de skins faltan por cargar
-            (function () {
-                const urls = new Set();
-                Object.values(gameState.players).forEach(p => {
-                    if (p.isDead || !p.skin) return;
-                    if (p.skin.imagenUrl) urls.add(p.skin.imagenUrl);
-                    if (p.skin.progressionReward && p.skin.progressionReward.imageUrl) {
-                        urls.add(p.skin.progressionReward.imageUrl);
-                    }
-                });
-                const total = urls.size;
-                let listas = 0;
-                urls.forEach(u => {
-                    const im = skinImages[u];
-                    if (im && im.complete && im.naturalWidth > 0) listas++;
-                });
-                const bar = document.getElementById("skins-carga");
-                if (!bar) return;
-                if (total > 0 && listas < total) {
-                    document.getElementById("skins-carga-texto").innerText = `⏳ Cargando skins ${listas}/${total}`;
-                    document.getElementById("skins-carga-fill").style.width = Math.round((listas / total) * 100) + "%";
-                    bar.classList.add("visible");
-                } else {
-                    bar.classList.remove("visible");
-                }
-            })();
-
             // Renderizar Jugadores Reales
             Object.values(gameState.players).forEach(p => {
-                if (p.isDead) return;
+                if (p.isDead || !visible(p.x, p.y, p.radius * 3)) return;
 
                 ctx.save();
                 const barW = 44, barH = 4; const topY = p.y - 38;
@@ -5221,7 +5309,7 @@
                 }
 
                 ctx.fillStyle = '#ffffff'; ctx.font = 'bold 11px Segoe UI'; ctx.textAlign = 'center';
-                ctx.fillText(p.nick, p.x, topY - 8);
+                ctx.fillText(`${p.isBot ? 'BOT · ' : ''}${p.nick}`, p.x, topY - 8);
 
                 ctx.beginPath(); ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
                 const progressionReward = p.skin && p.skin.progressionReward;
@@ -5309,6 +5397,13 @@
                     ctx.beginPath(); ctx.arc(p.x, p.y, p.radius + 12 + 3 * Math.sin(Date.now() / 90), 0, Math.PI * 2);
                     ctx.strokeStyle = 'rgba(253, 224, 71, 0.35)'; ctx.lineWidth = 2; ctx.stroke();
                 }
+                if (p.teamId) {
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.radius + 5, 0, Math.PI * 2);
+                    ctx.strokeStyle = p.teamId === 'A' ? '#38bdf8' : '#fb7185';
+                    ctx.lineWidth = p.id === myPlayerId ? 4 : 2;
+                    ctx.stroke();
+                }
 
                 // La dirección la comunica la propia skin girando (p.angle): ya no se
                 // dibuja la línea blanca sobre el personaje.
@@ -5317,7 +5412,11 @@
 
             ctx.restore();
 
-            renderMinimap();
+            const ahora = performance.now();
+            if (ahora - ultimoMinimapa >= 100) {
+                ultimoMinimapa = ahora;
+                renderMinimap();
+            }
         }
 
         // MINIMAPA MULTIJUGADOR
@@ -5381,7 +5480,11 @@
 
             Object.values(gameState.players).forEach(p => {
                 if (p.isDead) return;
-                miniCtx.fillStyle = p.id === myPlayerId ? '#ffffff' : '#ef4444';
+                miniCtx.fillStyle = p.id === myPlayerId
+                    ? '#ffffff'
+                    : gameState.mode === 'teams'
+                        ? (p.teamId === gameState.players[myPlayerId]?.teamId ? '#38bdf8' : '#f87171')
+                        : '#ef4444';
                 miniCtx.beginPath(); miniCtx.arc(p.x * scale, p.y * scale, p.id === myPlayerId ? 4 : 3, 0, Math.PI * 2); miniCtx.fill();
             });
         }
@@ -5416,7 +5519,7 @@
                 rank.textContent = position === 1 ? "CAMPEÓN" : `${position}º LUGAR`;
                 const nick = document.createElement("span");
                 nick.className = "podium-nick";
-                nick.textContent = String(player.nick || "Jugador");
+                nick.textContent = `${player.teamId ? `TEAM ${player.teamId} · ` : ''}${player.isBot ? 'BOT · ' : ''}${String(player.nick || "Jugador")}`;
                 const stats = document.createElement("span");
                 stats.className = "podium-stats";
                 appendStat(stats, player);
@@ -5445,7 +5548,7 @@
                 position.textContent = `${index + 4}º`;
                 const nick = document.createElement("span");
                 nick.className = "result-player";
-                nick.textContent = String(player.nick || "Jugador");
+                nick.textContent = `${player.teamId ? `TEAM ${player.teamId} · ` : ''}${player.isBot ? 'BOT · ' : ''}${String(player.nick || "Jugador")}`;
                 const stats = document.createElement("span");
                 stats.className = "result-stats";
                 appendStat(stats, player);
@@ -5470,12 +5573,49 @@
             const neto = Number((data && data.premioNeto) !== undefined && data.premioNeto !== null
                 ? data.premioNeto
                 : +(ranking.length * entryFee * 0.8).toFixed(2));
+            const me = gameState && gameState.players && gameState.players[myPlayerId];
+            const mode = (data && data.mode) || (gameState && gameState.mode);
 
             if (!primerLugar) {
                 titleEl.innerText = "PARTIDA FINALIZADA";
                 titleEl.style.color = "#f5b301";
                 subtextEl.innerText = "La partida terminó sin resultados de clasificación.";
                 cardEl.className = "death-card";
+            } else if (data && data.isPractice) {
+                if (data.winnerPlayerId === myPlayerId) {
+                    titleEl.innerText = "¡GANASTE LA PRÁCTICA! 🏆";
+                    titleEl.style.color = "#22c55e";
+                    subtextEl.innerText = "¡Superaste a los 5 bots! Esta partida gratuita no entrega premios ni progreso de cuenta.";
+                    cardEl.className = "death-card win-card";
+                } else if (!data.winnerPlayerId) {
+                    titleEl.innerText = "PRÁCTICA SIN SUPERVIVIENTES";
+                    titleEl.style.color = "#f5b301";
+                    subtextEl.innerText = "Ningún participante sobrevivió. Puedes volver a intentarlo gratis.";
+                    cardEl.className = "death-card";
+                } else {
+                    titleEl.innerText = "PRÁCTICA FINALIZADA";
+                    titleEl.style.color = "#f5b301";
+                    subtextEl.innerText = `El mejor superviviente fue ${primerLugar.nick}. Puedes volver a intentarlo cuando quieras.`;
+                    cardEl.className = "death-card";
+                }
+            } else if (mode === 'teams') {
+                const winnerTeamId = data && data.winnerTeamId;
+                if (winnerTeamId && me && me.teamId === winnerTeamId) {
+                    titleEl.innerText = `¡VICTORIA DEL EQUIPO ${winnerTeamId}! 🏆`;
+                    titleEl.style.color = "#22c55e";
+                    subtextEl.innerText = `Tu equipo fue el último con supervivientes y comparte el premio neto de $${neto.toFixed(2)} USD entre ${data.winningTeamMembers || 1} integrantes.`;
+                    cardEl.className = "death-card win-card";
+                } else if (!winnerTeamId) {
+                    titleEl.innerText = "EMPATE · SIN SUPERVIVIENTES";
+                    titleEl.style.color = "#f5b301";
+                    subtextEl.innerText = "Todos los equipos fueron eliminados. No hay equipo ganador.";
+                    cardEl.className = "death-card";
+                } else {
+                    titleEl.innerText = `EQUIPO ${winnerTeamId} · VICTORIA`;
+                    titleEl.style.color = "#ef4444";
+                    subtextEl.innerText = `Tu equipo fue eliminado. El premio neto de $${neto.toFixed(2)} USD se divide entre los ${data.winningTeamMembers || 1} integrantes de TEAM ${winnerTeamId}.`;
+                    cardEl.className = "death-card";
+                }
             } else if (data && data.abandono && posicionJugador === 1) {
                 titleEl.innerText = "¡VICTORIA POR ABANDONO! 🏆";
                 titleEl.style.color = "#22c55e";

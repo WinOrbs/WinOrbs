@@ -14,10 +14,20 @@ const { MATCH_STATUS, canTransition } = require('./apps/server/game/lifecycle');
 const { applyDeathLoss } = require('./apps/server/game/orbs');
 const { bankMatchOrbs, awardElimination } = require('./apps/server/game/score');
 const { applyDamage } = require('./apps/server/game/combat');
+const {
+    assignBalancedTeam,
+    canDamagePlayer,
+    rankTeams,
+    splitPrize
+} = require('./apps/server/game/team_mode');
 const { extractIdToken, canBindUid } = require('./apps/server/identity');
 const { lockResult } = require('./apps/server/game/results');
 const { finalizeAfterProgression } = require('./apps/server/game/finalization');
 const { createAuditEvent } = require('./apps/server/platform/audit');
+const {
+    rewardedAdsConfig,
+    validPracticeAdStatus
+} = require('./apps/server/platform/rewarded_ads');
 const {
     DEFAULT_LEVEL_CURVE,
     DEFAULT_VISUAL_REWARDS,
@@ -117,6 +127,7 @@ const ADMIN_PASSWORD = adminPassword;
 const ADMIN_SESSION_MS = 30 * 60 * 1000;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
+const REWARDED_ADS_CONFIG = rewardedAdsConfig(process.env.GAM_REWARDED_AD_UNIT_PATH);
 
 // ── FIREBASE ADMIN (inflado/anticheat de dinero) ─────────────────────────────
 // Modo ECONOMÍA ACTIVA: si hay clave de servicio (serviceAccountKey.json o
@@ -610,49 +621,80 @@ async function servidorPagarPremio(room, gameId, abandono = false) {
     try {
         const lb = room.getLeaderboard();
         const ganador = lb[0];
-        // Con 1 solo jugador solo paga si es victoria por abandono (bote estático)
-        if (!ganador || (lb.length < 2 && !abandono)) return; // partida sin ganador real
+        let teamId = null;
+        let recipients = null;
+        if (room.mode === 'teams') {
+            teamId = room.winnerTeamId;
+            if (!teamId) return;
+        } else if (!ganador || (lb.length < 2 && !abandono)) {
+            // Con 1 solo jugador solo paga si es victoria por abandono.
+            return;
+        }
         // Bote ESTÁTICO fijado al arrancar la partida; el 20% va a la casa
         const pozo = +(room.pozoTotal || (lb.length * room.entryFee)).toFixed(2);
         if (!(pozo > 0)) return;
         const comision = +(pozo * 0.2).toFixed(2);
         const neto = +(pozo - comision).toFixed(2);
-        const ganadorUid = ganador.uid || null;
-        const ganadorNick = ganador.nick || '—';
+        if (teamId) recipients = splitPrize(neto, room.getTeamParticipants(teamId));
+        const ganadorUid = teamId ? recipients[0].uid : (ganador.uid || null);
+        const ganadorNick = teamId ? `Equipo ${teamId}` : (ganador.nick || '—');
 
         await FIREBASE_DB.runTransaction(async (t) => {
             const refP = FIREBASE_DB.collection('partidas').doc(gameId);
             const snap = await t.get(refP);
             if (snap.exists) return; // ya pagada (dedupe)
+            const userRefs = teamId
+                ? recipients.map((recipient) => FIREBASE_DB.collection('usuarios').doc(recipient.uid))
+                : ganadorUid ? [FIREBASE_DB.collection('usuarios').doc(ganadorUid)] : [];
+            const userSnaps = await Promise.all(userRefs.map((ref) => t.get(ref)));
+            const allUsersExist = userSnaps.every((userSnap) => userSnap.exists);
             t.set(refP, {
                 gameId: gameId, salaId: room.id, pozo, comision, neto,
                 jugadores: lb.length, precioEntrada: room.entryFee,
+                ...(teamId ? {
+                    modo: 'teams',
+                    equipoGanador: teamId,
+                    ganadores: recipients
+                } : {}),
                 ganadorUid: ganadorUid || '', ganadorNick,
-                estado: ganadorUid ? 'pagada' : 'premio_pendiente_admin',
+                estado: ganadorUid && allUsersExist ? 'pagada' : 'premio_pendiente_admin',
                 comisionContabilizada: true,
                 fecha: firebaseAdmin.firestore.FieldValue.serverTimestamp()
             });
             t.set(FIREBASE_DB.collection('metricas').doc('casa'),
                 { comisionesAcumuladas: firebaseAdmin.firestore.FieldValue.increment(comision) },
                 { merge: true });
-            if (ganadorUid) {
-                const refU = FIREBASE_DB.collection('usuarios').doc(ganadorUid);
-                const sU = await t.get(refU);
-                if (sU.exists) {
-                    const saldo = Number(sU.data().saldo || 0);
-                    t.update(refU, { saldo: +(saldo + neto).toFixed(2) });
-                    // Historial: premio acreditado al disponible del ganador
+            if (teamId) {
+                if (allUsersExist) recipients.forEach((recipient, index) => {
+                    const saldo = Number(userSnaps[index].data().saldo || 0);
+                    t.update(userRefs[index], { saldo: +(saldo + recipient.amount).toFixed(2) });
                     t.set(FIREBASE_DB.collection('movimientos').doc(), {
-                        usuarioId: ganadorUid, tipo: 'premio', monto: neto,
-                        detalle: 'Premio de la partida ' + gameId + ' · sala ' + room.id,
+                        usuarioId: recipient.uid,
+                        tipo: 'premio',
+                        monto: recipient.amount,
+                        detalle: `Premio del equipo ${teamId} · partida ${gameId} · sala ${room.id}`,
                         refId: gameId,
                         fecha: firebaseAdmin.firestore.FieldValue.serverTimestamp()
                     });
-                }
+                });
+            } else if (ganadorUid && allUsersExist) {
+                const saldo = Number(userSnaps[0].data().saldo || 0);
+                t.update(userRefs[0], { saldo: +(saldo + neto).toFixed(2) });
+                t.set(FIREBASE_DB.collection('movimientos').doc(), {
+                    usuarioId: ganadorUid, tipo: 'premio', monto: neto,
+                    detalle: 'Premio de la partida ' + gameId + ' · sala ' + room.id,
+                    refId: gameId,
+                    fecha: firebaseAdmin.firestore.FieldValue.serverTimestamp()
+                });
+            }
+            if (ganadorUid && !allUsersExist) {
+                console.error('[FIREBASE] No se pudo repartir el premio: falta el perfil de un ganador.', gameId);
             }
         });
 
-        if (ganadorUid) {
+        if (teamId) {
+            telegramNotify(`🏆 <b>POZO PAGADO AL EQUIPO (servidor)</b>\nSala: ${room.name}\nEquipo: ${teamId}\nGanadores: ${recipients.map((p) => p.nick).join(', ')}\nNeto: $${neto.toFixed(2)} USD\nComisión casa: $${comision.toFixed(2)} USD`);
+        } else if (ganadorUid) {
             telegramNotify(`🏆 <b>POZO PAGADO (servidor)</b>\nSala: ${room.name}\nGanador: ${ganadorNick}\nNeto: $${neto.toFixed(2)} USD\nComisión casa: $${comision.toFixed(2)} USD`);
         } else {
             telegramNotify(`⚠️ <b>PREMIO SIN UID</b> en partida ${gameId}. Requiere aprobación manual del admin.`);
@@ -781,14 +823,22 @@ function randID() {
 }
 
 class GameRoom {
-    constructor(id, name, maxPlayers, entryFee, isPrivate, password = "") {
+    constructor(id, name, maxPlayers, entryFee, isPrivate, password = "", mode = 'ffa', isPractice = false) {
         this.id = id;
         this.name = name;
         this.maxPlayers = maxPlayers;
         this.entryFee = entryFee;
         this.isPrivate = isPrivate;
         this.password = password;
-        this.mode = 'ffa'; // Todas las salas actuales usan reglas todos-contra-todos.
+        this.mode = 'ffa';
+        if (mode === 'teams') this.mode = 'teams';
+        this.isPractice = isPractice === true;
+        this.nextTeamOnTie = 'A';
+        this.teamParticipants = [];
+        this.winnerTeamId = null;
+        this.practiceWinnerId = null;
+        this.practiceExpiryTimer = null;
+        this.practiceOwnerJoined = false;
 
         this.players = {};
         this.bullets = [];
@@ -1116,10 +1166,17 @@ class GameRoom {
 
     addPlayer(socketId, nick, skin, uid) {
         const sp = this.spawnPoint();
+        const teamId = this.mode === 'teams'
+            ? assignBalancedTeam(this.players, this.nextTeamOnTie)
+            : null;
+        if (this.mode === 'teams') {
+            this.nextTeamOnTie = teamId === 'A' ? 'B' : 'A';
+        }
         this.players[socketId] = {
             id: socketId,
             nick: sanitizeNick(nick),
             uid: uid || null, // UID de Firebase: necesario para premios
+            teamId,
             skin: sanitizeSkin(skin),
             x: sp.x,
             y: sp.y,
@@ -1146,6 +1203,16 @@ class GameRoom {
             turboTimer: 0,
             turboCooldown: 0
         };
+    }
+
+    addBotPlayer(botId, nick, skin) {
+        this.addPlayer(botId, nick, skin, null);
+        const bot = this.players[botId];
+        bot.isBot = true;
+        bot.speed = 4.8;
+        bot.botNextDecisionAt = 0;
+        bot.botNextShotAt = 0;
+        bot.botWanderAngle = Math.random() * Math.PI * 2;
     }
 
     removePlayer(socketId) {
@@ -1365,6 +1432,7 @@ class GameRoom {
 
     handleRespawn(socketId) {
         const p = this.players[socketId];
+        if (this.mode === 'teams') return;
         if (!p || !p.isDead) return;
         if (!p.canRespawn) return;
 
@@ -1407,7 +1475,7 @@ class GameRoom {
             const jugadores = Object.keys(this.players).length;
 
             // Sala VACÍA: no hay nada que simular ni a quién enviar. La sala sigue
-            // existiendo (hay 20 automáticas), pero dejar de tickear evita quemar
+            // existiendo (hay 40 automáticas), pero dejar de tickear evita quemar
             // CPU del proceso entero: antes esto corría a 60 Hz en TODAS las salas
             // (vacías incluidas) = ~1200 getState()/s y presión de GC constante.
             if (jugadores === 0) return;
@@ -1431,8 +1499,25 @@ class GameRoom {
             if (this.gameStarted) {
                 this.gameTime--;
 
+                if (this.mode === 'teams' && !this.ending) {
+                    const livingTeams = rankTeams(this.players).filter((team) => team.aliveCount > 0);
+                    if (livingTeams.length <= 1) {
+                        this.endGame({
+                            winnerTeamId: livingTeams.length === 1 ? livingTeams[0].teamId : null,
+                            noWinner: livingTeams.length === 0
+                        });
+                        return;
+                    }
+                } else if (this.isPractice && !this.ending) {
+                    const livingPlayers = Object.values(this.players).filter((player) => !player.isDead);
+                    if (livingPlayers.length <= 1) {
+                        this.endGame({ practiceWinnerId: livingPlayers[0]?.id || null });
+                        return;
+                    }
+                }
+
                 // ── Victoria por abandono ──
-                if (!this.ending) {
+                if (!this.ending && this.mode !== 'teams' && !this.isPractice) {
                     if (playerCount === 0) {
                         this.endGame({ abandono: true, inmediato: true });
                     } else if (playerCount === 1) {
@@ -1449,7 +1534,7 @@ class GameRoom {
             } else if (this.lobbyActive && this.countdown > 0) {
                 this.countdown--;
                 // Si durante el arranque queda 1 solo jugador, el inicio se cancela
-                if (playerCount < 2) {
+                if (playerCount < 2 || (this.mode === 'teams' && rankTeams(this.players).length < 2)) {
                     this.lobbyActive = false;
                     this.countdown = 0;
                     this.matchStatus = MATCH_STATUS.WAITING;
@@ -1457,6 +1542,14 @@ class GameRoom {
                 } else if (this.countdown <= 0) {
                     this.gameStarted = true;
                     this.gameStartedAt = Date.now();
+                    this.teamParticipants = this.mode === 'teams'
+                        ? Object.values(this.players).map((player) => ({
+                            id: player.id,
+                            uid: player.uid,
+                            nick: player.nick,
+                            teamId: player.teamId
+                        }))
+                        : [];
                     this.progressionEvents = [];
                     this.matchStatus = MATCH_STATUS.RUNNING;
                     this.lobbyActive = false;
@@ -1478,7 +1571,7 @@ class GameRoom {
                     this.generateHealthKit();
                 }
 
-                if (this.gameStarted && this.gameTime <= 0) {
+                if (this.gameStarted && this.gameTime <= 0 && this.mode !== 'teams') {
                     this.endGame();
                 }
             }
@@ -1487,7 +1580,9 @@ class GameRoom {
             // Arranca al cubrir el cupo mínimo (2), se reinicia a 30 con cada
             // inscrito nuevo; si la sala baja de 2, el contador desaparece.
             if (!this.gameStarted && !this.lobbyActive) {
-                if (playerCount >= 2) {
+                const canFillMatch = playerCount >= 2 &&
+                    (this.mode !== 'teams' || rankTeams(this.players).length >= 2);
+                if (canFillMatch) {
                     if (this.lastPlayerCount > 0 && playerCount > this.lastPlayerCount && this.waitingTimer !== null) {
                         this.waitingTimer = 30;
                         io.to(this.id).emit('announcement', `👋 ${playerCount} inscritos · espera reiniciada a 30s`);
@@ -1527,24 +1622,27 @@ class GameRoom {
 
     startLobby() {
         if (!canTransition(this.matchStatus, MATCH_STATUS.STARTING)) return false;
+        if (this.mode === 'teams' && rankTeams(this.players).length < 2) return false;
         this.matchStatus = MATCH_STATUS.STARTING;
         this.lobbyActive = true;
         this.countdown = 5;
         this.pendingStart = null;
+        this.winnerTeamId = null;
         // Bote ESTÁTICO: se fija una sola vez con los inscritos al arrancar la
         // partida; ya no cambia aunque alguien abandone durante el juego.
         this.pozoTotal = +(Object.keys(this.players).length * this.entryFee).toFixed(2);
         if (!this.interval) this.startLoop();
         io.to(this.id).emit('playSound', 'explosion');
         io.to(this.id).emit('gameStarted', { countdown: this.countdown });
+        return true;
     }
 
     startGame() {
         if (this.gameStarted || this.lobbyActive) return false;
         const playerCount = Object.keys(this.players).length;
         if (playerCount < 2) return false;
-        this.startLobby();
-        return true;
+        if (this.mode === 'teams' && rankTeams(this.players).length < 2) return false;
+        return this.startLobby();
     }
 
     spawnAirdrop() {
@@ -1711,6 +1809,16 @@ class GameRoom {
         this.matchStatus = MATCH_STATUS.ENDING;
         this.ending = true;
         const abandono = !!opts.abandono;
+        if (this.mode === 'teams') {
+            this.winnerTeamId = opts.noWinner
+                ? null
+                : (opts.winnerTeamId || this.getTeamStandings()[0]?.teamId || null);
+        }
+        if (this.isPractice) {
+            const living = Object.values(this.players).filter((player) => !player.isDead);
+            this.practiceWinnerId = opts.practiceWinnerId ||
+                (living.length ? this.getLeaderboard()[0]?.id || null : null);
+        }
         this.soloTimer = null;
 
         const gameId = this.id + '_' + Date.now();
@@ -1718,7 +1826,7 @@ class GameRoom {
         this.resultLock = lockResult(leaderboard);
         let progressionProcessing = null;
 
-        if (!abandono && PROGRESSION_RUNTIME) {
+        if (!abandono && !this.isPractice && PROGRESSION_RUNTIME) {
             const finishedAt = Date.now();
             const resultId = `result-${crypto.createHash('sha256')
                 .update(gameId)
@@ -1729,7 +1837,7 @@ class GameRoom {
                     resultId,
                     startedAt: this.gameStartedAt || finishedAt,
                     finishedAt,
-                    finishReason: this.gameTime <= 0 ? 'TIME_LIMIT' : 'LAST_PLAYER',
+                    finishReason: this.mode === 'teams' || this.gameTime > 0 ? 'LAST_PLAYER' : 'TIME_LIMIT',
                     players: this.resultLock.snapshot.map((player, index) => ({
                         ...player,
                         position: index + 1
@@ -1750,9 +1858,9 @@ class GameRoom {
         }
 
         // Modo economía: el SERVIDOR paga el premio vía Admin SDK
-        if (FIREBASE_ECONOMY && FIREBASE_DB) {
-            servidorPagarPremio(this, gameId, abandono);
-        }
+        const payoutProcessing = !this.isPractice && FIREBASE_ECONOMY && FIREBASE_DB
+            ? servidorPagarPremio(this, gameId, abandono)
+            : null;
 
         // Bote ESTÁTICO fijado al arrancar (no cambia con abandonos);
         // premio neto real = 80% del bote (comisión del 20% ya descontada).
@@ -1767,6 +1875,13 @@ class GameRoom {
                 gameId: gameId,
                 entryFee: this.entryFee,
                 leaderboard: leaderboard,
+                mode: this.mode,
+                isPractice: this.isPractice,
+                winnerPlayerId: this.practiceWinnerId,
+                winnerTeamId: this.winnerTeamId,
+                winningTeamMembers: this.mode === 'teams' && this.winnerTeamId
+                    ? this.getTeamParticipants(this.winnerTeamId).length
+                    : 0,
                 resultChecksum: this.resultLock.checksum,
                 abandono: abandono,
                 premioNeto: premioNeto
@@ -1787,6 +1902,13 @@ class GameRoom {
                     });
                 }).catch(() => { });
 
+                if (this.isPractice) {
+                    if (this.practiceExpiryTimer) clearTimeout(this.practiceExpiryTimer);
+                    this.stopLoop();
+                    delete rooms[this.id];
+                    return;
+                }
+
                 // Vaciar jugadores y resetear la sala para nuevos registros
                 this.players = {};
                 this.matchStatus = MATCH_STATUS.COMPLETED;
@@ -1794,6 +1916,15 @@ class GameRoom {
                 this.startLoop();
                 emitirSalasPublicas();
             }, 10000);
+        };
+        const emitAfterPayout = () => {
+            if (!payoutProcessing) return emitGameOver();
+            void Promise.resolve(payoutProcessing)
+                .then(emitGameOver)
+                .catch((error) => {
+                    console.error('[FIREBASE] Falló la liquidación antes del resultado:', error.message);
+                    emitGameOver();
+                });
         };
 
         if (progressionProcessing) {
@@ -1809,10 +1940,10 @@ class GameRoom {
                         gameId
                     );
                 },
-                emitGameOver
+                emitAfterPayout
             );
         } else {
-            emitGameOver();
+            emitAfterPayout();
         }
     }
 
@@ -1853,6 +1984,10 @@ class GameRoom {
         this.lastPlayerCount = 0;
         this.soloTimer = null;
         this.pozoTotal = 0;
+        this.teamParticipants = [];
+        this.winnerTeamId = null;
+        this.practiceWinnerId = null;
+        this.nextTeamOnTie = 'A';
         this.ending = false;
         this.matchStatus = MATCH_STATUS.WAITING;
         this.resultLock = null;
@@ -1865,7 +2000,63 @@ class GameRoom {
         this.emitirConfig();
     }
 
+    updateBots() {
+        if (!this.gameStarted) return;
+        const bots = Object.values(this.players).filter((player) => player.isBot && !player.isDead);
+        const targets = Object.values(this.players).filter((player) => !player.isDead);
+        const now = Date.now();
+        bots.forEach((bot) => {
+            if (this.tick % 6 !== 0) return;
+            const enemies = targets.filter((player) =>
+                player.id !== bot.id && (!bot.teamId || player.teamId !== bot.teamId));
+            const target = enemies.reduce((nearest, player) =>
+                !nearest || Math.hypot(player.x - bot.x, player.y - bot.y) <
+                    Math.hypot(nearest.x - bot.x, nearest.y - bot.y) ? player : nearest, null);
+            const targetDistance = target ? Math.hypot(target.x - bot.x, target.y - bot.y) : Infinity;
+            let goal = target;
+            if (bot.charge >= 50 && this.bankZone) {
+                goal = this.bankZone;
+            } else if (bot.charge < 50) {
+                const orb = this.droppedEnergy.reduce((nearest, item) =>
+                    !nearest || Math.hypot(item.x - bot.x, item.y - bot.y) <
+                        Math.hypot(nearest.x - bot.x, nearest.y - bot.y) ? item : nearest, null);
+                if (orb && Math.hypot(orb.x - bot.x, orb.y - bot.y) < 900) goal = orb;
+            }
+
+            let angle = target ? Math.atan2(target.y - bot.y, target.x - bot.x) : bot.botWanderAngle;
+            if (goal && goal !== target) angle = Math.atan2(goal.y - bot.y, goal.x - bot.x);
+            if (!goal) {
+                bot.botWanderAngle += (Math.random() - 0.5) * 0.4;
+                angle = bot.botWanderAngle;
+            }
+
+            const distanceToGoal = goal ? Math.hypot(goal.x - bot.x, goal.y - bot.y) : 0;
+            const moveAngle = target && target === goal && targetDistance < 350
+                ? angle + Math.PI / 2
+                : angle;
+            const moving = distanceToGoal > (goal === this.bankZone ? this.bankZone.radius * 0.75 : 55);
+            bot.inputs = moving ? {
+                w: Math.sin(moveAngle) < -0.2,
+                a: Math.cos(moveAngle) < -0.2,
+                s: Math.sin(moveAngle) > 0.2,
+                d: Math.cos(moveAngle) > 0.2,
+                angle
+            } : { w: false, a: false, s: false, d: false, angle };
+            bot.angle = angle;
+
+            if (target && targetDistance < 700 && now >= bot.botNextShotAt) {
+                this.handleShoot(bot.id, {
+                    angle: angle + (Math.random() - 0.5) * 0.22
+                });
+                bot.botNextShotAt = now + 550 + Math.random() * 350;
+            }
+            if (bot.ammo <= 0 && !bot.isReloading) this.handleReload(bot.id);
+        });
+    }
+
     update() {
+        if (this.isPractice) this.updateBots();
+
         // Tiendas itinerantes: cada caseta tiene su propia cuenta atrás y, al
         // agotarla, se reubica en otro punto libre de la zona segura (solo en
         // partida; en el lobby se quedan quietas).
@@ -2227,6 +2418,8 @@ class GameRoom {
     }
 
     damagePlayer(p, ownerId, damage, bullet) {
+        const source = this.players[ownerId];
+        if (!canDamagePlayer(this.mode, source, p)) return;
         const result = applyDamage(p, damage);
         if (!result.killed) return;
         if (p.hp <= 0) {
@@ -2245,8 +2438,8 @@ class GameRoom {
                 });
             }
             const ownerSocket = io.sockets.sockets.get(ownerId);
-            if (ownerSocket) {
-                const owner = this.players[ownerId];
+            const owner = this.players[ownerId];
+            if (ownerSocket || owner?.isBot) {
                 if (owner) {
                     const selfElimination = owner.id === p.id;
                     awardElimination(owner, { countAsElimination: !selfElimination });
@@ -2387,8 +2580,41 @@ class GameRoom {
         };
     }
 
+    getTeamStandings() {
+        return rankTeams(this.players);
+    }
+
+    getTeamParticipants(teamId) {
+        const participants = this.teamParticipants.length
+            ? this.teamParticipants
+            : Object.values(this.players);
+        return participants
+            .filter((player) => player.teamId === teamId && !player.isBot)
+            .map((player) => ({
+                id: player.id,
+                uid: player.uid,
+                nick: player.nick,
+                teamId: player.teamId
+            }));
+    }
+
     getLeaderboard() {
-        return Object.values(this.players).sort((a, b) =>
+        const players = Object.values(this.players);
+        if (this.isPractice) {
+            return players.sort((a, b) =>
+                Number(a.isDead) - Number(b.isDead) ||
+                (b.bankedScore - a.bankedScore) ||
+                ((Number(b.eliminations) || 0) - (Number(a.eliminations) || 0)));
+        }
+        if (this.mode !== 'teams') {
+            return players.sort((a, b) =>
+                (b.bankedScore - a.bankedScore) ||
+                ((Number(b.eliminations) || 0) - (Number(a.eliminations) || 0)));
+        }
+        const teamPositions = new Map(this.getTeamStandings().map((team, index) => [team.teamId, index]));
+        return players.sort((a, b) =>
+            (teamPositions.get(a.teamId) ?? Number.MAX_SAFE_INTEGER) -
+                (teamPositions.get(b.teamId) ?? Number.MAX_SAFE_INTEGER) ||
             (b.bankedScore - a.bankedScore) ||
             ((Number(b.eliminations) || 0) - (Number(a.eliminations) || 0)));
     }
@@ -2442,6 +2668,8 @@ class GameRoom {
             out[id] = {
                 id: p.id,
                 nick: p.nick,
+                teamId: p.teamId,
+                isBot: p.isBot === true,
                 x: Math.round(p.x),
                 y: Math.round(p.y),
                 angle: Math.round(p.angle * 100) / 100,
@@ -2529,6 +2757,8 @@ class GameRoom {
         };
         return {
             players: this.jugadoresRed(),
+            mode: this.mode,
+            isPractice: this.isPractice,
             droppedOrbGuns: this.droppedOrbGuns,
             zoneFase: this.zoneFase,
             zoneDps: this.zoneDps,
@@ -2565,10 +2795,9 @@ class GameRoom {
     }
 }
 
-// Salas iniciales: NO hay salas fijas; solo las automáticas por tier
-// (5 × $0.50, 5 × $1, 5 × $3, 5 × $5) + las que cree el admin.
+// Salas iniciales: tiers FFA y TEAM, además de las que cree el admin.
 
-// ── Salas automáticas por tier: 5 × $0.50, 5 × $1, 5 × $3, 5 × $5 (10 plazas) ──
+// ── Salas automáticas FFA y TEAM por tier (10 plazas) ──
 const SALAS_AUTO = [
     { pref: 'p05', nombre: 'Rápida $0.50', fee: 0.50, count: 5 },
     { pref: 'p1', nombre: 'Arena $1', fee: 1.00, count: 5 },
@@ -2577,11 +2806,20 @@ const SALAS_AUTO = [
 ];
 
 function ensureRooms() {
-    SALAS_AUTO.forEach(t => {
+    const salas = [
+        ...SALAS_AUTO.map((room) => ({ ...room, mode: 'ffa' })),
+        ...SALAS_AUTO.map((room) => ({
+            ...room,
+            pref: `t${room.pref.slice(1)}`,
+            nombre: `TEAM ${room.nombre}`,
+            mode: 'teams'
+        }))
+    ];
+    salas.forEach(t => {
         for (let i = 1; i <= t.count; i++) {
             const id = `${t.pref}_${i}`;
             if (!rooms[id]) {
-                rooms[id] = new GameRoom(id, `${t.nombre} · #${i}`, 10, t.fee, false);
+                rooms[id] = new GameRoom(id, `${t.nombre} · #${i}`, 10, t.fee, false, '', t.mode);
             }
         }
     });
@@ -2594,7 +2832,9 @@ setInterval(ensureRooms, 30000); // repone salas destruidas por el admin
 let roomsEmitScheduled = false;
 let roomsEmitQueued = false;
 function emitirSalasPublicas(immediate = false) {
-    const _send = () => io.emit('roomsList', Object.values(rooms).map(r => r.getSummary()));
+    const _send = () => io.emit('roomsList', Object.values(rooms)
+        .filter((room) => !room.isPractice)
+        .map((room) => room.getSummary()));
     if (immediate) {
         roomsEmitScheduled = false;
         roomsEmitQueued = false;
@@ -2654,6 +2894,11 @@ async function salirDeSala(socket, room) {
         }
     }
     room.removePlayer(socket.id);
+    if (room.isPractice) {
+        if (room.practiceExpiryTimer) clearTimeout(room.practiceExpiryTimer);
+        room.stopLoop();
+        delete rooms[room.id];
+    }
 }
 
 // ── Log de retiros recientes para el lobby ─────────────────────────────
@@ -2751,6 +2996,7 @@ io.on('connection', (socket) => {
     socket.adminAuthenticatedAt = 0;
     socket.emit('serverConfig', {
         economy: FIREBASE_ECONOMY,
+        rewardedAds: REWARDED_ADS_CONFIG,
         progression: {
             dailyMissions: missionConfig(),
             maxLevel: MAX_LEVEL,
@@ -2758,7 +3004,9 @@ io.on('connection', (socket) => {
             visualRewards: PROGRESSION_REWARDS
         }
     });
-    socket.emit('roomsList', Object.values(rooms).map(r => r.getSummary()));
+    socket.emit('roomsList', Object.values(rooms)
+        .filter((room) => !room.isPractice)
+        .map((room) => room.getSummary()));
 
     // Log de retiros: caché instantáneo + refresco en segundo plano
     if (cacheRetiros.length) socket.emit('retirosList', cacheRetiros);
@@ -3140,6 +3388,36 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('createPracticeRoom', (request) => {
+        const adStatus = request && request.adStatus;
+        if (!request || typeof request !== 'object' ||
+            !validPracticeAdStatus(adStatus)) {
+            return socket.emit('practiceRoomCreated', {
+                ok: false,
+                error: 'La práctica requiere completar el anuncio o confirmar que no hay anuncios disponibles.'
+            });
+        }
+        const now = Date.now();
+        const activePracticeRooms = Object.values(rooms).filter((room) => room.isPractice).length;
+        if (now - (socket.__lastPracticeAt || 0) < 3000) {
+            return socket.emit('practiceRoomCreated', { ok: false, error: 'Espera unos segundos antes de iniciar otra práctica.' });
+        }
+        if (activePracticeRooms >= 10) {
+            return socket.emit('practiceRoomCreated', { ok: false, error: 'La práctica con bots está llena temporalmente. Inténtalo de nuevo en un momento.' });
+        }
+        socket.__lastPracticeAt = now;
+        const roomId = `practice_${crypto.randomBytes(12).toString('hex')}`;
+        const password = crypto.randomBytes(16).toString('hex');
+        const room = new GameRoom(roomId, 'Práctica contra bots', 6, 0, true, password, 'ffa', true);
+        rooms[roomId] = room;
+        room.practiceExpiryTimer = setTimeout(() => {
+            if (rooms[roomId] !== room || room.practiceOwnerJoined) return;
+            room.stopLoop();
+            delete rooms[roomId];
+        }, 90_000);
+        socket.emit('practiceRoomCreated', { ok: true, roomId, password });
+    });
+
     socket.on('joinRoom', async ({ roomId, password, nick, skin, uid, token }) => {
         const room = rooms[roomId];
 
@@ -3179,6 +3457,9 @@ io.on('connection', (socket) => {
         }
         if (room.gameStarted) {
             return socket.emit('errorMsg', 'La partida ya ha comenzado.');
+        }
+        if (room.isPractice && room.practiceOwnerJoined && socket.roomId !== room.id) {
+            return socket.emit('errorMsg', 'Esta práctica pertenece a otro jugador.');
         }
         // Cupo: no aplicar a quien ya ocupa un lugar en esta sala
         const yaEstaAqui = socket.roomId === room.id;
@@ -3291,6 +3572,25 @@ io.on('connection', (socket) => {
         if (socket.__entradaCobrada) nuevoP.pagoEntrada = socket.__entradaCobrada;
 
         socket.emit('joinedSuccess', { playerId: socket.id, roomId: room.id });
+        if (room.isPractice && !room.practiceOwnerJoined) {
+            room.practiceOwnerJoined = true;
+            if (room.practiceExpiryTimer) clearTimeout(room.practiceExpiryTimer);
+            const botColors = [
+                ['#fb7185', '#be123c', '#fecdd3'],
+                ['#fbbf24', '#b45309', '#fde68a'],
+                ['#a78bfa', '#6d28d9', '#ddd6fe'],
+                ['#34d399', '#047857', '#a7f3d0'],
+                ['#f97316', '#c2410c', '#fed7aa']
+            ];
+            for (let i = 0; i < 5; i++) {
+                const [c1, c2, border] = botColors[i];
+                room.addBotPlayer(`bot_${randID()}`, `BOT ${String(i + 1).padStart(2, '0')}`, { c1, c2, border });
+            }
+            if (!room.startLobby()) {
+                console.error('[PRACTICE] No se pudo iniciar la sala:', room.id);
+                socket.emit('errorMsg', 'No se pudo iniciar la práctica. Vuelve a intentarlo.');
+            }
+        }
         emitirSalasPublicas();
     });
 
