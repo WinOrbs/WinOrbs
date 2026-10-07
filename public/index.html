@@ -257,6 +257,28 @@
         }
         .mode-portal:disabled .mode-state { color: var(--muted); }
         .mode-portal:disabled .mode-state::before { background: #64748b; box-shadow: none; }
+        .solo-ticket-progress {
+            margin: -8px 0 20px; padding: 12px 14px;
+            border: 1px solid rgba(56, 189, 248, .22); border-radius: 12px;
+            background: rgba(8, 14, 28, .72);
+        }
+        .solo-ticket-progress-head {
+            display: flex; justify-content: space-between; align-items: center;
+            gap: 10px; color: var(--text); font-size: 12px;
+        }
+        .solo-ticket-progress-head strong { color: var(--cyan); }
+        .solo-ticket-bar {
+            height: 8px; margin-top: 9px; overflow: hidden;
+            border-radius: 999px; background: rgba(148, 163, 184, .18);
+        }
+        .solo-ticket-bar-fill {
+            width: 0; height: 100%; border-radius: inherit;
+            background: linear-gradient(90deg, #0ea5e9, #34d399);
+            transition: width .3s ease;
+        }
+        .solo-ticket-message {
+            margin: 7px 0 0; color: var(--muted); font-size: 11px;
+        }
         @media (max-width: 560px) {
             .mode-selector { gap: 8px; }
             .mode-portal {
@@ -917,6 +939,20 @@
                     </span>
                 </button>
             </div>
+            <section class="solo-ticket-progress" aria-label="Progreso de victorias SOLO">
+                <div class="solo-ticket-progress-head">
+                    <span>Victorias SOLO: <strong id="solo-wins-count">0/10</strong></span>
+                    <span id="solo-ticket-count">0 boletos</span>
+                </div>
+                <div class="solo-ticket-bar" id="solo-ticket-bar" role="progressbar"
+                    aria-label="Victorias para el siguiente boleto" aria-valuemin="0"
+                    aria-valuemax="10" aria-valuenow="0">
+                    <div class="solo-ticket-bar-fill" id="solo-ticket-bar-fill"></div>
+                </div>
+                <p class="solo-ticket-message" id="solo-ticket-message" aria-live="polite">
+                    Gana 10 prácticas para obtener una entrada gratis en la sala FFA más económica.
+                </p>
+            </section>
             <div class="panel-head">
                 <h2 class="panel-kicker" id="salas-title">// Salas en vivo</h2>
                 <div class="panel-head-right">
@@ -1037,12 +1073,21 @@
         const socket = io(window.SERVIDOR_URL || undefined, { transports: ['websocket'] });
         window.__lobbySocket = socket;
         const contenedorSalas = document.getElementById("lista-salas");
+        let soloTicketFfaFee = null;
 
         socket.on('serverConfig', (cfg) => {
             // true = el servidor cobra entradas y paga premios vía Admin SDK
             window.__economyMode = !!(cfg && cfg.economy);
+            const configuredTicketFee = Number(cfg && cfg.soloTicketFfaFee);
+            soloTicketFfaFee = Number.isFinite(configuredTicketFee) && configuredTicketFee > 0
+                ? configuredTicketFee
+                : null;
             window.__progresionConfig = cfg && cfg.progression;
             if (window.__progresionActual) window.__renderProgresion(window.__progresionActual);
+            if (typeof window.__renderSoloTicketProgress === 'function') {
+                window.__renderSoloTicketProgress(window.__perfilLobby || {});
+            }
+            if (typeof renderLobby === 'function' && salasCache.length) renderLobby();
         });
 
         window.__renderProgresion = function (progress) {
@@ -1368,6 +1413,36 @@
         const botonModoSolo = document.querySelector('.mode-portal[data-modo="solo"]');
         const tituloSalas = document.getElementById('salas-title');
         let practicaPendiente = false;
+        window.__renderSoloTicketProgress = function (profile = {}) {
+            const rawWins = Number(profile.soloWins);
+            const wins = Number.isSafeInteger(rawWins) && rawWins > 0 ? rawWins : 0;
+            const rawTickets = Number(profile.soloTickets);
+            const tickets = Number.isSafeInteger(rawTickets) && rawTickets > 0 ? rawTickets : 0;
+            const winsTowardTicket = wins % 10;
+            const winsLabel = document.getElementById('solo-wins-count');
+            const ticketsLabel = document.getElementById('solo-ticket-count');
+            const progressBar = document.getElementById('solo-ticket-bar');
+            const progressFill = document.getElementById('solo-ticket-bar-fill');
+            const message = document.getElementById('solo-ticket-message');
+            if (winsLabel) winsLabel.textContent = `${winsTowardTicket}/10`;
+            if (ticketsLabel) ticketsLabel.textContent = `${tickets} ${tickets === 1 ? 'boleto' : 'boletos'}`;
+            if (progressBar) {
+                progressBar.setAttribute('aria-valuenow', String(winsTowardTicket));
+                progressBar.setAttribute('aria-valuetext', `${winsTowardTicket} de 10 victorias SOLO`);
+            }
+            if (progressFill) progressFill.style.width = `${winsTowardTicket * 10}%`;
+            if (message) {
+                const user = window.__firebaseAuth && window.__firebaseAuth.currentUser;
+                const isGuest = !user || user.isAnonymous;
+                message.textContent = window.__economyMode === false
+                    ? 'El progreso de boletos no está disponible temporalmente.'
+                    : isGuest
+                    ? 'Las cuentas de invitado pueden jugar, pero deben vincularse para acumular victorias y boletos.'
+                    : 'Gana 10 prácticas SOLO para conseguir un boleto FFA. Se usa automáticamente en la sala FFA de menor entrada.';
+            }
+            if (typeof renderLobby === 'function' && salasCache.length) renderLobby();
+        };
+        window.__renderSoloTicketProgress({});
 
         function salasDelModo() {
             return salasCache.filter((sala) => sala && sala.mode === modoSeleccionado);
@@ -1403,6 +1478,15 @@
             if (id === 'privadas') return Number.MAX_SAFE_INTEGER;
             return parseFloat(String(id).replace('precio:', '')) || 0;
         }
+        function salaAdmiteBoletoSolo(sala) {
+            const user = window.__firebaseAuth && window.__firebaseAuth.currentUser;
+            return !!sala && sala.mode === 'ffa' && !sala.esPrivada &&
+                window.__economyMode === true &&
+                soloTicketFfaFee !== null &&
+                Math.round(Number(sala.precioEntrada) * 100) === Math.round(soloTicketFfaFee * 100) &&
+                !!user && !user.isAnonymous &&
+                Number(window.__perfilLobby && window.__perfilLobby.soloTickets) > 0;
+        }
         // Cupos libres de una sala (0 si ya arrancó: ahí no se puede entrar)
         function lugaresLibres(sala) {
             if (sala.iniciada) return 0;
@@ -1423,6 +1507,7 @@
         function construirTarjeta(sala) {
             const estaLlena = (sala.jugadoresConectados || 0) >= sala.maxJugadores;
             const estaIniciada = !!sala.iniciada;
+            const boletoDisponible = salaAdmiteBoletoSolo(sala);
 
             const tarjetaSala = document.createElement("div");
                 tarjetaSala.className = `tarjeta-sala ${sala.esPrivada ? 'privada' : 'publica'} ${estaIniciada ? 'iniciada' : ''}`;
@@ -1453,15 +1538,18 @@
                         data-sala="${escapeHTML(sala.id)}"
                         data-privada="${sala.esPrivada ? '1' : '0'}"
                         data-precio="${escapeHTML(parseFloat(sala.precioEntrada || 0).toFixed(2))}"
+                        data-boleto="${boletoDisponible ? '1' : '0'}"
                         ${estaLlena || estaIniciada ? 'disabled' : ''}>
-                        ${estaIniciada ? 'Partida en curso' : (estaLlena ? 'Sala Llena' : 'Unirse a la Sala')}
+                        ${estaIniciada ? 'Partida en curso' : (estaLlena ? 'Sala Llena' : (boletoDisponible ? 'Usar boleto SOLO · Gratis' : 'Unirse a la Sala'))}
                     </button>
                 `;
 
                 // Listener en vez de onclick inline (el id de la sala no puede inyectar código)
                 tarjetaSala.querySelector('.btn-unirse').addEventListener('click', async function () {
                     const precio = parseFloat(this.dataset.precio || '0');
-                    if (window.verificarSaldoParaUnirse && !window.verificarSaldoParaUnirse(precio)) return;
+                    if (this.dataset.boleto !== '1' &&
+                        window.verificarSaldoParaUnirse &&
+                        !window.verificarSaldoParaUnirse(precio)) return;
                     // El cliente solo presenta una prevalidación UX. El cobro real,
                     // si corresponde, lo decide y ejecuta exclusivamente el servidor.
                     unirseASala(this.dataset.sala, this.dataset.privada === '1');
@@ -1616,6 +1704,41 @@
             renderLobby();
         });
 
+        let monetagVignettePromise = null;
+        function cargarViñetaMonetag() {
+            if (monetagVignettePromise) return monetagVignettePromise;
+            monetagVignettePromise = new Promise((resolve) => {
+                const script = document.createElement('script');
+                let settled = false;
+                const finish = (loaded) => {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(timeout);
+                    resolve(loaded);
+                };
+                const timeout = setTimeout(() => {
+                    console.warn('Monetag no respondió; se permite iniciar la práctica SOLO.');
+                    script.remove();
+                    finish(false);
+                }, 7000);
+                script.dataset.zone = '11978865';
+                script.src = 'https://n6wxm.com/vignette.min.js';
+                script.async = true;
+                script.onload = () => finish(true);
+                script.onerror = () => {
+                    console.warn('No se pudo cargar la viñeta de Monetag; se permite iniciar la práctica SOLO.');
+                    finish(false);
+                };
+                try {
+                    (document.body || document.documentElement).appendChild(script);
+                } catch (error) {
+                    console.warn('No se pudo insertar la viñeta de Monetag:', error.message);
+                    finish(false);
+                }
+            });
+            return monetagVignettePromise;
+        }
+
         function crearSalaPracticaBots() {
             return new Promise((resolve) => {
                 const timeout = setTimeout(() => {
@@ -1657,6 +1780,7 @@
             practicaPendiente = true;
             botonModoSolo.disabled = true;
             try {
+                await cargarViñetaMonetag();
                 await entrarPracticaBots(nick);
             } finally {
                 practicaPendiente = false;
@@ -1788,6 +1912,7 @@
                 // Skins compradas + skin equipada persistida en el perfil
                 // (multi-dispositivo: el perfil manda sobre localStorage)
                 window.__perfilLobby = p;
+                window.__renderSoloTicketProgress(p);
                 // Apodo del perfil visible en el lobby (solo lectura)
                 try {
                     const chip = document.getElementById("apodo-perfil");

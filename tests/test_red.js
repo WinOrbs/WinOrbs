@@ -18,6 +18,7 @@ function check(nombre, cond) {
 }
 
 const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+const socketServer = fs.readFileSync(path.join(__dirname, '..', 'apps/server/realtime/socket_server.js'), 'utf8');
 const game = fs.readFileSync(path.join(__dirname, '..', 'public', 'game.html'), 'utf8');
 
 // ── 1) Extraer jugadoresRed() y montarlo como método con `this` controlado ──
@@ -115,7 +116,7 @@ check('sigue usando volatile (no encola estados atrasados)',
 check('las salas en espera no ejecutan la simulación',
     /if \(this\.gameStarted\) this\.update\(\);/.test(server));
 check('Socket.IO conserva la sesión para recuperarse de cortes breves',
-    /connectionStateRecovery:\s*\{\s*maxDisconnectionDuration:\s*120_000/.test(server));
+    /connectionStateRecovery:\s*\{\s*maxDisconnectionDuration:\s*120_000/.test(socketServer));
 check('una desconexión transitoria conserva el asiento durante la ventana de recuperación',
     /player\.disconnectTimer = setTimeout\(async \(\) => \{[\s\S]*DISCONNECT_GRACE_MS/.test(server));
 // La simulación debe seguir a 60 Hz: se mide sobre el bloque de startLoop

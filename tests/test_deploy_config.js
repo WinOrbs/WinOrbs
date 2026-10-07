@@ -10,6 +10,7 @@ const frontendConfig = fs.readFileSync(
     'utf8'
 );
 const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+const httpServer = fs.readFileSync(path.join(root, 'apps/server/http/index.js'), 'utf8');
 const changer = fs.readFileSync(path.join(root, 'tools/cambiar-servidor.js'), 'utf8');
 const indexHtml = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
 const gameHtml = fs.readFileSync(path.join(root, 'public/game.html'), 'utf8');
@@ -47,6 +48,12 @@ for (const [name, html] of [['index.html', indexHtml], ['game.html', gameHtml]])
 assert.ok(server.includes("server.listen(PORT, '0.0.0.0'"), 'Render server must bind publicly');
 assert.ok(server.includes("const PORT = Number(process.env.PORT) || 3000"), 'server must honor Render PORT');
 assert.ok(packageJson.scripts.build.includes("fs.copyFileSync('sw.js','dist/sw.js')"), 'Cloudflare Pages build must publish the Monetag service worker');
-assert.ok(server.includes("app.get('/sw.js', (req, res) => res.sendFile(__dirname + '/sw.js'))"), 'Express static hosting must expose the root service worker');
+assert.ok(httpServer.includes("app.get('/sw.js', (req, res) => res.sendFile(rootDir + '/sw.js'))"), 'Express static hosting must expose the root service worker');
+assert.ok(indexHtml.includes("script.dataset.zone = '11978865'"), 'SOLO must load the configured Monetag vignette zone');
+assert.ok(indexHtml.includes("https://n6wxm.com/vignette.min.js"), 'SOLO must load the Monetag vignette script');
+assert.ok(indexHtml.includes('id="solo-ticket-bar"'), 'lobby must render solo ticket progress');
+assert.ok(server.includes('recordSoloVictory({'), 'server must record SOLO wins from its authoritative result');
+assert.ok(server.includes('servidorCobrarEntradaConBoleto'), 'paid room entry must route through server-side ticket redemption');
+assert.ok(server.includes('soloTicketFfaFee: precioMinimoFfa()'), 'server must provide the authoritative lowest FFA ticket price');
 
-console.log('OK deploy config: Render backend, Cloudflare service worker, frontend-only CORS helper, script ordering, and Render port binding.');
+console.log('OK deploy config: Render, Monetag, solo-ticket UI and server entry wiring.');

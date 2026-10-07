@@ -1,7 +1,10 @@
 // Carga variables de entorno desde .env (si existe) — debe ir primero
-try { require('dotenv').config(); } catch (e) { /* dotenv no instalado: usar variables de entorno del sistema */ }
+require('./apps/server/config/environment').loadEnvironment();
 
-const { corsRaw, corsAllowAll, isOriginAllowed, adminPassword } = require('./apps/server/config');
+const { corsAllowAll, isOriginAllowed, adminPassword } = require('./apps/server/config');
+const { createHttpServer } = require('./apps/server/http');
+const { createSocketServer } = require('./apps/server/realtime/socket_server');
+const { initializeFirebase } = require('./apps/server/infrastructure/firebase');
 const {
     normalizeCommand,
     validatePlayerInput,
@@ -31,7 +34,15 @@ const {
 const { extractIdToken, canBindUid } = require('./apps/server/identity');
 const { lockResult } = require('./apps/server/game/results');
 const { finalizeAfterProgression } = require('./apps/server/game/finalization');
-const { createAuditEvent } = require('./apps/server/platform/audit');
+const { createAuditLogger } = require('./apps/server/platform/audit');
+const {
+    TICKET_PAYMENT_METHOD,
+    entryReceiptId,
+    isEligibleSoloWinner,
+    recordSoloVictory,
+    redeemSoloTicket,
+    refundSoloTicket
+} = require('./apps/server/platform/solo_tickets');
 const {
     DEFAULT_LEVEL_CURVE,
     DEFAULT_VISUAL_REWARDS,
@@ -45,89 +56,14 @@ const {
 } = require('./apps/server/platform/progression');
 const crypto = require('crypto');
 
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-
-const app = express();
-app.set('trust proxy', 1);
-const server = http.createServer(app);
-// ── CORS ────────────────────────────────────────────────────────────────────
-// Frontend en producción: https://winorbs.pages.dev (Cloudflare Pages)
-// Backend: https://winorbs.onrender.com (Render).
-// - CORS_ORIGIN="*" (defecto, dev) → refleja cualquier origen.
-// - CORS_ORIGIN="https://winorbs.pages.dev,https://xxx..." → solo esos.
-// Sin esto el polling XHR de Socket.IO falla con:
-// "No 'Access-Control-Allow-Origin' header is present".
-// NOTA: ese error también aparece cuando Render devuelve 503 (servicio dormido/
-// caído) porque la respuesta la genera el proxy de Render, no Node. Por eso
-// además se corrige el puerto (process.env.PORT) más abajo.
-const CORS_RAW = corsRaw;
-const CORS_ALLOW_ALL = corsAllowAll;
-app.use((req, res, next) => {
-    const origin = req.headers.origin;
-    if (isOriginAllowed(origin)) {
-        res.setHeader('Access-Control-Allow-Origin', CORS_ALLOW_ALL && !origin ? '*' : (origin || '*'));
-        res.setHeader('Vary', 'Origin');
-    }
-    res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    if (req.method === 'OPTIONS') return res.sendStatus(204);
-    next();
+let firebaseRuntime = null;
+const { app, server } = createHttpServer({
+    rootDir: __dirname,
+    isOriginAllowed,
+    corsAllowAll,
+    getFirebaseRuntime: () => firebaseRuntime
 });
-const io = new Server(server, {
-    connectionStateRecovery: {
-        maxDisconnectionDuration: 120_000,
-        skipMiddlewares: false
-    },
-    cors: {
-        origin: (origin, cb) => {
-            if (isOriginAllowed(origin)) return cb(null, true);
-            return cb(new Error('CORS bloqueado para ' + origin), false);
-        },
-        methods: ['GET', 'POST'],
-        credentials: true
-    }
-});
-
-app.use(express.static(__dirname + '/public'));
-app.get('/sw.js', (req, res) => res.sendFile(__dirname + '/sw.js'));
-
-// Endpoint ligero para keep-alive externo (UptimeRobot / cron-job.org)
-app.get('/ping', (req, res) => res.json({ ok: true, ts: Date.now() }));
-
-// ── Diagnóstico de Firebase (GET /status) ────────────────────────────────────
-// Para verificar el despliegue (Render): abre https://TU-APP.onrender.com/status
-//  - firebase:true → el servidor arrancó con clave de servicio (modo economía)
-//  - firestore.ok  → el servidor REALMENTE lee Firestore (prueba en vivo; el
-//    Admin SDK bypasa reglas: si esto falla el problema son credenciales/red,
-//    no las reglas de Firestore del cliente)
-// No expone credenciales: solo el id del proyecto (público) y códigos de error.
-app.get('/status', async (req, res) => {
-    const r = {
-        firebase: !!FIREBASE_ECONOMY,
-        modo: FIREBASE_ECONOMY ? 'ECONOMIA' : 'DESHABILITADA',
-        proyecto: null,
-        firestore: { ok: false, latenciaMs: null, error: null }
-    };
-    try { r.proyecto = (firebaseAdmin && firebaseAdmin.app().options.projectId) || null; } catch (e) { /* sin app inicializada */ }
-    try {
-        if (!FIREBASE_ECONOMY || !FIREBASE_DB) {
-            r.firestore.error = 'SIN_CLAVE_DE_SERVICIO';
-        } else {
-            // Lectura mínima: el doc puede no existir; lo que se prueba es la
-            // conectividad + credenciales contra Firestore real (no escribe nada).
-            const t0 = Date.now();
-            await FIREBASE_DB.collection('diagnostico').doc('ping').get();
-            r.firestore.ok = true;
-            r.firestore.latenciaMs = Date.now() - t0;
-        }
-    } catch (e) {
-        r.firestore.error = String(e.code || e.message || 'ERROR').slice(0, 200);
-    }
-    res.json(r);
-});
+const io = createSocketServer(server, { isOriginAllowed });
 
 const MAP_SIZE = 5000;
 const rooms = {};
@@ -144,114 +80,24 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 // modo degradado que confíe en el cliente. Las salas con entrada monetaria no
 // pueden aceptar jugadores hasta que el Admin SDK esté configurado.
 // ─────────────────────────────────────────────────────────────────────────────
-let firebaseAdmin = null;
-let FIREBASE_DB = null;
-let FIREBASE_ECONOMY = false;
 let PROGRESSION_REWARDS = sanitizeVisualRewards(DEFAULT_VISUAL_REWARDS);
-let PROGRESSION_RUNTIME = null;
-try {
-    firebaseAdmin = require('firebase-admin');
-    // Busca la clave de servicio en varios sitios (local y Render):
-    //  - GOOGLE_APPLICATION_CREDENTIALS: ruta estándar de Google
-    //  - FIREBASE_SERVICE_ACCOUNT: ruta a un archivo O el contenido JSON inline
-    //  - FIREBASE_SERVICE_ACCOUNT_B64: contenido JSON en Base64 (útil en Render)
-    //  - __dirname/serviceAccountKey.json (local)
-    //  - /etc/secrets/... (Render Secret Files: se montan ahí en runtime)
-    const fs = require('fs');
-    const CANDIDATOS = [
-        process.env.FIREBASE_SERVICE_ACCOUNT,
-        __dirname + '/serviceAccountKey.json',
-        '/etc/secrets/serviceAccountKey.json'
-    ].filter(Boolean);
-    let sa = null;
-    if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-        firebaseAdmin.initializeApp({ credential: firebaseAdmin.credential.applicationDefault() });
-        sa = true;
-    } else {
-        if (process.env.FIREBASE_SERVICE_ACCOUNT_B64) {
-            try {
-                sa = JSON.parse(Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_B64, 'base64').toString('utf8'));
-            } catch (e) {
-                console.warn('[FIREBASE] FIREBASE_SERVICE_ACCOUNT_B64 presente pero no es Base64/JSON válido:', e.message);
-            }
-        } else if (process.env.FIREBASE_SERVICE_ACCOUNT && process.env.FIREBASE_SERVICE_ACCOUNT.trim().startsWith('{')) {
-            // Contenido JSON pegado inline como variable de entorno
-            try { sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT); }
-            catch (e) { console.warn('[FIREBASE] FIREBASE_SERVICE_ACCOUNT es JSON inválido:', e.message); }
-        }
-        if (!sa && process.env.FIREBASE_SERVICE_ACCOUNT) {
-            // Tolerante a comillas sobrantes añadidas por el panel del host
-            let txt = process.env.FIREBASE_SERVICE_ACCOUNT.trim();
-            if (txt.length >= 2 && txt.startsWith('"') && txt.endsWith('"')) txt = txt.slice(1, -1);
-            try {
-                const parsed = JSON.parse(txt);
-                if (parsed && typeof parsed === 'object' && parsed.client_email) {
-                    sa = parsed;
-                    console.log('[FIREBASE] Clave de servicio cargada desde FIREBASE_SERVICE_ACCOUNT (inline).');
-                }
-            } catch (e) { /* no es JSON inline; el loop de rutas ya lo habrá probado como archivo */ }
-        }
-        if (!sa) {
-            for (const ruta of CANDIDATOS) {
-                try {
-                    if (!fs.existsSync(ruta)) continue;
-                    sa = JSON.parse(fs.readFileSync(ruta, 'utf8'));
-                    console.log('[FIREBASE] Clave de servicio cargada desde: ' + ruta);
-                    break;
-                } catch (e) {
-                    console.warn('[FIREBASE] No se pudo usar la clave en ' + ruta + ':', e.message);
-                }
-            }
-        }
-        if (!sa) {
-            // Último recurso: cualquier *.json en /etc/secrets que parezca una clave de servicio
-            try {
-                if (fs.existsSync('/etc/secrets')) {
-                    const candidatos = fs.readdirSync('/etc/secrets').filter(f => f.endsWith('.json'));
-                    for (const f of candidatos) {
-                        try {
-                            const txt = fs.readFileSync('/etc/secrets/' + f, 'utf8');
-                            if (txt.includes('"private_key"') && txt.includes('"client_email"')) {
-                                sa = JSON.parse(txt);
-                                console.log('[FIREBASE] Clave de servicio detectada en /etc/secrets/' + f);
-                                break;
-                            }
-                        } catch (e) { /* JSON ilegible/corrupto: probar el siguiente */ }
-                    }
-                }
-            } catch (e) { /* sin permiso o sin dir: ignorar */ }
-        }
-        if (sa && typeof sa === 'object') {
-            firebaseAdmin.initializeApp({
-                credential: firebaseAdmin.credential.cert(sa),
-                projectId: sa.project_id || undefined
-            });
-        }
-    }
-    if (sa) {
-        FIREBASE_DB = firebaseAdmin.firestore();
-        FIREBASE_ECONOMY = true;
-        PROGRESSION_RUNTIME = createProgressionRuntime({ firestore: FIREBASE_DB });
-        FIREBASE_DB.collection('configuracion').doc('progresion').onSnapshot((snapshot) => {
-            if (!snapshot.exists) return;
-            PROGRESSION_REWARDS = sanitizeVisualRewards((snapshot.data() || {}).recompensas);
-            io.emit('progressionConfigUpdated', {
-                visualRewards: PROGRESSION_REWARDS,
-                dailyMissions: missionConfig(),
-                maxLevel: MAX_LEVEL,
-                levelCurve: DEFAULT_LEVEL_CURVE
-            });
-        }, (error) => {
-            console.error('[PROGRESSION] Could not watch visual reward configuration:', error.message);
-        });
-        console.log('[FIREBASE] Modo economía SEGURA activado (Admin SDK). El servidor maneja entradas y premios.');
-    } else {
-        console.log('[FIREBASE] Sin clave de servicio: ECONOMÍA DESHABILITADA. Entradas y premios no se liquidan hasta configurar Admin SDK; el cliente nunca gestiona dinero.');
-        console.log('[FIREBASE] FIX Render: Firebase Console → Cuentas de servicio → Generar clave privada → en Render crea un Secret File "serviceAccountKey.json" (o la env FIREBASE_SERVICE_ACCOUNT_B64 con el JSON en Base64) y reinicia el servicio. Verifica en GET /status.');
-    }
-} catch (e) {
-    console.warn('[FIREBASE] firebase-admin no disponible:', e.message);
-}
+firebaseRuntime = initializeFirebase({
+    baseDir: __dirname,
+    io,
+    progression: {
+        DEFAULT_LEVEL_CURVE,
+        DEFAULT_VISUAL_REWARDS,
+        MAX_LEVEL,
+        createProgressionRuntime,
+        missionConfig,
+        sanitizeVisualRewards
+    },
+    onRewardsChanged: (rewards) => { PROGRESSION_REWARDS = rewards; }
+});
+const firebaseAdmin = firebaseRuntime.firebaseAdmin;
+const FIREBASE_DB = firebaseRuntime.database;
+const FIREBASE_ECONOMY = firebaseRuntime.economy;
+const PROGRESSION_RUNTIME = firebaseRuntime.progressionRuntime;
 
 // Límites de seguridad
 const MAX_SOCKETS_PER_IP = 3;          // en salas de pago
@@ -557,14 +403,14 @@ async function servidorComprarSkin(uid, skinId) {
 }
 
 // ── Utilidades Firestore del servidor (solo con Admin SDK) ────────────────────
-async function servidorCobrarEntrada(uid, salaId, monto) {
-    if (!FIREBASE_ECONOMY || !FIREBASE_DB || !uid || !(monto > 0)) return { ok: false, error: 'ECONOMY_OFF' };
+async function servidorCobrarEntrada(uid, room, monto) {
+    const salaId = room && room.id;
+    if (!FIREBASE_ECONOMY || !FIREBASE_DB || !uid || !salaId || !(monto > 0)) return { ok: false, error: 'ECONOMY_OFF' };
     try {
-        // Idempotencia ATÓMICA: documento con ID determinista por (uid, sala).
-        // Dos joins concurrentes ejecutan la MISMA transacción → un solo cobro.
+        // La clave por ciclo deduplica reintentos sin regalar entradas en partidas posteriores.
         return await FIREBASE_DB.runTransaction(async (t) => {
             const refP = FIREBASE_DB.collection('usuarios').doc(uid);
-            const refEnt = FIREBASE_DB.collection('entradas').doc('ent_' + uid + '_' + salaId);
+            const refEnt = FIREBASE_DB.collection('entradas').doc(entryReceiptId(uid, room));
             const [snap, snapE] = await Promise.all([t.get(refP), t.get(refEnt)]);
 
             // Ya cobrada → reutilizar (sin doble cobro)
@@ -621,6 +467,54 @@ async function servidorReembolsar(uid, entradasId, monto) {
         });
     } catch (e) {
         console.warn('[FIREBASE] Reembolso fallido para ' + uid + ':', e.message);
+    }
+}
+
+function precioMinimoFfa() {
+    return Math.min(...SALAS_AUTO.map((room) => room.fee));
+}
+
+async function servidorCobrarEntradaConBoleto(uid, room, allowTicket) {
+    if (!FIREBASE_ECONOMY || !FIREBASE_DB || !uid) {
+        return { ok: false, error: 'ECONOMY_OFF' };
+    }
+    try {
+        if (allowTicket) {
+            const boleto = await redeemSoloTicket({
+                firestore: FIREBASE_DB,
+                uid,
+                room,
+                minimumFfaEntryFee: precioMinimoFfa(),
+                timestamp: firebaseAdmin.firestore.FieldValue.serverTimestamp()
+            });
+            if (!boleto.ok) return boleto;
+            if (boleto.ticketUsed) return { ...boleto, metodo: TICKET_PAYMENT_METHOD };
+        }
+    } catch (error) {
+        console.error('[TICKETS] Could not redeem entry ticket:', error.message);
+        return { ok: false, error: 'TICKET_UNAVAILABLE' };
+    }
+
+    const cobro = await servidorCobrarEntrada(uid, room, room.entryFee);
+    return cobro.ok
+        ? { ...cobro, metodo: 'saldo' }
+        : cobro;
+}
+
+async function servidorReembolsarBoleto(uid, entradasId) {
+    if (!FIREBASE_ECONOMY || !FIREBASE_DB || !uid) {
+        return { ok: false, error: 'ECONOMY_OFF' };
+    }
+    try {
+        return await refundSoloTicket({
+            firestore: FIREBASE_DB,
+            uid,
+            entradasId,
+            timestamp: firebaseAdmin.firestore.FieldValue.serverTimestamp()
+        });
+    } catch (error) {
+        console.error('[TICKETS] Could not refund solo entry ticket:', error.message);
+        return { ok: false, error: 'REFUND_FAILED' };
     }
 }
 
@@ -833,6 +727,7 @@ function randID() {
 class GameRoom {
     constructor(id, name, maxPlayers, entryFee, isPrivate, password = "", mode = 'ffa', isPractice = false) {
         this.id = id;
+        this.entryCycleId = crypto.randomBytes(12).toString('hex');
         this.name = name;
         this.maxPlayers = maxPlayers;
         this.entryFee = entryFee;
@@ -844,6 +739,7 @@ class GameRoom {
         this.nextTeamOnTie = 'A';
         this.teamProfiles = createTeamProfiles();
         this.teamParticipants = [];
+        this.soloProgressEligiblePlayerIds = new Set();
         this.winnerTeamId = null;
         this.practiceWinnerId = null;
         this.practiceExpiryTimer = null;
@@ -1232,6 +1128,7 @@ class GameRoom {
         if (this.players[socketId]) {
             let p = this.players[socketId];
             if (p.disconnectTimer) clearTimeout(p.disconnectTimer);
+            this.soloProgressEligiblePlayerIds.delete(socketId);
             if (p.charge > 0) {
                 this.droppedEnergy.push({
                     id: 'e_' + randID(),
@@ -1876,6 +1773,29 @@ class GameRoom {
         const leaderboard = this.getLeaderboard();
         this.resultLock = lockResult(leaderboard);
         let progressionProcessing = null;
+        let soloTicketProcessing = null;
+
+        const practiceWinner = this.isPractice
+            ? this.players[this.practiceWinnerId]
+            : null;
+        if (isEligibleSoloWinner({
+            isPractice: this.isPractice,
+            abandoned: abandono,
+            uid: practiceWinner && practiceWinner.uid,
+            verifiedAccount: practiceWinner &&
+                this.soloProgressEligiblePlayerIds.has(practiceWinner.id)
+        }) &&
+            FIREBASE_ECONOMY && FIREBASE_DB) {
+            soloTicketProcessing = recordSoloVictory({
+                firestore: FIREBASE_DB,
+                uid: practiceWinner.uid,
+                practiceId: gameId,
+                timestamp: firebaseAdmin.firestore.FieldValue.serverTimestamp()
+            }).catch((error) => {
+                console.error('[TICKETS] Could not record verified solo victory:', error.message, gameId);
+                return { ok: false, error: 'SAVE_FAILED' };
+            });
+        }
 
         if (!abandono && !this.isPractice && PROGRESSION_RUNTIME) {
             const finishedAt = Date.now();
@@ -1980,6 +1900,15 @@ class GameRoom {
                     emitGameOver();
                 });
         };
+        const emitAfterSoloTicket = () => {
+            if (!soloTicketProcessing) return emitAfterPayout();
+            void soloTicketProcessing.then((result) => {
+                if (!result.ok) {
+                    console.error('[TICKETS] Solo victory was not persisted:', result.error, gameId);
+                }
+                emitAfterPayout();
+            });
+        };
 
         if (progressionProcessing) {
             void finalizeAfterProgression(
@@ -1994,14 +1923,16 @@ class GameRoom {
                         gameId
                     );
                 },
-                emitAfterPayout
+                emitAfterSoloTicket
             );
         } else {
-            emitAfterPayout();
+            emitAfterSoloTicket();
         }
     }
 
     resetForLobby() {
+        this.entryCycleId = crypto.randomBytes(12).toString('hex');
+        this.soloProgressEligiblePlayerIds.clear();
         this.gameStarted = false;
         this.gameStartedAt = null;
         this.progressionEvents = [];
@@ -2921,6 +2852,7 @@ function emitirSalasPublicas(immediate = false) {
 async function verificarUidEnSala(socket, room, payload) {
     const token = extractIdToken(payload);
     socket.verifiedUid = null;
+    socket.verifiedAccount = false;
 
     if (!FIREBASE_ECONOMY || !token) {
         return;
@@ -2933,8 +2865,12 @@ async function verificarUidEnSala(socket, room, payload) {
             return;
         }
         socket.verifiedUid = decoded.uid;
+        socket.verifiedAccount = !!decoded.firebase &&
+            decoded.firebase.sign_in_provider !== 'anonymous';
         if (currentPlayer) {
             currentPlayer.uid = decoded.uid;
+            if (socket.verifiedAccount) room.soloProgressEligiblePlayerIds.add(socket.id);
+            else room.soloProgressEligiblePlayerIds.delete(socket.id);
         }
     } catch (e) {
         // Token inválido/expirado: la conexión permanece como invitado.
@@ -2950,10 +2886,19 @@ async function salirDeSala(socket, room) {
     if (FIREBASE_ECONOMY && !room.gameStarted && !room.lobbyActive && p.pagoEntrada) {
         const uid = socket.verifiedUid || p.uid;
         if (uid) {
-            await servidorReembolsar(uid, p.pagoEntrada.entradasId, p.pagoEntrada.monto);
+            if (p.pagoEntrada.metodo === TICKET_PAYMENT_METHOD) {
+                const refund = await servidorReembolsarBoleto(uid, p.pagoEntrada.entradasId);
+                if (!refund.ok) {
+                    console.error('[TICKETS] Could not return solo entry ticket:', refund.error);
+                    socket.emit('errorMsg', 'No pudimos devolver el boleto automáticamente. Contacta a soporte.');
+                }
+            } else {
+                await servidorReembolsar(uid, p.pagoEntrada.entradasId, p.pagoEntrada.monto);
+            }
         }
     }
     room.removePlayer(socket.id);
+    if (socket.__entradaCobrada?.salaId === room.id) delete socket.__entradaCobrada;
     if (socket.roomId === room.id) delete socket.roomId;
     if (socket.data?.roomId === room.id) delete socket.data.roomId;
     if (room.isPractice) {
@@ -3031,11 +2976,7 @@ if (FIREBASE_ECONOMY && FIREBASE_DB) {
 // dirección directa del handshake. Sin esto, tras el balanceador de Render
 // TODOS los jugadores comparten la IP del proxy: el límite por IP bloquearía a
 // partir del 4º jugador y el rate-limit del panel se volvería global.
-function registrarAuditoria(tipo, actor, data) {
-    const event = createAuditEvent(tipo, actor, data);
-    console.log('[AUDIT]', JSON.stringify(event));
-    return event;
-}
+const registrarAuditoria = createAuditLogger();
 
 function adminAutorizado(socket) {
     if (!socket || socket.isAdmin !== true || !socket.adminAuthenticatedAt) return false;
@@ -3069,6 +3010,7 @@ io.on('connection', (socket) => {
     }
     socket.emit('serverConfig', {
         economy: FIREBASE_ECONOMY,
+        soloTicketFfaFee: precioMinimoFfa(),
         progression: {
             dailyMissions: missionConfig(),
             maxLevel: MAX_LEVEL,
@@ -3507,7 +3449,9 @@ io.on('connection', (socket) => {
                     return socket.emit('errorMsg', 'Las salas de pago requieren iniciar sesión con cuenta verificada.');
                 }
                 if (!room.players[socket.id].pagoEntrada) {
-                    const cobro = await servidorCobrarEntrada(socket.verifiedUid, room.id, room.entryFee);
+                    const cobro = await servidorCobrarEntradaConBoleto(
+                        socket.verifiedUid, room, socket.verifiedAccount === true
+                    );
                     if (!cobro.ok) {
                         if (cobro.error === 'SALDO_INSUFICIENTE') {
                             return socket.emit('errorMsg', 'Saldo insuficiente para cubrir la entrada a esta sala.');
@@ -3517,7 +3461,12 @@ io.on('connection', (socket) => {
                         }
                         return socket.emit('errorMsg', 'No se pudo cobrar la entrada: ' + String(cobro.error || 'ERROR').slice(0, 120));
                     }
-                    socket.__entradaCobrada = { entradasId: cobro.entradasId, monto: room.entryFee, salaId: room.id };
+                    socket.__entradaCobrada = {
+                        entradasId: cobro.entradasId,
+                        monto: cobro.metodo === TICKET_PAYMENT_METHOD ? 0 : room.entryFee,
+                        salaId: room.id,
+                        metodo: cobro.metodo || 'saldo'
+                    };
                     room.players[socket.id].pagoEntrada = socket.__entradaCobrada;
                 }
             }
@@ -3614,11 +3563,14 @@ io.on('connection', (socket) => {
             return socket.emit('errorMsg', 'Esta sala de pago no está disponible temporalmente.');
         }
         // Cobro de entrada en el SERVIDOR — el cliente ya no decide.
-        if (room.entryFee > 0 && FIREBASE_ECONOMY && !socket.__entradaCobrada) {
+        if (room.entryFee > 0 && FIREBASE_ECONOMY &&
+            socket.__entradaCobrada?.salaId !== room.id) {
             if (!socket.verifiedUid) {
                 return socket.emit('errorMsg', 'Las salas de pago requieren iniciar sesión con cuenta verificada.');
             }
-            const cobro = await servidorCobrarEntrada(socket.verifiedUid, room.id, room.entryFee);
+            const cobro = await servidorCobrarEntradaConBoleto(
+                socket.verifiedUid, room, socket.verifiedAccount === true
+            );
             if (!cobro.ok) {
                 if (cobro.error === 'SALDO_INSUFICIENTE') {
                     return socket.emit('errorMsg', 'Saldo insuficiente para cubrir la entrada a esta sala.');
@@ -3628,7 +3580,12 @@ io.on('connection', (socket) => {
                 }
                 return socket.emit('errorMsg', 'No se pudo cobrar la entrada: ' + String(cobro.error || 'ERROR').slice(0, 120));
             }
-            socket.__entradaCobrada = { entradasId: cobro.entradasId, monto: room.entryFee, salaId: room.id };
+            socket.__entradaCobrada = {
+                entradasId: cobro.entradasId,
+                monto: cobro.metodo === TICKET_PAYMENT_METHOD ? 0 : room.entryFee,
+                salaId: room.id,
+                metodo: cobro.metodo || 'saldo'
+            };
         }
 
         socket.join(room.id);
@@ -3650,11 +3607,22 @@ io.on('connection', (socket) => {
             delete socket.roomId;
             delete socket.data.roomId;
             if (socket.__entradaCobrada?.salaId === room.id) {
-                await servidorReembolsar(
-                    socket.verifiedUid,
-                    socket.__entradaCobrada.entradasId,
-                    socket.__entradaCobrada.monto
-                );
+                if (socket.__entradaCobrada.metodo === TICKET_PAYMENT_METHOD) {
+                    const refund = await servidorReembolsarBoleto(
+                        socket.verifiedUid,
+                        socket.__entradaCobrada.entradasId
+                    );
+                    if (!refund.ok) {
+                        console.error('[TICKETS] Could not return entry ticket after room filled:', refund.error);
+                        socket.emit('errorMsg', 'La sala se llenó y no pudimos devolver el boleto automáticamente. Contacta a soporte.');
+                    }
+                } else {
+                    await servidorReembolsar(
+                        socket.verifiedUid,
+                        socket.__entradaCobrada.entradasId,
+                        socket.__entradaCobrada.monto
+                    );
+                }
                 delete socket.__entradaCobrada;
             }
             return socket.emit('errorMsg', 'La sala completó sus plazas mientras se validaba tu ingreso.');
@@ -3662,6 +3630,7 @@ io.on('connection', (socket) => {
         room.addPlayer(socket.id, nickFinal, skinValidada, socket.verifiedUid);
         const nuevoP = room.players[socket.id];
         nuevoP.__ip = ip;
+        if (socket.verifiedAccount === true) room.soloProgressEligiblePlayerIds.add(socket.id);
         if (socket.__entradaCobrada) nuevoP.pagoEntrada = socket.__entradaCobrada;
 
         socket.emit('joinedSuccess', { playerId: socket.id, roomId: room.id });
@@ -3701,18 +3670,29 @@ io.on('connection', (socket) => {
             );
             if (duplicado) {
                 socket.verifiedUid = null;
+                socket.verifiedAccount = false;
+                room.soloProgressEligiblePlayerIds.delete(socket.id);
                 return socket.emit('errorMsg', 'Esa cuenta ya está jugando en esta sala.');
             }
             p.uid = socket.verifiedUid;
+            if (socket.verifiedAccount === true) room.soloProgressEligiblePlayerIds.add(socket.id);
+            else room.soloProgressEligiblePlayerIds.delete(socket.id);
             const progressionReward = await recompensaVisualEquipada(socket.verifiedUid);
             p.skin = sanitizeSkin(Object.assign({}, p.skin, { progressionReward }));
         }
 
         // Cobro diferido: llegó el token después del join en una sala de pago
         if (FIREBASE_ECONOMY && room.entryFee > 0 && socket.verifiedUid && !p.pagoEntrada) {
-            const cobro = await servidorCobrarEntrada(socket.verifiedUid, room.id, room.entryFee);
+            const cobro = await servidorCobrarEntradaConBoleto(
+                socket.verifiedUid, room, socket.verifiedAccount === true
+            );
             if (cobro.ok) {
-                socket.__entradaCobrada = { entradasId: cobro.entradasId, monto: room.entryFee, salaId: room.id };
+                socket.__entradaCobrada = {
+                    entradasId: cobro.entradasId,
+                    monto: cobro.metodo === TICKET_PAYMENT_METHOD ? 0 : room.entryFee,
+                    salaId: room.id,
+                    metodo: cobro.metodo || 'saldo'
+                };
                 p.pagoEntrada = socket.__entradaCobrada;
             } else if (cobro.error === 'SALDO_INSUFICIENTE') {
                 socket.emit('errorMsg', 'Saldo insuficiente para la entrada. Serás retirado de la sala.');

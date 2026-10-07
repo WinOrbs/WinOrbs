@@ -24,4 +24,12 @@ function createAuditEvent(type, actor, data = {}) {
     });
 }
 
-module.exports = Object.freeze({ sanitize, createAuditEvent });
+function createAuditLogger(logger = console) {
+    return function logAuditEvent(type, actor, data) {
+        const event = createAuditEvent(type, actor, data);
+        logger.log('[AUDIT]', JSON.stringify(event));
+        return event;
+    };
+}
+
+module.exports = Object.freeze({ sanitize, createAuditEvent, createAuditLogger });
