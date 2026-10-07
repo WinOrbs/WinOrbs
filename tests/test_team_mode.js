@@ -3,6 +3,7 @@
 const assert = require('assert');
 const {
     assignBalancedTeam,
+    canForceStartTeams,
     canDamagePlayer,
     createTeamProfiles,
     isTeamLobbyFull,
@@ -43,6 +44,9 @@ assert.deepStrictEqual(
 assert.deepStrictEqual(teamMemberCounts(balanced), { A: 5, B: 5 });
 assert.strictEqual(isTeamLobbyFull(balanced), true);
 assert.strictEqual(isTeamLobbyFull({ ...balanced, p10: { teamId: 'A' } }), false);
+assert.strictEqual(canForceStartTeams(balanced), true);
+assert.strictEqual(canForceStartTeams({ a: { teamId: 'A' } }), false);
+assert.strictEqual(canForceStartTeams({ a: { teamId: 'A' }, b: { teamId: 'B' } }), true);
 assert.strictEqual(TEAM_SIZE, 5);
 assert.strictEqual(TEAM_START_COUNTDOWN_SECONDS, 30);
 const fullProfiles = createTeamProfiles();

@@ -16,6 +16,7 @@ const { bankMatchOrbs, awardElimination } = require('./apps/server/game/score');
 const { applyDamage } = require('./apps/server/game/combat');
 const {
     assignBalancedTeam,
+    canForceStartTeams,
     canDamagePlayer,
     createTeamProfiles,
     isTeamLobbyFull,
@@ -23,6 +24,7 @@ const {
     selectPlayerTeam,
     serializeTeamState,
     splitPrize,
+    teamMemberCounts,
     TEAM_START_COUNTDOWN_SECONDS,
     updateTeamProfile
 } = require('./apps/server/game/team_mode');
@@ -887,6 +889,7 @@ class GameRoom {
         this.gameStartedAt = null;
         this.progressionEvents = [];
         this.countdown = 0;
+        this.forcedTeamStart = false;
         this.waitingTimer = null;      // contador de espera de 30 s
         this.lastPlayerCount = 0;
         this.soloTimer = null;         // victoria por abandono (10 s)
@@ -1565,12 +1568,17 @@ class GameRoom {
             } else if (this.lobbyActive && this.countdown > 0) {
                 this.countdown--;
                 // Si durante el arranque queda 1 solo jugador, el inicio se cancela
-                if (this.mode === 'teams' && !isTeamLobbyFull(this.players)) {
+                if (this.mode === 'teams' && (
+                    this.forcedTeamStart
+                        ? !canForceStartTeams(this.players)
+                        : !isTeamLobbyFull(this.players)
+                )) {
                     this.lobbyActive = false;
                     this.countdown = 0;
                     this.waitingTimer = null;
+                    this.forcedTeamStart = false;
                     this.matchStatus = MATCH_STATUS.WAITING;
-                    io.to(this.id).emit('announcement', '⚠️ Cuenta atrás cancelada: ambos equipos deben conservar sus 5 jugadores.');
+                    io.to(this.id).emit('announcement', '⚠️ Cuenta atrás cancelada: ambos equipos deben conservar al menos un jugador.');
                 } else if (this.mode !== 'teams' && playerCount < 2) {
                     this.lobbyActive = false;
                     this.countdown = 0;
@@ -1590,6 +1598,7 @@ class GameRoom {
                     this.progressionEvents = [];
                     this.matchStatus = MATCH_STATUS.RUNNING;
                     this.lobbyActive = false;
+                    this.forcedTeamStart = false;
                     // Botiquines iniciales repartidos por el mapa (antes solo caían
                     // al matar a alguien, así que la salud casi no se recuperaba).
                     this.sembrarBotiquines();
@@ -1662,12 +1671,15 @@ class GameRoom {
         }, 1000);
     }
 
-    startLobby(countdownSeconds = 5) {
+    startLobby(countdownSeconds = 5, forcedTeamStart = false) {
         if (!canTransition(this.matchStatus, MATCH_STATUS.STARTING)) return false;
-        if (this.mode === 'teams' && !isTeamLobbyFull(this.players)) return false;
+        if (this.mode === 'teams' && !(forcedTeamStart
+            ? canForceStartTeams(this.players)
+            : isTeamLobbyFull(this.players))) return false;
         this.matchStatus = MATCH_STATUS.STARTING;
         this.lobbyActive = true;
         this.countdown = countdownSeconds;
+        this.forcedTeamStart = forcedTeamStart;
         this.pendingStart = null;
         this.winnerTeamId = null;
         // Bote ESTÁTICO: se fija una sola vez con los inscritos al arrancar la
@@ -1679,12 +1691,19 @@ class GameRoom {
         return true;
     }
 
-    startGame() {
+    startGame(forceTeamStart = false) {
         if (this.gameStarted || this.lobbyActive) return false;
         const playerCount = Object.keys(this.players).length;
         if (playerCount < 2) return false;
-        if (this.mode === 'teams' && !isTeamLobbyFull(this.players)) return false;
-        return this.startLobby(this.mode === 'teams' ? TEAM_START_COUNTDOWN_SECONDS : 5);
+        if (this.mode === 'teams') {
+            if (forceTeamStart) {
+                if (!canForceStartTeams(this.players)) return false;
+                return this.startLobby(5, true);
+            }
+            if (!isTeamLobbyFull(this.players)) return false;
+            return this.startLobby(TEAM_START_COUNTDOWN_SECONDS);
+        }
+        return this.startLobby(5);
     }
 
     spawnAirdrop() {
@@ -1995,6 +2014,7 @@ class GameRoom {
         this.progressionEvents = [];
         this.lobbyActive = false;
         this.countdown = 0;
+        this.forcedTeamStart = false;
         Object.values(this.teamProfiles).forEach((profile) => { profile.leaderId = null; });
         this.pendingStart = null;
         this.gameTime = 300;
@@ -2611,6 +2631,7 @@ class GameRoom {
             id: this.id,
             nombre: this.name,
             mode: this.mode,
+            teamCounts: this.mode === 'teams' ? teamMemberCounts(this.players) : null,
             maxJugadores: this.maxPlayers,
             jugadoresConectados: Object.keys(this.players).length,
             precioEntrada: this.entryFee,
@@ -2831,6 +2852,7 @@ class GameRoom {
             explosions: this.explosions,
             lobbyActive: this.lobbyActive,
             countdown: this.countdown,
+            forcedTeamStart: this.forcedTeamStart,
             gameStarted: this.gameStarted,
             matchStatus: this.matchStatus,
             pozoTotal: this.pozoTotal,
@@ -3789,17 +3811,19 @@ io.on('connection', (socket) => {
         if (room) room.emitirConfig(socket);
     });
 
-    socket.on('startGame', ({ roomId }) => {
+    socket.on('startGame', (data = {}) => {
         if (!adminAutorizado(socket)) {
             return socket.emit('errorMsg', 'No tienes permisos de administrador.');
         }
+        const roomId = data && data.roomId;
         const room = rooms[roomId];
         if (!room) {
             return socket.emit('errorMsg', 'La sala no existe.');
         }
-        if (!room.startGame()) {
+        const forceTeamStart = room.mode === 'teams' && data.force === true;
+        if (!room.startGame(forceTeamStart)) {
             return socket.emit('errorMsg', room.mode === 'teams'
-                ? 'No se puede iniciar TEAM: necesita 5 jugadores en cada equipo.'
+                ? 'No se puede iniciar TEAM: necesita al menos un jugador en cada equipo; use Forzar inicio para omitir los 5 por lado.'
                 : 'No se puede iniciar la partida (necesita al menos 2 jugadores).');
         }
         io.to(roomId).emit('playSound', 'explosion');

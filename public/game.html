@@ -4857,7 +4857,9 @@
                 lobbyCountdown.style.display = "block";
                 lobbyCountdown.innerText = gameState.countdown || 0;
                 lobbyText.innerText = gameState.mode === 'teams'
-                    ? "La partida comienza cuando llegue a cero. Si un equipo pierde un integrante, volverán a la selección."
+                    ? (gameState.forcedTeamStart
+                        ? "Inicio forzado por administración: comienza en 5 segundos; cada equipo debe conservar al menos un jugador."
+                        : "La partida comienza en 30 segundos. Si un equipo pierde integrantes, volverán a la selección.")
                     : "Prepárate para extraer energía...";
                 lobbyPotWrap.style.display = "none";
                 ocultarPlazas();

@@ -827,16 +827,22 @@ const colorTipo = esRetiro ? '#ef4444' : esPremio ? '#f59e0b' : '#22c55e';
 
             salasList.forEach((s) => {
                 const playerCount = s.jugadoresConectados || 0;
-                const canStart = playerCount >= 2;
+                const isTeam = s.mode === 'teams';
+                const teamCounts = s.teamCounts || { A: 0, B: 0 };
+                const canStart = playerCount >= 2 &&
+                    (!isTeam || (teamCounts.A > 0 && teamCounts.B > 0)) &&
+                    !s.iniciada;
+                const startLabel = isTeam ? '⚡ Forzar inicio' : '▶ Iniciar';
+                const roomMode = isTeam ? '<br><small style="color:#38bdf8">TEAM · 5 por equipo (forzable)</small>' : '';
                 tabla.innerHTML += `
                     <tr>
-                        <td><b>${s.nombre}</b><br><small style="color:#64748b">${s.id}</small></td>
+                        <td><b>${s.nombre}</b>${roomMode}<br><small style="color:#64748b">${s.id}</small></td>
                         <td>$${parseFloat(s.precioEntrada || 0).toFixed(2)} USD</td>
-                        <td>${playerCount} / ${s.maxJugadores}</td>
+                        <td>${playerCount} / ${s.maxJugadores}${isTeam ? `<br><small>A ${teamCounts.A || 0}/5 · B ${teamCounts.B || 0}/5</small>` : ''}</td>
                         <td><b style="color:#22c55e">$${parseFloat(s.pozoActual || 0).toFixed(2)} USD</b></td>
                         <td>${s.esPrivada ? '🔒 Privada' : '🌐 Pública'}</td>
                         <td>
-                            <button class="btn btn-approve" onclick="iniciarPartida('${s.id}')" ${!canStart ? 'disabled' : ''}>▶ Iniciar</button>
+                            <button class="btn btn-approve" onclick="iniciarPartida('${s.id}', ${isTeam})" ${!canStart ? 'disabled' : ''}>${startLabel}</button>
                             <button class="btn btn-reject" onclick="destruirSalaNode('${s.id}')">✖ Cerrar</button>
                         </td>
                     </tr>
@@ -844,9 +850,16 @@ const colorTipo = esRetiro ? '#ef4444' : esPremio ? '#f59e0b' : '#22c55e';
             });
         });
 
-        window.iniciarPartida = function(salaId) {
-            if(!confirm("¿Iniciar la partida en esta sala? Los jugadores conectados comenzarán en 5 segundos.")) return;
-            socket.emit('startGame', { roomId: salaId });
+        socket.on('errorMsg', (message) => {
+            alert(message);
+        });
+
+        window.iniciarPartida = function(salaId, esTeam = false) {
+            const mensaje = esTeam
+                ? "¿Forzar el inicio TEAM? Se omitirá el requisito de 5 jugadores por equipo; debe haber al menos uno en cada lado. La partida comenzará en 5 segundos."
+                : "¿Iniciar la partida en esta sala? Los jugadores conectados comenzarán en 5 segundos.";
+            if(!confirm(mensaje)) return;
+            socket.emit('startGame', { roomId: salaId, force: esTeam });
         };
 
         window.destruirSalaNode = function(salaId) {

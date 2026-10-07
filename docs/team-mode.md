@@ -10,6 +10,10 @@ players. If either group loses a player during that countdown, it is cancelled
 and the room returns to team selection. The lineup and team profiles are locked
 once the countdown starts.
 
+An administrator can force-start a TEAM room before it is full. At least one
+player must be present on each side; the admin panel displays each side's
+occupancy and starts the match after a five-second countdown.
+
 Eliminated players remain in the match as spectators. They can follow living
 teammates or move a free camera with WASD/the arrow keys; touch controls are
 available on mobile. Spectator input only moves the local camera and cannot

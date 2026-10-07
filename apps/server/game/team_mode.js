@@ -24,6 +24,11 @@ function isTeamLobbyFull(players) {
     return counts.A === TEAM_SIZE && counts.B === TEAM_SIZE;
 }
 
+function canForceStartTeams(players) {
+    const counts = teamMemberCounts(players);
+    return counts.A > 0 && counts.B > 0;
+}
+
 function assignBalancedTeam(players, tieTeam = 'A') {
     const counts = teamMemberCounts(players);
     if (counts.A === counts.B) return tieTeam === 'B' ? 'B' : 'A';
@@ -145,6 +150,7 @@ function splitPrize(total, participants) {
 module.exports = Object.freeze({
     assignBalancedTeam,
     canDamagePlayer,
+    canForceStartTeams,
     createTeamProfiles,
     isTeamLobbyFull,
     rankTeams,
