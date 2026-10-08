@@ -1,9 +1,10 @@
 # Práctica SOLO y boletos
 
-La práctica contra bots es gratis. Al iniciarla, el lobby carga la viñeta de
-Monetag de la zona `11978865`. El script no confirma que el anuncio haya sido
-mostrado o completado; si no carga, se permite iniciar la partida. La viñeta se
-carga una sola vez por página y no sustituye al service worker de Monetag.
+La práctica contra bots es gratis. Al pulsar SOLO, el lobby carga la viñeta de
+Monetag de la zona `11978865` antes de solicitar la entrada a la práctica. El
+script no confirma que el anuncio haya sido mostrado o completado; si no carga,
+se permite iniciar la partida. La viñeta se carga una sola vez por página y no
+sustituye al service worker de Monetag.
 
 El servidor acredita una victoria SOLO solo cuando el resultado final de la
 partida identifica a un ganador con UID verificado. Los invitados pueden jugar,

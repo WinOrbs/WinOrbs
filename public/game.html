@@ -4631,23 +4631,8 @@
             }
         }
 
-        let monetagVignetteRequested = false;
-        function cargarViñetaMonetagPractica() {
-            if (monetagVignetteRequested ||
-                document.querySelector('script[data-zone="11978865"]')) return;
-            monetagVignetteRequested = true;
-            const script = document.createElement('script');
-            script.dataset.zone = '11978865';
-            script.src = 'https://n6wxm.com/vignette.min.js';
-            script.async = true;
-            script.onload = () => console.info('Viñeta Monetag cargada para la práctica SOLO.');
-            script.onerror = () => console.warn('No se pudo cargar la viñeta Monetag para la práctica SOLO.');
-            (document.head || document.documentElement).appendChild(script);
-        }
-
         socket.on('gameState', (state) => {
             gameState = state;
-            if (state && state.isPractice === true) cargarViñetaMonetagPractica();
             actualizarSkins(state);
             // Primer estado recibido = arranque completo (sumar() es idempotente)
             window.__intro && window.__intro.sumar('estado');

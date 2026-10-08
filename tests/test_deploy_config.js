@@ -51,12 +51,15 @@ assert.ok(server.includes('const PORT = config.server.port'), 'server must honor
 assert.ok(defaults.includes("host: '0.0.0.0'"), 'server default host must remain publicly bindable');
 assert.ok(packageJson.scripts.build.includes("fs.copyFileSync('sw.js','dist/sw.js')"), 'Cloudflare Pages build must publish the Monetag service worker');
 assert.ok(httpServer.includes("app.get('/sw.js', (req, res) => res.sendFile(rootDir + '/sw.js'))"), 'Express static hosting must expose the root service worker');
-assert.ok(!indexHtml.includes('n6wxm.com/vignette.min.js'), 'lobby must not load the Monetag script before navigating to the game');
-assert.ok(gameHtml.includes("script.dataset.zone = '11978865'"), 'SOLO game must load the configured Monetag vignette zone');
-assert.ok(gameHtml.includes("script.src = 'https://n6wxm.com/vignette.min.js'"), 'SOLO game must load the Monetag vignette script');
+assert.ok(indexHtml.includes("script.dataset.zone = '11978865'"), 'SOLO lobby must load the configured Monetag vignette zone');
+assert.ok(indexHtml.includes("script.src = 'https://n6wxm.com/vignette.min.js'"), 'SOLO lobby must load the Monetag vignette script');
 assert.ok(
-    /if \(state && state\.isPractice === true\) cargarViñetaMonetagPractica\(\);/.test(gameHtml),
-    'game must load Monetag only after the server confirms this is a SOLO practice'
+    /botonModoSolo\.disabled = true;\s+cargarViñetaMonetagPractica\(\);\s+try \{\s+await entrarPracticaBots\(nick\);/.test(indexHtml),
+    'lobby must load Monetag when SOLO is selected, before requesting practice entry'
+);
+assert.ok(
+    !gameHtml.includes('n6wxm.com/vignette.min.js') && !gameHtml.includes('cargarViñetaMonetagPractica'),
+    'game page must not request a second Monetag script after entering practice'
 );
 assert.ok(indexHtml.includes('id="solo-ticket-bar"'), 'lobby must render solo ticket progress');
 assert.ok(server.includes('recordSoloVictory({'), 'server must record SOLO wins from its authoritative result');

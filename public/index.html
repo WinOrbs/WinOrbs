@@ -1720,6 +1720,20 @@
             });
         }
 
+        let monetagVignetteRequested = false;
+        function cargarViñetaMonetagPractica() {
+            if (monetagVignetteRequested ||
+                document.querySelector('script[data-zone="11978865"]')) return;
+            monetagVignetteRequested = true;
+            const script = document.createElement('script');
+            script.dataset.zone = '11978865';
+            script.src = 'https://n6wxm.com/vignette.min.js';
+            script.async = true;
+            script.onload = () => console.info('Viñeta Monetag cargada para la práctica SOLO.');
+            script.onerror = () => console.warn('No se pudo cargar la viñeta Monetag para la práctica SOLO.');
+            (document.head || document.documentElement).appendChild(script);
+        }
+
         async function entrarPracticaBots(nick) {
             const result = await crearSalaPracticaBots();
             if (!result || result.ok !== true || !result.roomId || !result.password) {
@@ -1744,6 +1758,7 @@
             }
             practicaPendiente = true;
             botonModoSolo.disabled = true;
+            cargarViñetaMonetagPractica();
             try {
                 await entrarPracticaBots(nick);
             } finally {
