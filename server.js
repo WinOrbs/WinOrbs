@@ -5,6 +5,7 @@ const config = require('./apps/server/config');
 const { isOriginAllowed, adminPassword } = config;
 const { createHttpServer } = require('./apps/server/http');
 const { createSocketServer } = require('./apps/server/realtime/socket_server');
+const { createRealtimeMetrics } = require('./apps/server/realtime/metrics');
 const { initializeFirebase } = require('./apps/server/infrastructure/firebase');
 const {
     normalizeCommand,
@@ -56,6 +57,7 @@ const {
     sanitizeVisualRewards
 } = require('./apps/server/platform/progression');
 const crypto = require('crypto');
+const { performance } = require('node:perf_hooks');
 
 let firebaseRuntime = null;
 const { app, server } = createHttpServer({
@@ -71,6 +73,14 @@ const io = createSocketServer(server, {
 
 const MAP_SIZE = 5000;
 const rooms = {};
+const realtimeMetrics = createRealtimeMetrics();
+
+function emitGameState(room) {
+    const state = room.getState();
+    const socketIds = [...(io.sockets.adapter.rooms.get(room.id) || [])];
+    realtimeMetrics.recordGameState(room.id, state, socketIds);
+    io.to(room.id).volatile.emit('gameState', state);
+}
 
 const ADMIN_PASSWORD = adminPassword;
 const ADMIN_SESSION_MS = config.timing.adminSessionMs;
@@ -1400,23 +1410,31 @@ class GameRoom {
         // El input del cliente conserva su frecuencia de 60 FPS.
         this.tick = 0;
         this.interval = setInterval(() => {
+            const tickStartedAt = performance.now();
             const jugadores = Object.keys(this.players).length;
 
             // Sala vacía: no hay estado que simular ni emitir. Las salas siguen
             // existiendo, pero no serializan ni transmiten snapshots sin jugadores.
-            if (jugadores === 0) return;
+            if (jugadores === 0) {
+                realtimeMetrics.recordTick(performance.now() - tickStartedAt);
+                return;
+            }
 
             if (this.gameStarted) this.update();
 
             this.tick++;
             const ticksPerEmission = this.gameStarted ? TICK_EMITIR_CADA : 60;
-            if (this.tick % ticksPerEmission !== 0) return;
+            if (this.tick % ticksPerEmission !== 0) {
+                realtimeMetrics.recordTick(performance.now() - tickStartedAt);
+                return;
+            }
 
             // volatile: si el cliente va saturado se DESCARTA el estado atrasado
             // en lugar de encolarlo. Sin esto, un móvil lento acumula cola y su
             // retraso crece sin parar: perder un estado no importa porque
             // siempre viene otro detrás.
-            io.to(this.id).volatile.emit('gameState', this.getState());
+            emitGameState(this);
+            realtimeMetrics.recordTick(performance.now() - tickStartedAt);
         }, 1000 / 60);
 
         this.timerInterval = setInterval(() => {
@@ -2821,6 +2839,34 @@ function ensureRooms() {
     });
 }
 ensureRooms();
+
+let previousMetricCpu = process.cpuUsage();
+let previousMetricTime = process.hrtime.bigint();
+const realtimeMetricsInterval = setInterval(() => {
+    const now = process.hrtime.bigint();
+    const intervalMicros = Number(now - previousMetricTime) / 1000;
+    const cpu = process.cpuUsage(previousMetricCpu);
+    const metrics = realtimeMetrics.snapshot({
+        activeMatches: Object.values(rooms)
+            .filter((room) => room.gameStarted || room.lobbyActive).length,
+        activeSockets: io.engine.clientsCount,
+        cpuPercent: intervalMicros > 0
+            ? ((cpu.user + cpu.system) / intervalMicros) * 100
+            : null,
+        memoryRssBytes: process.memoryUsage().rss
+    });
+    previousMetricCpu = process.cpuUsage();
+    previousMetricTime = now;
+    const { players, ...summary } = metrics.bytesSentPerPlayer;
+    console.info('[REALTIME_METRICS]', JSON.stringify({
+        ...metrics,
+        bytesSentPerPlayer: {
+            ...summary,
+            activePlayers: players.length
+        }
+    }));
+}, 60_000);
+realtimeMetricsInterval.unref();
 setInterval(ensureRooms, 30000); // repone salas destruidas por el admin
 
 // Throttle del broadcast de salas: las acciones del admin son inmediatas (immediate=true);
@@ -3000,6 +3046,7 @@ function ipDeSocket(socket) {
 }
 
 io.on('connection', (socket) => {
+    socket.onAny((event) => realtimeMetrics.recordInboundEvent(event));
     socket.isAdmin = false;
     socket.adminAuthenticatedAt = 0;
     if (socket.recovered && socket.data?.roomId) {
@@ -3728,7 +3775,7 @@ io.on('connection', (socket) => {
             ok: selected,
             message: selected ? 'Equipo actualizado.' : 'No hay cupo en ese equipo o la partida ya está bloqueada.'
         });
-        if (selected) io.to(room.id).volatile.emit('gameState', room.getState());
+        if (selected) emitGameState(room);
     });
 
     socket.on('updateTeamProfile', (profile) => {
@@ -3741,7 +3788,7 @@ io.on('connection', (socket) => {
                 ? 'Nombre y color del equipo actualizados.'
                 : 'Solo el líder puede editar nombre y color antes de la cuenta atrás.'
         });
-        if (updated) io.to(room.id).volatile.emit('gameState', room.getState());
+        if (updated) emitGameState(room);
     });
 
     socket.on('playerShoot', (shootData) => {

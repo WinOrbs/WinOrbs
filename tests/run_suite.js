@@ -21,6 +21,7 @@ const suites = Object.freeze({
         'test_lobby.js',
         'test_png_sprites.js',
         'test_red.js',
+        'test_realtime_metrics.js',
         'test_retiros.js',
         'test_score_domain.js',
         'test_skins.js',

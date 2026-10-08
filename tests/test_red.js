@@ -113,7 +113,7 @@ check('update() se sigue llamando ANTES de decidir si se emite (simulación a 60
     /this\.update\(\);[\s\S]{0,400}this\.tick\+\+/.test(server));
 check('el intervalo reduce estados a 1 Hz fuera de partida y mantiene 30 Hz en juego',
     /const ticksPerEmission = this\.gameStarted \? TICK_EMITIR_CADA : 60;/.test(server) &&
-    /this\.tick % ticksPerEmission !== 0\) return;/.test(server));
+    /this\.tick % ticksPerEmission !== 0\) \{[\s\S]{0,140}?realtimeMetrics\.recordTick[\s\S]{0,80}?return;/.test(server));
 check('sigue usando volatile (no encola estados atrasados)',
     /volatile\.emit\('gameState'/.test(server));
 check('las salas en espera no ejecutan la simulación',
@@ -133,7 +133,8 @@ const cuerpoLoop = server.slice(iniLoop, finLoop > 0 ? finLoop : iniLoop + 3000)
 check('la simulación sigue a 60 Hz (update dentro de un setInterval de 1000/60)',
     /setInterval\(\(\) => \{[\s\S]*?this\.update\(\);[\s\S]*?\}, 1000 \/ 60\);/.test(cuerpoLoop));
 check('la emisión va por debajo de la simulación (30 Hz < 60 Hz)',
-    /this\.update\(\);[\s\S]*this\.tick\+\+;[\s\S]*volatile\.emit\('gameState'/.test(cuerpoLoop));
+    /this\.update\(\);[\s\S]*this\.tick\+\+;[\s\S]*emitGameState\(this\)/.test(cuerpoLoop) &&
+    /io\.to\(room\.id\)\.volatile\.emit\('gameState', state\)/.test(server));
 check('TICK_EMITIR_CADA divide 2 → 30 Hz de emisión',
     /TICK_EMITIR_CADA = config\.timing\.ticksPerEmission/.test(server) &&
     /ticksPerEmission:\s*2/.test(configDefaults));
