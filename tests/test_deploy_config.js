@@ -54,8 +54,13 @@ assert.ok(httpServer.includes("app.get('/sw.js', (req, res) => res.sendFile(root
 assert.ok(indexHtml.includes("script.dataset.zone = '11978865'"), 'SOLO lobby must load the configured Monetag vignette zone');
 assert.ok(indexHtml.includes("script.src = 'https://n6wxm.com/vignette.min.js'"), 'SOLO lobby must load the Monetag vignette script');
 assert.ok(
-    /botonModoSolo\.disabled = true;\s+cargarViñetaMonetagPractica\(\);\s+try \{\s+await entrarPracticaBots\(nick\);/.test(indexHtml),
-    'lobby must load Monetag when SOLO is selected, before requesting practice entry'
+    /const monetagReady = cargarViñetaMonetagPractica\(\);\s+try \{\s+await entrarPracticaBots\(nick, monetagReady\);/.test(indexHtml) &&
+        /await monetagReady;\s+window\.location\.href = `game\.html/.test(indexHtml),
+    'lobby must wait for Monetag to load before navigating to practice'
+);
+assert.ok(
+    /}, 5000\);\s+script\.dataset\.zone = '11978865';/.test(indexHtml),
+    'a slow Monetag response must not prevent the practice from starting'
 );
 assert.ok(
     !gameHtml.includes('n6wxm.com/vignette.min.js') && !gameHtml.includes('cargarViñetaMonetagPractica'),

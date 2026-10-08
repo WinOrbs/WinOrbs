@@ -1720,21 +1720,48 @@
             });
         }
 
-        let monetagVignetteRequested = false;
+        let monetagVignettePromise = null;
         function cargarViñetaMonetagPractica() {
-            if (monetagVignetteRequested ||
-                document.querySelector('script[data-zone="11978865"]')) return;
-            monetagVignetteRequested = true;
-            const script = document.createElement('script');
-            script.dataset.zone = '11978865';
-            script.src = 'https://n6wxm.com/vignette.min.js';
-            script.async = true;
-            script.onload = () => console.info('Viñeta Monetag cargada para la práctica SOLO.');
-            script.onerror = () => console.warn('No se pudo cargar la viñeta Monetag para la práctica SOLO.');
-            (document.head || document.documentElement).appendChild(script);
+            if (monetagVignettePromise) return monetagVignettePromise;
+            if (document.querySelector('script[data-zone="11978865"]')) {
+                monetagVignettePromise = Promise.resolve(true);
+                return monetagVignettePromise;
+            }
+            monetagVignettePromise = new Promise((resolve) => {
+                const script = document.createElement('script');
+                let settled = false;
+                const finish = (loaded) => {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(timeout);
+                    resolve(loaded);
+                };
+                const timeout = setTimeout(() => {
+                    console.warn('Tiempo agotado al cargar la viñeta Monetag; se continuará con la práctica.');
+                    finish(false);
+                }, 5000);
+                script.dataset.zone = '11978865';
+                script.src = 'https://n6wxm.com/vignette.min.js';
+                script.async = true;
+                script.onload = () => {
+                    console.info('Script de viñeta Monetag cargado para la práctica SOLO.');
+                    finish(true);
+                };
+                script.onerror = () => {
+                    console.warn('No se pudo cargar la viñeta Monetag; se continuará con la práctica.');
+                    finish(false);
+                };
+                try {
+                    (document.head || document.documentElement).appendChild(script);
+                } catch (error) {
+                    console.warn('No se pudo insertar el script de Monetag; se continuará con la práctica.', error);
+                    finish(false);
+                }
+            });
+            return monetagVignettePromise;
         }
 
-        async function entrarPracticaBots(nick) {
+        async function entrarPracticaBots(nick, monetagReady) {
             const result = await crearSalaPracticaBots();
             if (!result || result.ok !== true || !result.roomId || !result.password) {
                 alert((result && result.error) || 'No se pudo crear la práctica con bots.');
@@ -1745,6 +1772,7 @@
             sessionStorage.setItem('mi_sala_id', result.roomId);
             sessionStorage.setItem('mi_sala_password', result.password);
             sessionStorage.setItem('room_pot', '0.00');
+            await monetagReady;
             window.location.href = `game.html?sala=${encodeURIComponent(result.roomId)}`;
         }
 
@@ -1758,9 +1786,9 @@
             }
             practicaPendiente = true;
             botonModoSolo.disabled = true;
-            cargarViñetaMonetagPractica();
+            const monetagReady = cargarViñetaMonetagPractica();
             try {
-                await entrarPracticaBots(nick);
+                await entrarPracticaBots(nick, monetagReady);
             } finally {
                 practicaPendiente = false;
                 botonModoSolo.disabled = false;
