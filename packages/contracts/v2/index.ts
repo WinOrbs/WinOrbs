@@ -1,5 +1,7 @@
 'use strict';
+
 const SCHEMA_VERSION = 1;
+
 const GAME_COMMAND_TYPES = Object.freeze([
     'MovePlayer',
     'Shoot',
@@ -9,7 +11,8 @@ const GAME_COMMAND_TYPES = Object.freeze([
     'Reload',
     'PickupLoot',
     'Respawn'
-]);
+] as const);
+
 const GAME_EVENT_TYPES = Object.freeze([
     'PlayerMoved',
     'ShotFired',
@@ -25,7 +28,8 @@ const GAME_EVENT_TYPES = Object.freeze([
     'ScoreUpdated',
     'MatchStarted',
     'MatchFinished'
-]);
+] as const);
+
 const MATCH_LIFECYCLE = Object.freeze([
     'WAITING',
     'READY',
@@ -35,7 +39,8 @@ const MATCH_LIFECYCLE = Object.freeze([
     'RESULT_LOCKED',
     'SETTLING',
     'SETTLED'
-]);
+] as const);
+
 const MATCH_FINISH_REASONS = Object.freeze([
     'LAST_PLAYER',
     'TIME_LIMIT',
@@ -44,7 +49,8 @@ const MATCH_FINISH_REASONS = Object.freeze([
     'DRAW',
     'ADMIN_TERMINATED',
     'SERVER_ABORTED'
-]);
+] as const);
+
 const CONTRACT_ERRORS = Object.freeze({
     INVALID_COMMAND: 'INVALID_COMMAND',
     INVALID_EVENT: 'INVALID_EVENT',
@@ -55,6 +61,7 @@ const CONTRACT_ERRORS = Object.freeze({
     INVALID_PAYLOAD: 'INVALID_PAYLOAD',
     INVALID_SEQUENCE: 'INVALID_SEQUENCE'
 });
+
 const contracts = Object.freeze({
     SCHEMA_VERSION,
     GAME_COMMAND_TYPES,
@@ -63,5 +70,5 @@ const contracts = Object.freeze({
     MATCH_FINISH_REASONS,
     CONTRACT_ERRORS
 });
-module.exports = contracts;
-//# sourceMappingURL=index.js.map
+
+export = contracts;
