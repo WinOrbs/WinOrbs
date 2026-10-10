@@ -1146,9 +1146,10 @@ class GameRoom {
         bot.botNextShotAt = 0;
         bot.botNextBombAt = 0;
         bot.botNextDashAt = 0;
-        bot.botLastMoveAt = 0;
+        bot.botLastMoveAt = Date.now();
         bot.botLastX = bot.x;
         bot.botLastY = bot.y;
+        bot.botLastMoveAngle = null;
         bot.botWanderAngle = Math.random() * Math.PI * 2;
         bot.botStrafeDir = Math.random() < 0.5 ? -1 : 1;
         bot.botPatrolSeed = Math.random() * Math.PI * 2;
@@ -2120,7 +2121,7 @@ class GameRoom {
             }
 
             const distToGoal = goal ? Math.hypot(bot.x - goal.x, bot.y - goal.y) : Infinity;
-            const stuckForTooLong = !!bot.botLastMoveAt && (now - bot.botLastMoveAt) > 1800 && distToGoal < 48;
+            const stuckForTooLong = !!bot.botAI?.moving && now - bot.botLastMoveAt > 1100;
             if (goalType === 'wander') {
                 if (!bot.botTarget || distToGoal < 34 || stuckForTooLong || now >= (bot.botNextDecisionAt || 0)) {
                     const angle = bot.botPatrolSeed + this.tick * 0.09 + Math.random() * 1.6;
@@ -2151,11 +2152,69 @@ class GameRoom {
             }
 
             const distanceToGoal = Math.hypot(goal.x - bot.x, goal.y - bot.y);
-            const moveAngle = goalType === 'engage' && target && targetDistance < 350
+            let moveAngle = goalType === 'engage' && target && targetDistance < 350
                 ? angle + bot.botStrafeDir * (Math.PI / 2.2)
                 : angle;
             const moving = distanceToGoal > (goal === this.bankZone ? this.bankZone.radius * 0.8 : 34)
                 || (goalType === 'engage' && target && targetDistance > 140);
+
+            if (moving) {
+                const solids = this.walls.concat(this.obstacles);
+                const directionAt = (directionAngle) => {
+                    let x = Math.cos(directionAngle);
+                    let y = Math.sin(directionAngle);
+                    if (Math.abs(x) < 0.2) x = 0;
+                    if (Math.abs(y) < 0.2) y = 0;
+                    if (x !== 0 && y !== 0) {
+                        x *= 0.7071;
+                        y *= 0.7071;
+                    }
+                    return { x, y };
+                };
+                const isClear = (directionAngle) => {
+                    const direction = directionAt(directionAngle);
+                    const lookAhead = bot.radius + 30;
+                    for (let distance = 12; distance <= lookAhead; distance += 12) {
+                        const x = bot.x + direction.x * distance;
+                        const y = bot.y + direction.y * distance;
+                        if (x < bot.radius || x > MAP_SIZE - bot.radius ||
+                            y < bot.radius || y > MAP_SIZE - bot.radius) return false;
+                        const hitsSolid = solids.some((solid) => {
+                            if (solid.hp <= 0) return false;
+                            const nearestX = Math.max(solid.x, Math.min(x, solid.x + solid.w));
+                            const nearestY = Math.max(solid.y, Math.min(y, solid.y + solid.h));
+                            return Math.hypot(x - nearestX, y - nearestY) < bot.radius + 5;
+                        });
+                        if (hitsSolid) return false;
+                    }
+                    return true;
+                };
+                const candidates = [0, 1, -1, 2, -2, 3, -3, 4].map((step) =>
+                    moveAngle + step * Math.PI / 4);
+                const viable = candidates.filter(isClear);
+                if (viable.length) {
+                    const scoreDirection = (candidate) => {
+                        const direction = directionAt(candidate);
+                        const projectedDistance = Math.hypot(
+                            goal.x - (bot.x + direction.x * 54),
+                            goal.y - (bot.y + direction.y * 54)
+                        );
+                        const turnCost = Math.abs(Math.atan2(
+                            Math.sin(candidate - moveAngle),
+                            Math.cos(candidate - moveAngle)
+                        )) * 20;
+                        const reverseCost = stuckForTooLong && bot.botLastMoveAngle !== null &&
+                            Math.cos(candidate - bot.botLastMoveAngle) > 0.7 ? 100 : 0;
+                        return projectedDistance + turnCost + reverseCost;
+                    };
+                    moveAngle = viable.reduce((best, candidate) =>
+                        scoreDirection(candidate) < scoreDirection(best) ? candidate : best);
+                } else if (stuckForTooLong) {
+                    moveAngle = bot.botLastMoveAngle === null
+                        ? moveAngle + Math.PI
+                        : bot.botLastMoveAngle + Math.PI;
+                }
+            }
 
             bot.inputs = moving ? {
                 w: Math.sin(moveAngle) < -0.2,
@@ -2174,6 +2233,7 @@ class GameRoom {
 
             if (bot.x !== bot.botLastX || bot.y !== bot.botLastY) {
                 bot.botLastMoveAt = now;
+                bot.botLastMoveAngle = Math.atan2(bot.y - bot.botLastY, bot.x - bot.botLastX);
                 bot.botLastX = bot.x;
                 bot.botLastY = bot.y;
             }
