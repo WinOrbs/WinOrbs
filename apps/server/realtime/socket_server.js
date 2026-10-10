@@ -6,7 +6,8 @@ const { SOCKET_IO_DEFAULTS } = require('../config/defaults');
 function createSocketServer(server, {
     isOriginAllowed,
     ServerClass = Server,
-    socketConfig = SOCKET_IO_DEFAULTS
+    socketConfig = SOCKET_IO_DEFAULTS,
+    logger
 } = {}) {
     if (!server) {
         throw new TypeError('An HTTP server is required');
@@ -23,7 +24,7 @@ function createSocketServer(server, {
         throw new TypeError('A valid Socket.IO configuration is required');
     }
 
-    return new ServerClass(server, {
+    const socketServer = new ServerClass(server, {
         connectionStateRecovery: { ...socketConfig.connectionStateRecovery },
         cors: {
             origin: (origin, callback) => {
@@ -34,6 +35,21 @@ function createSocketServer(server, {
             credentials: socketConfig.corsCredentials
         }
     });
+
+    if (logger && typeof logger.warn === 'function' && socketServer.engine &&
+        typeof socketServer.engine.on === 'function') {
+        let lastConnectionErrorAt = 0;
+        socketServer.engine.on('connection_error', () => {
+            const now = Date.now();
+            if (now - lastConnectionErrorAt < 60_000) return;
+            lastConnectionErrorAt = now;
+            logger.warn('socket.connection_rejected', {
+                errorCode: 'SOCKET_HANDSHAKE_REJECTED'
+            });
+        });
+    }
+
+    return socketServer;
 }
 
 module.exports = Object.freeze({ createSocketServer });

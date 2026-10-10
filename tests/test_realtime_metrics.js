@@ -1,7 +1,10 @@
 'use strict';
 
 const assert = require('assert');
-const { createRealtimeMetrics } = require('../apps/server/realtime/metrics');
+const {
+    createRealtimeMetrics,
+    summarizeOperationalMetrics
+} = require('../apps/server/realtime/metrics');
 
 assert.throws(() => createRealtimeMetrics({ sampleEvery: 0 }), TypeError);
 const metrics = createRealtimeMetrics({ sampleEvery: 2, maxTickSamples: 3 });
@@ -49,6 +52,12 @@ assert.strictEqual(snapshot.tickDurationMs.p95, 8);
 assert.strictEqual(snapshot.tickDurationMs.p99, 8);
 assert.strictEqual(snapshot.cpuPercent, 12.5);
 assert.strictEqual(snapshot.memoryRssBytes, 1024);
+const operationalSummary = summarizeOperationalMetrics(snapshot, { activeRooms: 8 });
+assert.strictEqual(operationalSummary.activeRooms, 8);
+assert.strictEqual(operationalSummary.activeSockets, 2);
+assert.strictEqual(operationalSummary.tickP95Ms, 8);
+assert.strictEqual(JSON.stringify(operationalSummary).includes('socket-1'), false);
+assert.strictEqual(JSON.stringify(operationalSummary).includes('playerInput'), false);
 assert.strictEqual(metrics.snapshot().tickDurationMs.samples, 0);
 
 const nextState = { players: { p1: { x: 10, y: 20 }, p2: { x: 30, y: 40 } } };

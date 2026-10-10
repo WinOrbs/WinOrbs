@@ -5,7 +5,11 @@ const config = require('./apps/server/config');
 const { isOriginAllowed, adminPassword } = config;
 const { createHttpServer } = require('./apps/server/http');
 const { createSocketServer } = require('./apps/server/realtime/socket_server');
-const { createRealtimeMetrics } = require('./apps/server/realtime/metrics');
+const {
+    createRealtimeMetrics,
+    summarizeOperationalMetrics
+} = require('./apps/server/realtime/metrics');
+const { createStructuredLogger } = require('./apps/server/observability/logger');
 const { initializeFirebase } = require('./apps/server/infrastructure/firebase');
 const {
     normalizeCommand,
@@ -58,17 +62,21 @@ const {
 } = require('./apps/server/platform/progression');
 const crypto = require('crypto');
 const { performance } = require('node:perf_hooks');
+const logger = createStructuredLogger();
 
 let firebaseRuntime = null;
 const { app, server } = createHttpServer({
     rootDir: __dirname,
     isOriginAllowed,
     trustProxy: config.server.trustProxy,
-    getFirebaseRuntime: () => firebaseRuntime
+    getFirebaseRuntime: () => firebaseRuntime,
+    isReady: () => Boolean(io && firebaseRuntime),
+    logger
 });
 const io = createSocketServer(server, {
     isOriginAllowed,
-    socketConfig: config.socketIO
+    socketConfig: config.socketIO,
+    logger
 });
 
 const MAP_SIZE = 5000;
@@ -2843,28 +2851,29 @@ ensureRooms();
 let previousMetricCpu = process.cpuUsage();
 let previousMetricTime = process.hrtime.bigint();
 const realtimeMetricsInterval = setInterval(() => {
-    const now = process.hrtime.bigint();
-    const intervalMicros = Number(now - previousMetricTime) / 1000;
-    const cpu = process.cpuUsage(previousMetricCpu);
-    const metrics = realtimeMetrics.snapshot({
-        activeMatches: Object.values(rooms)
-            .filter((room) => room.gameStarted || room.lobbyActive).length,
-        activeSockets: io.engine.clientsCount,
-        cpuPercent: intervalMicros > 0
-            ? ((cpu.user + cpu.system) / intervalMicros) * 100
-            : null,
-        memoryRssBytes: process.memoryUsage().rss
-    });
-    previousMetricCpu = process.cpuUsage();
-    previousMetricTime = now;
-    const { players, ...summary } = metrics.bytesSentPerPlayer;
-    console.info('[REALTIME_METRICS]', JSON.stringify({
-        ...metrics,
-        bytesSentPerPlayer: {
-            ...summary,
-            activePlayers: players.length
-        }
-    }));
+    try {
+        const now = process.hrtime.bigint();
+        const intervalMicros = Number(now - previousMetricTime) / 1000;
+        const cpu = process.cpuUsage(previousMetricCpu);
+        const metrics = realtimeMetrics.snapshot({
+            activeMatches: Object.values(rooms)
+                .filter((room) => room.gameStarted || room.lobbyActive).length,
+            activeSockets: io.engine.clientsCount,
+            cpuPercent: intervalMicros > 0
+                ? ((cpu.user + cpu.system) / intervalMicros) * 100
+                : null,
+            memoryRssBytes: process.memoryUsage().rss
+        });
+        previousMetricCpu = process.cpuUsage();
+        previousMetricTime = now;
+        logger.info('realtime.metrics', summarizeOperationalMetrics(metrics, {
+            activeRooms: Object.keys(rooms).length
+        }));
+    } catch {
+        logger.error('realtime.metrics.collection_failed', {
+            errorCode: 'METRICS_COLLECTION_FAILED'
+        });
+    }
 }, 60_000);
 realtimeMetricsInterval.unref();
 setInterval(ensureRooms, 30000); // repone salas destruidas por el admin
@@ -3898,8 +3907,5 @@ io.on('connection', (socket) => {
 
 const PORT = config.server.port;
 server.listen(PORT, config.server.host, () => {
-    // El mensaje antes decía "localhost" fijo, que en Render (donde PORT lo
-    // inyecta la plataforma) daba a entender que escuchaba en local. Se imprime
-    // el puerto real para que el log diga la verdad.
-    console.log('Servidor WinOrbs escuchando en el puerto ' + PORT);
+    logger.info('server.started', { port: PORT, ready: true });
 });
