@@ -1152,6 +1152,7 @@ class GameRoom {
         bot.botNextBombAt = 0;
         bot.botNextDashAt = 0;
         bot.botLastMoveAt = Date.now();
+        bot.botNextStuckRecoveryAt = 0;
         bot.botLastX = bot.x;
         bot.botLastY = bot.y;
         bot.botLastMoveAngle = null;
@@ -1447,6 +1448,7 @@ class GameRoom {
             p.botRoute = null;
             p.botNextDecisionAt = 0;
             p.botLastMoveAt = Date.now();
+            p.botNextStuckRecoveryAt = 0;
             p.botLastX = p.x;
             p.botLastY = p.y;
             p.botLastMoveAngle = null;
@@ -2211,7 +2213,8 @@ class GameRoom {
                 goalType = 'engage';
             }
 
-            const stuckForTooLong = !!bot.botAI?.moving && now - bot.botLastMoveAt > 1000;
+            const stuckForTooLong = this.isPractice && now - bot.botLastMoveAt > 900 &&
+                now >= (bot.botNextStuckRecoveryAt || 0);
             if (goalType === 'wander') {
                 const wanderDistance = bot.botTarget
                     ? Math.hypot(bot.x - bot.botTarget.x, bot.y - bot.botTarget.y)
@@ -2302,10 +2305,17 @@ class GameRoom {
             const reachedUnreachableGoal = routeIndex >= waypoints.length && routeEnd &&
                 Math.hypot(routeEnd.x - goal.x, routeEnd.y - goal.y) > 55 &&
                 Math.hypot(routeEnd.x - bot.x, routeEnd.y - bot.y) < 48;
-            if (reachedUnreachableGoal) moving = false;
-            if (moving && (routeIdentityChanged || (goalShifted && routeAge >= 350) ||
-                routeExpired || stuckForTooLong ||
-                (waypoints.length > 0 && routeIndex >= waypoints.length))) {
+            const retryUnreachableGoal = reachedUnreachableGoal && goalType === 'engage' &&
+                (routeExpired || (goalShifted && routeAge >= 350));
+            // An exhausted approach route must not cancel combat orbit movement.
+            if (reachedUnreachableGoal && shouldOrbit) moving = true;
+            else if (retryUnreachableGoal) moving = true;
+            else if (reachedUnreachableGoal) moving = false;
+            const shouldReplan = routeIdentityChanged || (goalShifted && routeAge >= 350) ||
+                (routeExpired && (!reachedUnreachableGoal || retryUnreachableGoal)) ||
+                stuckForTooLong ||
+                (waypoints.length > 0 && routeIndex >= waypoints.length && !reachedUnreachableGoal);
+            if (moving && shouldReplan) {
                 waypoints = this.botNavigation.pathfinder.findPath(bot, goal) || [];
                 routeIndex = 0;
                 bot.botRoute = {
@@ -2316,6 +2326,13 @@ class GameRoom {
                     index: 0,
                     computedAt: now
                 };
+                if (stuckForTooLong) {
+                    bot.botNextStuckRecoveryAt = now + 1500;
+                    if (goalType === 'engage') {
+                        bot.botStrafeDir *= -1;
+                        bot.botOrbitAngle = null;
+                    }
+                }
             }
             if (bot.botRoute) bot.botRoute.index = routeIndex;
 

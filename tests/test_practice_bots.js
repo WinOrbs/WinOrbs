@@ -15,6 +15,14 @@ const methodStart = source.indexOf('    updateBots() {');
 const methodEnd = source.indexOf('    update() {', methodStart);
 assert.ok(methodStart >= 0 && methodEnd > methodStart, 'practice bot update method exists');
 const methodSource = source.slice(methodStart, methodEnd);
+const physicsStart = source.indexOf('            let moveX = 0, moveY = 0;', methodEnd);
+const physicsEnd = source.indexOf('            p.isExtracting =', physicsStart);
+assert.ok(physicsStart >= 0 && physicsEnd > physicsStart, 'server player movement physics exists');
+const physicsSource = source.slice(physicsStart, physicsEnd);
+const updateStart = source.indexOf('    update() {', methodEnd);
+assert.ok(updateStart >= methodEnd &&
+    source.indexOf('if (this.isPractice) this.updateBots();', updateStart) < updateStart + 200,
+    'bot AI remains limited to SOLO practice rooms');
 
 let now = 1_000_000;
 class TestDate extends Date {
@@ -26,7 +34,7 @@ class TestDate extends Date {
 const sandbox = {
     Date: TestDate,
     Math,
-    MAP_SIZE: 1500,
+    MAP_SIZE: 5000,
     ITEM_COSTOS: { medkit: 30, shield: 50, bomb: 40, orbGun: 100 },
     RECARGA_ORBES_COSTE: 25,
     createPathfinder,
@@ -36,6 +44,8 @@ const sandbox = {
 };
 const Room = new Function('sandbox',
     'with (sandbox) { return class Room { ' + methodSource + ' }; }')(sandbox);
+const applyServerMovement = new Function('sandbox',
+    'with (sandbox) { return function (p) { ' + physicsSource + ' }; }')(sandbox);
 
 function createPlayer(id, overrides = {}) {
     return {
@@ -62,6 +72,8 @@ function createPlayer(id, overrides = {}) {
         botWanderAngle: 0,
         botPatrolSeed: 0,
         botStrafeDir: 1,
+        botNextOrbitAt: 0,
+        botOrbitAngle: null,
         botNextDecisionAt: 9_999_999,
         botLastMoveAt: now,
         botLastX: 0,
@@ -87,6 +99,7 @@ function createRoom(bot, human, wall) {
         players: { [bot.id]: bot, [human.id]: human },
         walls: wall ? [wall] : [],
         obstacles: [],
+        speedPads: [],
         droppedEnergy: [],
         droppedHealthKits: [],
         zoneCx: 250,
@@ -109,32 +122,9 @@ function createRoom(bot, human, wall) {
     return room;
 }
 
-function advanceWithServerCollision(player, solids) {
-    let moveX = Number(player.inputs.d) - Number(player.inputs.a);
-    let moveY = Number(player.inputs.s) - Number(player.inputs.w);
-    if (moveX && moveY) {
-        moveX *= 0.7071;
-        moveY *= 0.7071;
-    }
-    player.x = Math.max(player.radius,
-        Math.min(1500 - player.radius, player.x + moveX * player.speed));
-    player.y = Math.max(player.radius,
-        Math.min(1500 - player.radius, player.y + moveY * player.speed));
-    for (const solid of solids) {
-        const nearestX = Math.max(solid.x, Math.min(player.x, solid.x + solid.w));
-        const nearestY = Math.max(solid.y, Math.min(player.y, solid.y + solid.h));
-        const dx = player.x - nearestX;
-        const dy = player.y - nearestY;
-        const distanceSquared = dx * dx + dy * dy;
-        if (distanceSquared >= player.radius * player.radius) continue;
-        if (distanceSquared > 0.0001) {
-            const distance = Math.sqrt(distanceSquared);
-            player.x = nearestX + dx / distance * player.radius;
-            player.y = nearestY + dy / distance * player.radius;
-        } else {
-            player.x = solid.x - player.radius;
-        }
-    }
+function advanceWithServerCollision(player, room) {
+    if (player.isDead) return;
+    applyServerMovement.call(room, player);
 }
 
 {
@@ -155,7 +145,7 @@ function advanceWithServerCollision(player, solids) {
         now += 17;
         room.tick++;
         room.updateBots();
-        advanceWithServerCollision(bot, room.walls);
+        advanceWithServerCollision(bot, room);
         greatestTravel = Math.max(greatestTravel, Math.hypot(bot.x - 150, bot.y - 250));
         if (bot.x > 270 && (bot.y < 78 || bot.y > 422)) clearedTheWall = true;
     }
@@ -171,6 +161,16 @@ function advanceWithServerCollision(player, solids) {
     room.updateBots();
     assert.equal(room.shots.length, 0, 'bot does not waste shots through solid cover');
     assert.equal(bot.botAI.mode, 'engage', 'bot still seeks an enemy behind cover');
+    for (let tick = 0; tick < 140; tick++) {
+        now += 17;
+        room.tick++;
+        room.updateBots();
+        advanceWithServerCollision(bot, room);
+    }
+    assert.ok(Math.hypot(bot.x - 100, bot.y - 250) > 200,
+        'bot travels around cover when it cannot see its target');
+    assert.equal(hasLineOfSight(bot, human, room.walls), true,
+        'bot reaches a position with a valid line of sight around cover');
 
     human.y = 700;
     now += 1000;
@@ -197,7 +197,7 @@ function advanceWithServerCollision(player, solids) {
         now += 17;
         room.tick++;
         room.updateBots();
-        advanceWithServerCollision(bot, []);
+        advanceWithServerCollision(bot, room);
     }
     assert.ok(bot.x > 700, 'bot keeps advancing toward the owner instead of stopping after spawning');
 }
@@ -224,13 +224,146 @@ function advanceWithServerCollision(player, solids) {
         now += 17;
         room.tick++;
         room.updateBots();
-        advanceWithServerCollision(bot, []);
+        advanceWithServerCollision(bot, room);
     }
     assert.ok(Math.hypot(bot.x - 600, bot.y - 600) > 100,
         'bot continues moving while it remains in firing range');
     const finalDistance = Math.hypot(bot.x - human.x, bot.y - human.y);
     assert.ok(finalDistance >= 150 && finalDistance <= 270,
         'bot orbits the target instead of standing still or blindly closing in');
+}
+
+{
+    const bot = createPlayer('bot', {
+        isBot: true,
+        x: 600,
+        y: 600,
+        botLastX: 600,
+        botLastY: 600,
+        botAI: { moving: false },
+        botLastMoveAt: now - 1000,
+        botRoute: {
+            key: 'engage:human',
+            goalX: 645.6,
+            goalY: 471.1,
+            waypoints: [{ x: 600, y: 600 }],
+            index: 0,
+            computedAt: now
+        }
+    });
+    const human = createPlayer('human', { x: 805, y: 600 });
+    const room = createRoom(bot, human, null);
+    room.practiceOwnerId = human.id;
+
+    room.updateBots();
+    assert.equal(bot.botAI.moving, true,
+        'combat orbit is not cancelled when a stale path ends short of the goal');
+    assert.equal(bot.botStrafeDir, -1, 'stuck recovery reverses the orbit direction');
+    assert.ok(bot.inputs.w || bot.inputs.a || bot.inputs.s || bot.inputs.d,
+        'stuck combat bot emits a new movement direction');
+    const start = { x: bot.x, y: bot.y };
+    advanceWithServerCollision(bot, room);
+    assert.ok(Math.hypot(bot.x - start.x, bot.y - start.y) > 0,
+        'stuck combat recovery results in actual physical displacement');
+}
+
+{
+    const bot = createPlayer('bot', { isBot: true, x: 600, y: 600 });
+    const human = createPlayer('human', { x: 1200, y: 600 });
+    const room = createRoom(bot, human, null);
+    room.practiceOwnerId = human.id;
+    room.updateBots();
+    room.botNavigation.pathfinder = { findPath: () => null };
+    bot.botRoute = null;
+    const start = { x: bot.x, y: bot.y };
+
+    for (let tick = 0; tick < 60; tick++) {
+        now += 17;
+        room.tick++;
+        room.updateBots();
+        advanceWithServerCollision(bot, room);
+    }
+
+    assert.ok(Math.hypot(bot.x - start.x, bot.y - start.y) > 200,
+        'empty navigation results fall back to direct safe movement instead of idling');
+}
+
+{
+    const human = createPlayer('human', { x: 2500, y: 2500 });
+    const bots = [
+        createPlayer('bot-east', { isBot: true, x: 1500, y: 2500 }),
+        createPlayer('bot-west', { isBot: true, x: 3500, y: 2500 }),
+        createPlayer('bot-north', { isBot: true, x: 2500, y: 1500 }),
+        createPlayer('bot-south', { isBot: true, x: 2500, y: 3500 }),
+        createPlayer('bot-diagonal', { isBot: true, x: 1800, y: 1800 })
+    ];
+    const room = createRoom(bots[0], human, {
+        id: 'wall-pursuit',
+        x: 1950,
+        y: 2300,
+        w: 80,
+        h: 400,
+        hp: 100
+    });
+    bots.slice(1).forEach((bot) => {
+        room.players[bot.id] = bot;
+        bot.botLastX = bot.x;
+        bot.botLastY = bot.y;
+    });
+    room.practiceOwnerId = human.id;
+    room.obstacles = [{
+        id: 'obstacle-pursuit',
+        x: 2380,
+        y: 2050,
+        w: 110,
+        h: 130,
+        hp: 100
+    }];
+    const samples = new Map(bots.map((bot) => [bot.id, {
+        start: { x: bot.x, y: bot.y },
+        distance: 0,
+        stillTicks: 0,
+        maxStillTicks: 0
+    }]));
+
+    for (let tick = 0; tick < 600; tick++) {
+        now += 1000 / 60;
+        room.tick++;
+        room.updateBots();
+        for (const bot of bots) {
+            const sample = samples.get(bot.id);
+            const before = { x: bot.x, y: bot.y };
+            advanceWithServerCollision(bot, room);
+            const stepDistance = Math.hypot(bot.x - before.x, bot.y - before.y);
+            sample.distance += stepDistance;
+            sample.stillTicks = stepDistance < 0.01 ? sample.stillTicks + 1 : 0;
+            sample.maxStillTicks = Math.max(sample.maxStillTicks, sample.stillTicks);
+        }
+    }
+
+    const report = bots.map((bot) => {
+        const sample = samples.get(bot.id);
+        return {
+            id: bot.id,
+            start: sample.start,
+            end: { x: bot.x, y: bot.y },
+            distance: Math.round(sample.distance),
+            maxStillTicks: sample.maxStillTicks
+        };
+    });
+    console.log('Five-bot 600-tick movement simulation:', JSON.stringify(report));
+    for (const result of report) {
+        assert.ok(result.distance > 300, `${result.id} accumulates real movement over 600 ticks`);
+        assert.ok(result.maxStillTicks < 90, `${result.id} does not remain stuck for 1.5 seconds`);
+    }
+    for (const bot of bots) {
+        for (const solid of [...room.walls, ...room.obstacles]) {
+            const nearestX = Math.max(solid.x, Math.min(bot.x, solid.x + solid.w));
+            const nearestY = Math.max(solid.y, Math.min(bot.y, solid.y + solid.h));
+            assert.ok(Math.hypot(bot.x - nearestX, bot.y - nearestY) >= bot.radius - 0.01,
+                `${bot.id} remains outside solid collision geometry`);
+        }
+    }
 }
 
 {
@@ -260,7 +393,7 @@ function advanceWithServerCollision(player, solids) {
         now += 17;
         room.tick++;
         room.updateBots();
-        advanceWithServerCollision(bot, []);
+        advanceWithServerCollision(bot, room);
     }
     now += 17;
     room.tick++;
@@ -274,10 +407,20 @@ function advanceWithServerCollision(player, solids) {
 }
 
 {
-    const bot = createPlayer('bot', { isBot: true, isDead: true, canRespawn: true });
+    const bot = createPlayer('bot', {
+        isBot: true,
+        isDead: true,
+        canRespawn: true,
+        inputs: { w: true, a: false, s: false, d: false, angle: 0 }
+    });
     const room = createRoom(bot, createPlayer('human'), null);
+    bot.x = 600;
+    bot.y = 600;
     room.updateBots();
     assert.deepEqual(room.respawned, ['bot'], 'eligible practice bots use the existing respawn flow');
+    advanceWithServerCollision(bot, room);
+    assert.deepEqual({ x: bot.x, y: bot.y }, { x: 600, y: 600 },
+        'dead bots do not move even if stale directional input remains');
 }
 
 console.log('OK practice bots: sustained movement, obstacle navigation, cover-aware combat, and respawn.');
