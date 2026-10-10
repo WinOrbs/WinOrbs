@@ -1156,6 +1156,7 @@ class GameRoom {
         bot.botLastY = bot.y;
         bot.botLastMoveAngle = null;
         bot.botRoute = null;
+        bot.botBankingOrbs = false;
         bot.botObservedTargets = Object.create(null);
         bot.botTargetPlayerId = null;
         bot.botNextPurchaseAt = 0;
@@ -2103,13 +2104,16 @@ class GameRoom {
                         (player.id === bot.botTargetPlayerId ? 70 : 0)
                 };
             }).sort((a, b) => a.score - b.score);
-            const target = enemyScores[0]?.player || null;
+            const practiceOwner = this.isPractice
+                ? enemies.find((player) => player.id === this.practiceOwnerId && !player.isBot)
+                : null;
+            const target = this.isPractice && this.practiceOwnerId
+                ? practiceOwner || null
+                : enemyScores[0]?.player || null;
             const targetDistance = target ? Math.hypot(target.x - bot.x, target.y - bot.y) : Infinity;
             const distToCenter = Math.hypot(bot.x - this.zoneCx, bot.y - this.zoneCy);
             const distToBank = this.bankZone ? Math.hypot(bot.x - this.bankZone.x, bot.y - this.bankZone.y) : Infinity;
 
-            const aggression = { hunter: 1.18, collector: 0.88, evader: 0.72, skirmisher: 1.05 }[personality] || 1;
-            const lootBias = { hunter: 0.9, collector: 1.4, evader: 1.1, skirmisher: 1 }[personality] || 1;
             const preferredRange = { hunter: 205, collector: 285, evader: 350, skirmisher: 245 }[personality] || 250;
             const nearestOrb = this.droppedEnergy.reduce((nearest, item) => {
                 const dist = Math.hypot(item.x - bot.x, item.y - bot.y);
@@ -2125,12 +2129,14 @@ class GameRoom {
             const enemyThreat = enemyScores.find(({ player, dist }) =>
                 dist < (personality === 'evader' ? 340 : 270) ||
                 (player.charge > bot.charge + 25 && dist < 420))?.player || null;
+            const practiceThreat = this.isPractice && targetDistance < 420 ? target : null;
             let lowHp = bot.hp < bot.maxHp * 0.38;
             const zoneCritical = this.zoneShrinking && distToCenter > this.zoneRadius - 95;
             if (now >= (bot.botNextPurchaseAt || 0)) {
                 let item = null;
                 if (lowHp && bot.charge >= ITEM_COSTOS.medkit) item = 'medkit';
-                else if (enemyThreat && bot.shield < 15 && bot.charge >= ITEM_COSTOS.shield) item = 'shield';
+                else if ((practiceThreat || enemyThreat) && bot.shield < 15 &&
+                    bot.charge >= ITEM_COSTOS.shield) item = 'shield';
                 else if (targetDistance < 260 && bot.bombs < 1 && bot.charge >= ITEM_COSTOS.bomb) item = 'bomb';
                 else if (!bot.hasOrbGun && bot.charge >= ITEM_COSTOS.orbGun) item = 'orbGun';
                 if (item) {
@@ -2139,16 +2145,34 @@ class GameRoom {
                     lowHp = bot.hp < bot.maxHp * 0.38;
                 }
             }
-            const urgentEscape = zoneCritical || !!(enemyThreat && (lowHp || bot.hp < 45));
-            const bankThreshold = personality === 'collector' ? 50 : 70;
-            const shouldBank = bot.charge >= bankThreshold && this.bankZone &&
-                (distToBank < 1050 || bot.charge >= bankThreshold * 1.5);
-            const shouldLoot = bot.charge < (personality === 'collector' ? 85 : 65) &&
-                nearestOrb && nearestOrb.dist < 950 * lootBias;
+            const urgentEscape = zoneCritical ||
+                (!this.isPractice && !!(enemyThreat && (lowHp || bot.hp < 45)));
+            const orbDetour = target && nearestOrb
+                ? nearestOrb.dist + Math.hypot(
+                    target.x - nearestOrb.item.x,
+                    target.y - nearestOrb.item.y
+                ) - targetDistance
+                : nearestOrb?.dist ?? Infinity;
+            const shouldLoot = bot.charge < 65 && nearestOrb &&
+                nearestOrb.dist <= 180 && targetDistance > 220 &&
+                (!target || orbDetour <= 180);
+            const bankDetour = target && this.bankZone
+                ? distToBank + Math.hypot(
+                    target.x - this.bankZone.x,
+                    target.y - this.bankZone.y
+                ) - targetDistance
+                : distToBank;
+            if (bot.botBankingOrbs &&
+                (bot.charge <= 0 || targetDistance <= 220)) {
+                bot.botBankingOrbs = false;
+            }
+            if (!bot.botBankingOrbs && bot.charge >= 70 && this.bankZone &&
+                targetDistance > 260 && (distToBank <= 230 || bankDetour <= 180)) {
+                bot.botBankingOrbs = true;
+            }
+            const shouldBank = bot.botBankingOrbs;
             const shouldUseKit = lowHp && nearestKit && nearestKit.dist < 750;
-            const shouldChase = !!(target && targetDistance <
-                (personality === 'evader' ? 570 : 820) * aggression &&
-                (!urgentEscape || targetDistance < 220));
+            const shouldChase = !!target && (!urgentEscape || targetDistance < 220);
 
             let goal = bot.botTarget || {
                 x: bot.x + Math.cos(bot.botWanderAngle) * 120,
@@ -2389,9 +2413,10 @@ class GameRoom {
                 bot.botNextShotAt = now + 420 + Math.random() * 240;
             }
 
-            if (goalType === 'flee' && enemyThreat && now >= bot.botNextDashAt) {
+            if (goalType === 'engage' && target &&
+                targetDistance > preferredRange + 180 && now >= bot.botNextDashAt) {
                 this.handleDash(bot.id);
-                bot.botNextDashAt = now + 1100 + Math.random() * 700;
+                bot.botNextDashAt = now + 850 + Math.random() * 350;
             }
 
             if (goalType === 'engage' && target && targetDistance < 240 &&
@@ -4066,6 +4091,7 @@ io.on('connection', (socket) => {
         socket.emit('joinedSuccess', { playerId: socket.id, roomId: room.id });
         if (room.isPractice && !room.practiceOwnerJoined) {
             room.practiceOwnerJoined = true;
+            room.practiceOwnerId = socket.id;
             if (room.practiceExpiryTimer) clearTimeout(room.practiceExpiryTimer);
             const botColors = [
                 ['#fb7185', '#be123c', '#fecdd3'],

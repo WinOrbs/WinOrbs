@@ -26,7 +26,7 @@ class TestDate extends Date {
 const sandbox = {
     Date: TestDate,
     Math,
-    MAP_SIZE: 500,
+    MAP_SIZE: 1500,
     ITEM_COSTOS: { medkit: 30, shield: 50, bomb: 40, orbGun: 100 },
     RECARGA_ORBES_COSTE: 25,
     createPathfinder,
@@ -81,6 +81,7 @@ function createPlayer(id, overrides = {}) {
 
 function createRoom(bot, human, wall) {
     const room = Object.assign(new Room(), {
+        isPractice: true,
         gameStarted: true,
         tick: 0,
         players: { [bot.id]: bot, [human.id]: human },
@@ -94,6 +95,7 @@ function createRoom(bot, human, wall) {
         zoneShrinking: false,
         bankZone: { x: 250, y: 250, radius: 30 },
         shots: [],
+        dashes: [],
         respawned: [],
         purchases: []
     });
@@ -101,7 +103,7 @@ function createRoom(bot, human, wall) {
     room.handleBuyItem = (id, item) => room.purchases.push({ id, item });
     room.handleSwitchWeapon = () => {};
     room.handleShoot = (id, shot) => room.shots.push({ id, shot });
-    room.handleDash = () => {};
+    room.handleDash = (id) => room.dashes.push(id);
     room.lanzarBomba = () => {};
     room.handleReload = () => {};
     return room;
@@ -115,9 +117,9 @@ function advanceWithServerCollision(player, solids) {
         moveY *= 0.7071;
     }
     player.x = Math.max(player.radius,
-        Math.min(500 - player.radius, player.x + moveX * player.speed));
+        Math.min(1500 - player.radius, player.x + moveX * player.speed));
     player.y = Math.max(player.radius,
-        Math.min(500 - player.radius, player.y + moveY * player.speed));
+        Math.min(1500 - player.radius, player.y + moveY * player.speed));
     for (const solid of solids) {
         const nearestX = Math.max(solid.x, Math.min(player.x, solid.x + solid.w));
         const nearestY = Math.max(solid.y, Math.min(player.y, solid.y + solid.h));
@@ -174,6 +176,70 @@ function advanceWithServerCollision(player, solids) {
     now += 1000;
     room.updateBots();
     assert.ok(room.shots.length > 0, 'bot fires when the target becomes visible');
+}
+
+{
+    const bot = createPlayer('bot', { isBot: true, x: 150, y: 250 });
+    const human = createPlayer('human', { x: 1400, y: 250 });
+    const room = createRoom(bot, human, null);
+    const rivalBot = createPlayer('nearby-bot', { isBot: true, x: 190, y: 250 });
+    room.players[rivalBot.id] = rivalBot;
+    room.practiceOwnerId = human.id;
+
+    room.updateBots();
+
+    assert.equal(bot.botAI.targetId, human.id, 'practice bots prioritize the owner over nearby bots');
+    assert.equal(bot.botAI.mode, 'engage', 'practice bots pursue the owner at any map distance');
+    assert.equal(bot.botAI.moving, true, 'distant pursuit does not leave the bot idle');
+    assert.equal(bot.inputs.d, true, 'distant pursuit moves toward the owner');
+    assert.ok(room.dashes.includes(bot.id), 'bots dash to close the distance to their target');
+    for (let tick = 0; tick < 150; tick++) {
+        now += 17;
+        room.tick++;
+        room.updateBots();
+        advanceWithServerCollision(bot, []);
+    }
+    assert.ok(bot.x > 700, 'bot keeps advancing toward the owner instead of stopping after spawning');
+}
+
+{
+    const bot = createPlayer('bot', { isBot: true, x: 150, y: 250 });
+    const human = createPlayer('human', { x: 1200, y: 250 });
+    const room = createRoom(bot, human, null);
+    room.practiceOwnerId = human.id;
+    room.droppedEnergy = [{ id: 'orb-near-route', x: 230, y: 250, val: 10 }];
+
+    room.updateBots();
+
+    assert.equal(bot.botAI.mode, 'loot', 'bots collect nearby orbs that lie on the pursuit route');
+    assert.equal(bot.botAI.moving, true, 'bot keeps moving toward a useful orb');
+
+    bot.x = 450;
+    bot.y = 250;
+    bot.charge = 70;
+    bot.botRoute = null;
+    room.droppedEnergy = [];
+    room.updateBots();
+
+    assert.equal(bot.botAI.mode, 'bank', 'bots divert briefly to deposit carried orbs');
+    assert.equal(bot.botBankingOrbs, true, 'the bot keeps its banking objective until it reaches the bank');
+    for (let tick = 0; tick < 100 &&
+        Math.hypot(bot.x - room.bankZone.x, bot.y - room.bankZone.y) > room.bankZone.radius * 0.8;
+        tick++) {
+        now += 17;
+        room.tick++;
+        room.updateBots();
+        advanceWithServerCollision(bot, []);
+    }
+    now += 17;
+    room.tick++;
+    room.updateBots();
+    assert.equal(bot.botAI.moving, false, 'bot stops inside the bank instead of immediately leaving');
+    bot.charge = 0;
+    now += 17;
+    room.updateBots();
+    assert.equal(bot.botBankingOrbs, false, 'bot resumes hunting after depositing its orbs');
+    assert.equal(bot.botAI.mode, 'engage', 'bot returns to the owner after banking');
 }
 
 {

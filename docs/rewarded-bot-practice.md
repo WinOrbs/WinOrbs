@@ -10,14 +10,17 @@ no sustituye al service worker de Monetag.
 ## Combate de práctica
 
 La práctica conserva su formato SOLO FFA con cinco bots: no añade oleadas,
-jefes ni modo cooperativo. Durante la partida los bots priorizan supervivencia,
-botiquines, orbes y extracción; sus personalidades varían la agresividad y la
-distancia de combate. Se desplazan por rutas que consideran muros y obstáculos,
-recalculan si un objetivo cambia o dejan de avanzar y solo disparan cuando tienen
-la línea de tiro despejada. En combate anticipan el movimiento observado del
-objetivo, alternan entre pistola y Lanza-Orbes cuando disponen de ella y usan
-recursos, bombas, dash y recargas según el peligro. Los bots mantienen el respawn
-existente del modo.
+jefes ni modo cooperativo. Los cinco bots priorizan al jugador que inició la
+práctica, lo persiguen a cualquier distancia y usan el dash para acortar
+distancias; no se distraen atacándose entre ellos. Si encuentran orbes cerca y
+en la ruta de persecución, los recogen y los depositan cuando el banco queda
+cerca o de camino, sin abandonar un combate inmediato por ello. Sus
+personalidades varían la distancia de combate. Se desplazan por rutas que
+consideran muros y obstáculos, recalculan si un objetivo cambia o dejan de
+avanzar y solo disparan cuando tienen la línea de tiro despejada. En combate
+anticipan el movimiento observado del objetivo, alternan entre pistola y
+Lanza-Orbes cuando disponen de ella y usan recursos, bombas, dash y recargas
+según el peligro. Los bots mantienen el respawn existente del modo.
 
 La mejora no modifica el formato de la partida, las reglas de victoria, la
 economía ni la acreditación de boletos/progreso SOLO.
