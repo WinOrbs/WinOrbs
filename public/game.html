@@ -526,6 +526,69 @@
             box-shadow: 0 0 0 1px var(--border-strong);
         }
 
+        .bot-intel-panel {
+            position: absolute;
+            top: 64px;
+            right: 224px;
+            width: min(280px, calc(100vw - 380px));
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 10px 10px 8px;
+            box-shadow: var(--shadow);
+            z-index: 5;
+            pointer-events: none;
+        }
+
+        .bot-intel-panel.hidden {
+            display: none;
+        }
+
+        .bot-intel-header {
+            font-size: 10px;
+            letter-spacing: 1.2px;
+            text-transform: uppercase;
+            color: var(--primary);
+            font-family: var(--font-display);
+            font-weight: 700;
+            margin-bottom: 6px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .bot-intel-row {
+            display: grid;
+            grid-template-columns: minmax(52px, 1fr) auto;
+            gap: 4px 8px;
+            align-items: center;
+            padding: 4px 2px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+            font-size: 11px;
+            color: var(--text);
+        }
+
+        .bot-intel-row:last-child {
+            border-bottom: none;
+        }
+
+        .bot-intel-name {
+            font-weight: 700;
+            color: #dbeafe;
+        }
+
+        .bot-intel-state {
+            justify-self: end;
+            color: var(--green);
+            font-weight: 700;
+        }
+
+        .bot-intel-meta {
+            grid-column: 1 / -1;
+            color: var(--muted);
+            font-size: 10.5px;
+            opacity: 0.92;
+        }
+
         #minimap {
             position: absolute;
             bottom: 18px;
@@ -3001,6 +3064,11 @@
         <ol id="leader-list"></ol>
     </div>
 
+    <div class="bot-intel-panel hidden" id="bot-intel-panel">
+        <div class="bot-intel-header">IA de bots</div>
+        <div id="bot-intel-list"></div>
+    </div>
+
     <canvas id="minimap"></canvas>
 
     <!-- Tienda -->
@@ -4631,6 +4699,41 @@
             }
         }
 
+        function renderBotIntelPanel() {
+            const panel = document.getElementById('bot-intel-panel');
+            const list = document.getElementById('bot-intel-list');
+            if (!panel || !list || !gameState) return;
+            const bots = Object.values(gameState.players || {}).filter((p) => p.isBot);
+            if (!bots.length) {
+                panel.classList.add('hidden');
+                list.innerHTML = '';
+                return;
+            }
+            panel.classList.remove('hidden');
+            const modes = {
+                engage: 'Caza',
+                bank: 'Deposita',
+                loot: 'Recolecta',
+                wander: 'Vaga'
+            };
+            list.innerHTML = bots.map((bot) => {
+                const ai = bot.botAI || {};
+                const targetNick = (ai.targetId && gameState.players && gameState.players[ai.targetId] && gameState.players[ai.targetId].nick)
+                    ? gameState.players[ai.targetId].nick
+                    : (ai.track === 'loot' ? 'orbe' : ai.track === 'bank' ? 'banco' : 'patrulla');
+                const dist = Number.isFinite(ai.targetDistance) ? `${Math.round(ai.targetDistance)}m` : '—';
+                const ammo = bot.currentWeapon === 1 ? bot.ammo : bot.ammo2;
+                const status = ai.canShoot ? 'Dispara' : (ai.moving ? 'Se mueve' : 'Espera');
+                return `
+                    <div class="bot-intel-row">
+                        <span class="bot-intel-name">${bot.nick}</span>
+                        <span class="bot-intel-state">${modes[ai.mode] || 'Vaga'}</span>
+                        <span class="bot-intel-meta">${targetNick} · ${dist} · ${status}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
         socket.on('gameState', (state) => {
             gameState = state;
             actualizarSkins(state);
@@ -4926,6 +5029,8 @@
                     : +(nJug * feeHud).toFixed(2);
                 potEl.innerText = `$${Number(pozo).toFixed(2)} USD`;
             }
+
+            renderBotIntelPanel();
 
             if (isDead && !isGameOver && gameState.mode === 'teams') {
                 document.getElementById("death-screen").style.display = "none";
