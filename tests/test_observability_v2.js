@@ -9,6 +9,7 @@ const {
     OBSERVABILITY_OUTCOMES,
     createObservabilityService
 } = require('../packages/observability/v2');
+const { createStructuredLogger } = require('../apps/server/observability/logger');
 
 async function run() {
     const emitted = [];
@@ -184,6 +185,51 @@ async function run() {
     assert.strictEqual((await rejectedSink.logEvent(base('sink-rejected', {
         category: 'ERROR'
     }))).error.code, OBSERVABILITY_ERRORS.SINK_FAILURE);
+
+    const logLines = [];
+    const logger = createStructuredLogger({
+        sink: (line) => logLines.push(line),
+        clock: () => new Date('2026-10-09T12:00:00.000Z')
+    });
+    logger.error('http.request.failed', {
+        method: 'GET',
+        statusCode: 500,
+        errorCode: 'INTERNAL_ERROR',
+        password: 'test-password',
+        authorization: 'Bearer test-token',
+        privateKey: 'test-private-key',
+        requestId: 'unnecessary-id',
+        message: 'not an allowed context field'
+    });
+    assert.deepStrictEqual(JSON.parse(logLines[0]), {
+        timestamp: '2026-10-09T12:00:00.000Z',
+        level: 'error',
+        event: 'http.request.failed',
+        method: 'GET',
+        statusCode: 500,
+        errorCode: 'INTERNAL_ERROR'
+    });
+    for (const secret of ['test-password', 'test-token', 'test-private-key', 'unnecessary-id']) {
+        assert.strictEqual(logLines[0].includes(secret), false);
+    }
+    const throwingLogger = createStructuredLogger({
+        sink: () => { throw new Error('sink unavailable'); }
+    });
+    assert.doesNotThrow(() => throwingLogger.warn('firebase.unavailable'));
+
+    const unhandledRejections = [];
+    const onUnhandledRejection = (error) => unhandledRejections.push(error);
+    process.on('unhandledRejection', onUnhandledRejection);
+    try {
+        const rejectedSinkLogger = createStructuredLogger({
+            sink: () => Promise.reject(new Error('async sink unavailable'))
+        });
+        assert.doesNotThrow(() => rejectedSinkLogger.error('http.request.failed'));
+        await new Promise((resolve) => setImmediate(resolve));
+        assert.deepStrictEqual(unhandledRejections, []);
+    } finally {
+        process.removeListener('unhandledRejection', onUnhandledRejection);
+    }
 
     const source = fs.readFileSync(
         path.join(__dirname, '../packages/observability/v2/index.js'), 'utf8'

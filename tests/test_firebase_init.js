@@ -69,6 +69,7 @@ function run(env, baseDir, {
         onRewardsChanged,
         logger: {
             log: (...args) => logs.push(['log', ...args]),
+            info: (...args) => logs.push(['info', ...args]),
             warn: (...args) => logs.push(['warn', ...args]),
             error: (...args) => logs.push(['error', ...args])
         }

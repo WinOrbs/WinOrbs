@@ -10,8 +10,9 @@ Phase 1 extracts infrastructure composition from the legacy CommonJS runtime. It
 |---|---|---|
 | [environment.js](../../apps/server/config/environment.js) | Loads `.env` through the existing optional `dotenv` dependency before configuration is read. | `dotenv` (optional at runtime) |
 | [audit.js](../../apps/server/platform/audit.js) | Formats sanitized audit events and exposes a logger factory while preserving the existing `[AUDIT]` output. | Existing audit-event sanitizer and injected/default logger |
-| [http/index.js](../../apps/server/http/index.js) | Creates the Express app and HTTP server; configures proxy trust, CORS, static assets, `/sw.js`, `/ping`, and `/status`. `createStatusHandler` owns the existing Firebase/Firestore health check and response shape. | Express, Node HTTP, origin policy, Firebase runtime provider |
-| [socket_server.js](../../apps/server/realtime/socket_server.js) | Creates Socket.IO on the HTTP server using the existing CORS policy and connection-state recovery settings. | Socket.IO `Server`, HTTP server, origin policy |
+| [http/index.js](../../apps/server/http/index.js) | Creates the Express app and HTTP server; configures proxy trust, CORS, static assets, `/sw.js`, `/ping`, `/health`, `/ready`, and `/status`. Liveness and bootstrap readiness are separate from the bounded Firestore diagnostic. | Express, Node HTTP, origin policy, Firebase runtime provider, readiness provider |
+| [socket_server.js](../../apps/server/realtime/socket_server.js) | Creates Socket.IO on the HTTP server using the existing CORS policy and connection-state recovery settings; emits throttled structured logs for rejected handshakes. | Socket.IO `Server`, HTTP server, origin policy, optional logger |
+| [observability/logger.js](../../apps/server/observability/logger.js) | Writes allowlisted JSON operational log records without arbitrary messages or identifying request/socket context. | Node.js |
 | [firebase.js](../../apps/server/infrastructure/firebase.js) | Resolves the existing service-account credential sources, initializes Firebase Admin/Firestore, preserves fail-closed economy behavior, creates the progression runtime, and subscribes to progression configuration changes. | Firebase Admin, filesystem, progression helpers, Socket.IO emitter, optional callbacks/logger |
 
 The factories expose narrow seams for testing: HTTP and Socket.IO accept an origin policy; Firebase accepts injected Admin SDK, filesystem, progression dependencies, logger, environment, and reward-change callback. These seams do not change production configuration or wire protocols.
@@ -28,7 +29,9 @@ server.js (composition root and legacy application)
   ├── platform/audit.js
   └── existing game, identity, transport, and platform helpers
 
-HTTP /status ──> Firebase runtime provider (read-only health diagnostic)
+HTTP /health ──> process liveness only
+HTTP /ready ───> completed in-process bootstrap (Firestore remains optional)
+HTTP /status ──> Firebase runtime provider (bounded operational diagnostic)
 Firebase progression listener ──> Socket.IO emitter + progression helpers
 ```
 

@@ -6,6 +6,26 @@ function percentile(values, fraction) {
     return ordered[Math.ceil(fraction * ordered.length) - 1];
 }
 
+function summarizeOperationalMetrics(metrics, { activeRooms = 0 } = {}) {
+    if (!metrics || typeof metrics !== 'object') {
+        throw new TypeError('A realtime metrics snapshot is required');
+    }
+    return Object.freeze({
+        activeRooms,
+        activeMatches: metrics.activeMatches,
+        activeSockets: metrics.activeSockets,
+        inboundMessagesPerSecond: metrics.inboundMessagesPerSecond,
+        gameStateBroadcastsPerSecond: metrics.gameStateBroadcastsPerSecond,
+        playerMessagesPerSecond: metrics.playerMessagesPerSecond,
+        sampledGameStateBytes: metrics.sampledGameStateBytes,
+        tickAverageMs: metrics.tickDurationMs.average,
+        tickP95Ms: metrics.tickDurationMs.p95,
+        tickP99Ms: metrics.tickDurationMs.p99,
+        cpuPercent: metrics.cpuPercent,
+        memoryRssBytes: metrics.memoryRssBytes
+    });
+}
+
 function createRealtimeMetrics({ sampleEvery = 30, maxTickSamples = 3600 } = {}) {
     if (!Number.isSafeInteger(sampleEvery) || sampleEvery < 1 ||
         !Number.isSafeInteger(maxTickSamples) || maxTickSamples < 1) {
@@ -138,4 +158,4 @@ function createRealtimeMetrics({ sampleEvery = 30, maxTickSamples = 3600 } = {})
     });
 }
 
-module.exports = Object.freeze({ createRealtimeMetrics });
+module.exports = Object.freeze({ createRealtimeMetrics, summarizeOperationalMetrics });

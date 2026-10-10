@@ -2,6 +2,14 @@
 
 const fs = require('fs');
 const { FIREBASE_DEFAULTS } = require('../config/defaults');
+const { createStructuredLogger } = require('../observability/logger');
+
+function safeErrorCode(error) {
+    const code = error && error.code;
+    return typeof code === 'string' && /^[A-Z][A-Z0-9_-]{0,63}$/.test(code)
+        ? code
+        : 'FIREBASE_UNAVAILABLE';
+}
 
 function initializeFirebase({
     baseDir,
@@ -11,7 +19,7 @@ function initializeFirebase({
     env = process.env,
     fsModule = fs,
     adminModule,
-    logger = console,
+    logger = createStructuredLogger(),
     onRewardsChanged = () => {}
 } = {}) {
     if (typeof baseDir !== 'string' || !baseDir) {
@@ -69,14 +77,14 @@ function initializeFirebase({
                         Buffer.from(credentialEnv.FIREBASE_SERVICE_ACCOUNT_B64, 'base64').toString('utf8')
                     );
                 } catch (error) {
-                    logger.warn('[FIREBASE] FIREBASE_SERVICE_ACCOUNT_B64 is not valid Base64/JSON.');
+                    logger.warn('firebase.credential.invalid', { source: 'base64' });
                 }
             } else if (credentialEnv.FIREBASE_SERVICE_ACCOUNT &&
                 credentialEnv.FIREBASE_SERVICE_ACCOUNT.trim().startsWith('{')) {
                 try {
                     serviceAccount = JSON.parse(credentialEnv.FIREBASE_SERVICE_ACCOUNT);
                 } catch (error) {
-                    logger.warn('[FIREBASE] FIREBASE_SERVICE_ACCOUNT is not valid JSON.');
+                    logger.warn('firebase.credential.invalid', { source: 'inline' });
                 }
             }
             if (!serviceAccount && credentialEnv.FIREBASE_SERVICE_ACCOUNT) {
@@ -88,7 +96,7 @@ function initializeFirebase({
                     const parsed = JSON.parse(text);
                     if (parsed && typeof parsed === 'object' && parsed.client_email) {
                         serviceAccount = parsed;
-                        logger.log('[FIREBASE] Clave de servicio cargada desde FIREBASE_SERVICE_ACCOUNT (inline).');
+                        logger.info('firebase.credential.loaded', { source: 'inline' });
                     }
                 } catch (error) {
                     // A file path is tried below when the value is not inline JSON.
@@ -99,10 +107,10 @@ function initializeFirebase({
                     try {
                         if (!fsModule.existsSync(candidate)) continue;
                         serviceAccount = JSON.parse(fsModule.readFileSync(candidate, 'utf8'));
-                        logger.log('[FIREBASE] Clave de servicio cargada desde: ' + candidate);
+                        logger.info('firebase.credential.loaded', { source: 'configured-file' });
                         break;
                     } catch (error) {
-                        logger.warn('[FIREBASE] Could not read a configured Firebase service-account file.');
+                        logger.warn('firebase.credential.unreadable', { source: 'configured-file' });
                     }
                 }
             }
@@ -116,7 +124,7 @@ function initializeFirebase({
                                 const text = fsModule.readFileSync(secretDirectory + '/' + file, 'utf8');
                                 if (text.includes('"private_key"') && text.includes('"client_email"')) {
                                     serviceAccount = JSON.parse(text);
-                                    logger.log('[FIREBASE] Clave de servicio detectada en ' + secretDirectory + '/' + file);
+                                    logger.info('firebase.credential.loaded', { source: 'secret-directory' });
                                     break;
                                 }
                             } catch (error) {
@@ -150,15 +158,18 @@ function initializeFirebase({
                     levelCurve: DEFAULT_LEVEL_CURVE
                 });
             }, (error) => {
-                logger.error('[PROGRESSION] Could not watch visual reward configuration:', error.message);
+                logger.error('firebase.progression_listener.failed', {
+                    errorCode: safeErrorCode(error)
+                });
             });
-            logger.log('[FIREBASE] Modo economía SEGURA activado (Admin SDK). El servidor maneja entradas y premios.');
+            logger.info('firebase.economy.enabled');
         } else {
-            logger.log('[FIREBASE] Sin clave de servicio: ECONOMÍA DESHABILITADA. Entradas y premios no se liquidan hasta configurar Admin SDK; el cliente nunca gestiona dinero.');
-            logger.log('[FIREBASE] FIX Render: Firebase Console → Cuentas de servicio → Generar clave privada → en Render crea un Secret File "serviceAccountKey.json" (o la env FIREBASE_SERVICE_ACCOUNT_B64 con el JSON en Base64) y reinicia el servicio. Verifica en GET /status.');
+            logger.warn('firebase.economy.disabled');
         }
     } catch (error) {
-        logger.warn('[FIREBASE] Firebase Admin initialization failed; economy remains disabled.');
+        logger.error('firebase.initialization.failed', {
+            errorCode: safeErrorCode(error)
+        });
     }
 
     return Object.freeze({
