@@ -203,6 +203,37 @@ function advanceWithServerCollision(player, solids) {
 }
 
 {
+    const bot = createPlayer('bot', {
+        isBot: true,
+        x: 600,
+        y: 600,
+        botLastX: 600,
+        botLastY: 600
+    });
+    const human = createPlayer('human', { x: 805, y: 600 });
+    const room = createRoom(bot, human, null);
+    room.practiceOwnerId = human.id;
+
+    room.updateBots();
+    assert.equal(bot.botAI.canShoot, true, 'bot can shoot while at its preferred combat range');
+    assert.equal(bot.botAI.moving, true, 'bot keeps orbiting instead of stopping at its ideal range');
+    assert.ok(bot.inputs.w || bot.inputs.a || bot.inputs.s || bot.inputs.d,
+        'combat movement produces directional input while firing');
+
+    for (let tick = 0; tick < 60; tick++) {
+        now += 17;
+        room.tick++;
+        room.updateBots();
+        advanceWithServerCollision(bot, []);
+    }
+    assert.ok(Math.hypot(bot.x - 600, bot.y - 600) > 100,
+        'bot continues moving while it remains in firing range');
+    const finalDistance = Math.hypot(bot.x - human.x, bot.y - human.y);
+    assert.ok(finalDistance >= 150 && finalDistance <= 270,
+        'bot orbits the target instead of standing still or blindly closing in');
+}
+
+{
     const bot = createPlayer('bot', { isBot: true, x: 150, y: 250 });
     const human = createPlayer('human', { x: 1200, y: 250 });
     const room = createRoom(bot, human, null);

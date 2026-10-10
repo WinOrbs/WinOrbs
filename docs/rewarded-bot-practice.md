@@ -12,7 +12,8 @@ no sustituye al service worker de Monetag.
 La práctica conserva su formato SOLO FFA con cinco bots: no añade oleadas,
 jefes ni modo cooperativo. Los cinco bots priorizan al jugador que inició la
 práctica, lo persiguen a cualquier distancia y usan el dash para acortar
-distancias; no se distraen atacándose entre ellos. Si encuentran orbes cerca y
+distancias; al disparar a rango de combate orbitan al jugador en vez de quedarse
+inmóviles. No se distraen atacándose entre ellos. Si encuentran orbes cerca y
 en la ruta de persecución, los recogen y los depositan cuando el banco queda
 cerca o de camino, sin abandonar un combate inmediato por ello. Sus
 personalidades varían la distancia de combate. Se desplazan por rutas que

@@ -2277,7 +2277,12 @@ class GameRoom {
                 : Math.atan2(goal.y - bot.y, goal.x - bot.x);
 
             const distanceToGoal = Math.hypot(goal.x - bot.x, goal.y - bot.y);
-            let moving = distanceToGoal > (goalType === 'bank' ? this.bankZone.radius * 0.8 : 34);
+            const shouldOrbit = goalType === 'engage' && target &&
+                targetDistance >= preferredRange - 55 &&
+                targetDistance <= preferredRange + 65 &&
+                hasLineOfSight(bot, target, solids);
+            let moving = shouldOrbit ||
+                distanceToGoal > (goalType === 'bank' ? this.bankZone.radius * 0.8 : 34);
             let waypoints = bot.botRoute?.waypoints || [];
             let routeIndex = bot.botRoute?.index || 0;
             while (routeIndex < waypoints.length &&
@@ -2320,8 +2325,7 @@ class GameRoom {
                 moveAngle = waypoint
                     ? Math.atan2(waypoint.y - bot.y, waypoint.x - bot.x)
                     : Math.atan2(goal.y - bot.y, goal.x - bot.x);
-                if (goalType === 'engage' && target && targetDistance <= preferredRange + 65 &&
-                    hasLineOfSight(bot, target, solids)) {
+                if (shouldOrbit) {
                     moveAngle = Math.atan2(target.y - bot.y, target.x - bot.x) +
                         bot.botStrafeDir * Math.PI / 2;
                 }
