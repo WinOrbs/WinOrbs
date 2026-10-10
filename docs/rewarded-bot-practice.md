@@ -7,6 +7,11 @@ se permite iniciar la partida. La carga del script no confirma que el anuncio
 haya sido mostrado o completado. La viñeta se carga una sola vez por página y
 no sustituye al service worker de Monetag.
 
+Los bots de práctica navegan alrededor de muros y obstáculos, buscan botiquines
+cuando están heridos y recogen energía para asegurarla en el banco. En combate
+anticipan el movimiento del rival al apuntar, cambian de posición para evitar
+disparos y priorizan salir de peligros activos y de la zona que se cierra.
+
 El servidor acredita una victoria SOLO solo cuando el resultado final de la
 partida identifica a un ganador con UID verificado. Los invitados pueden jugar,
 pero no acumulan victorias ni boletos. La cuenta recibe un boleto acumulable

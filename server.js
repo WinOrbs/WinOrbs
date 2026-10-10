@@ -40,6 +40,11 @@ const {
 const { extractIdToken, canBindUid } = require('./apps/server/identity');
 const { lockResult } = require('./apps/server/game/results');
 const { finalizeAfterProgression } = require('./apps/server/game/finalization');
+const {
+    findPathWaypoint,
+    getInterceptAngle,
+    hasClearPath
+} = require('./apps/server/game/bot_ai');
 const { createAuditLogger } = require('./apps/server/platform/audit');
 const {
     TICKET_PAYMENT_METHOD,
@@ -1141,10 +1146,16 @@ class GameRoom {
         this.addPlayer(botId, nick, skin, null);
         const bot = this.players[botId];
         bot.isBot = true;
-        bot.speed = 4.8;
+        bot.speed = 5.1;
         bot.botNextDecisionAt = 0;
         bot.botNextShotAt = 0;
         bot.botWanderAngle = Math.random() * Math.PI * 2;
+        bot.botStrafeDirection = Math.random() < 0.5 ? -1 : 1;
+        bot.botTargetId = null;
+        bot.botPath = null;
+        bot.botPathTarget = null;
+        bot.botObservedTargets = {};
+        bot.botLastPosition = { x: bot.x, y: bot.y, at: Date.now() };
     }
 
     removePlayer(socketId) {
@@ -2023,52 +2034,259 @@ class GameRoom {
         const bots = Object.values(this.players).filter((player) => player.isBot && !player.isDead);
         const targets = Object.values(this.players).filter((player) => !player.isDead);
         const now = Date.now();
+        if (this.tick % 6 !== 0) return;
+
+        const solids = [...this.walls, ...this.obstacles].filter((shape) => shape.hp > 0);
+        const shotBlockers = [
+            ...this.walls,
+            ...this.obstacles.filter((shape) => shape.tipo !== 'roca')
+        ].filter((shape) => shape.hp > 0);
+        const distanceBetween = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+        const nearest = (items, point, score) => items.reduce((best, item) => {
+            const itemScore = score(item, distanceBetween(item, point));
+            return !best || itemScore < best.score ? { item, score: itemScore } : best;
+        }, null)?.item || null;
+
         bots.forEach((bot) => {
-            if (this.tick % 6 !== 0) return;
             const enemies = targets.filter((player) =>
                 player.id !== bot.id && (!bot.teamId || player.teamId !== bot.teamId));
-            const target = enemies.reduce((nearest, player) =>
-                !nearest || Math.hypot(player.x - bot.x, player.y - bot.y) <
-                    Math.hypot(nearest.x - bot.x, nearest.y - bot.y) ? player : nearest, null);
-            const targetDistance = target ? Math.hypot(target.x - bot.x, target.y - bot.y) : Infinity;
-            let goal = target;
-            if (bot.charge >= 50 && this.bankZone) {
-                goal = this.bankZone;
-            } else if (bot.charge < 50) {
-                const orb = this.droppedEnergy.reduce((nearest, item) =>
-                    !nearest || Math.hypot(item.x - bot.x, item.y - bot.y) <
-                        Math.hypot(nearest.x - bot.x, nearest.y - bot.y) ? item : nearest, null);
-                if (orb && Math.hypot(orb.x - bot.x, orb.y - bot.y) < 900) goal = orb;
+            const scoredEnemies = enemies.map((player) => {
+                const distance = distanceBetween(player, bot);
+                const clearShot = hasClearPath(bot, player, shotBlockers);
+                return {
+                    player,
+                    score: distance - Math.min(player.charge || 0, 100) * 0.7 -
+                        Math.max(0, player.maxHp - player.hp) * 0.55 - (clearShot ? 100 : 0)
+                };
+            }).sort((a, b) => a.score - b.score);
+            let target = scoredEnemies[0]?.player || null;
+            const previousTarget = scoredEnemies.find((entry) => entry.player.id === bot.botTargetId);
+            if (previousTarget && scoredEnemies[0] &&
+                previousTarget.score <= scoredEnemies[0].score + 100) {
+                target = previousTarget.player;
+            }
+            bot.botTargetId = target?.id || null;
+            const targetDistance = target ? distanceBetween(target, bot) : Infinity;
+
+            let targetVelocity = { x: 0, y: 0 };
+            if (target) {
+                const oldPosition = bot.botObservedTargets[target.id];
+                if (oldPosition) {
+                    const targetTicks = Math.max(1, (now - oldPosition.at) / (1000 / 60));
+                    targetVelocity = {
+                        x: Math.max(-8, Math.min(8, (target.x - oldPosition.x) / targetTicks)),
+                        y: Math.max(-8, Math.min(8, (target.y - oldPosition.y) / targetTicks))
+                    };
+                } else if (target.inputs) {
+                    targetVelocity = {
+                        x: (target.inputs.d === true ? 1 : 0) - (target.inputs.a === true ? 1 : 0),
+                        y: (target.inputs.s === true ? 1 : 0) - (target.inputs.w === true ? 1 : 0)
+                    };
+                    const magnitude = Math.hypot(targetVelocity.x, targetVelocity.y) || 1;
+                    targetVelocity.x *= (target.speed || 5.5) / magnitude;
+                    targetVelocity.y *= (target.speed || 5.5) / magnitude;
+                }
+                bot.botObservedTargets[target.id] = { x: target.x, y: target.y, at: now };
             }
 
-            let angle = target ? Math.atan2(target.y - bot.y, target.x - bot.x) : bot.botWanderAngle;
-            if (goal && goal !== target) angle = Math.atan2(goal.y - bot.y, goal.x - bot.x);
-            if (!goal) {
-                bot.botWanderAngle += (Math.random() - 0.5) * 0.4;
-                angle = bot.botWanderAngle;
+            let goal = null;
+            let goalRadius = 50;
+            const bankGoal = bot.charge >= 50 ? this.bankZone : null;
+            if (bankGoal) {
+                goal = bankGoal;
+                goalRadius = this.bankZone.radius * 0.7;
+            } else if (bot.hp <= 68 && this.droppedHealthKits.length > 0) {
+                const kit = nearest(this.droppedHealthKits, bot, (item, distance) => {
+                    const healing = Math.min(bot.maxHp - bot.hp, item.val || KIT_VAL);
+                    return distance / Math.max(10, healing);
+                });
+                if (kit && distanceBetween(kit, bot) < 1400) goal = kit;
             }
 
-            const distanceToGoal = goal ? Math.hypot(goal.x - bot.x, goal.y - bot.y) : 0;
-            const moveAngle = target && target === goal && targetDistance < 350
-                ? angle + Math.PI / 2
-                : angle;
-            const moving = distanceToGoal > (goal === this.bankZone ? this.bankZone.radius * 0.75 : 55);
+            if (!goal && !bot.hasOrbGun && this.droppedOrbGuns.length > 0) {
+                const orbGun = nearest(this.droppedOrbGuns, bot, (_, distance) => distance);
+                if (orbGun && distanceBetween(orbGun, bot) < 1300) goal = orbGun;
+            }
+            if (!goal && bot.charge < 50 && this.droppedEnergy.length > 0) {
+                const orb = nearest(this.droppedEnergy, bot, (_, distance) => distance);
+                if (orb && distanceBetween(orb, bot) < 1000) goal = orb;
+            }
+
+            const zoneCenter = this.zoneNext || { x: this.zoneCx, y: this.zoneCy };
+            const zoneDistance = distanceBetween(bot, { x: this.zoneCx, y: this.zoneCy });
+            const outsideZone = zoneDistance > this.zoneRadius - 80;
+            const zoneClosing = this.gameTime <= 70 && this.zoneRadius < MAP_SIZE;
+            const escapingZone = zoneClosing && outsideZone;
+            if (escapingZone) {
+                goal = zoneCenter;
+                goalRadius = Math.max(60, this.zoneRadius - 180);
+            }
+
+            const canTacticallyEngage = target && targetDistance < 390 &&
+                bot.hp > 35 && !bankGoal && !escapingZone &&
+                !(bot.hp <= 45 && goal && this.droppedHealthKits.includes(goal));
+            let desiredAngle;
+            if (goal && !canTacticallyEngage) {
+                let waypoint = goal;
+                const pathTarget = `${Math.round(goal.x / 150)},${Math.round(goal.y / 150)}`;
+                if (!bot.botPath || bot.botPathTarget !== pathTarget || now - bot.botPathAt > 800) {
+                    bot.botPath = findPathWaypoint(bot, goal, solids, MAP_SIZE, 100, bot.radius + 7);
+                    bot.botPathTarget = pathTarget;
+                    bot.botPathAt = now;
+                }
+                waypoint = bot.botPath || goal;
+                desiredAngle = Math.atan2(waypoint.y - bot.y, waypoint.x - bot.x);
+                if (distanceBetween(bot, goal) <= goalRadius) desiredAngle = bot.botWanderAngle;
+            } else if (target) {
+                desiredAngle = Math.atan2(target.y - bot.y, target.x - bot.x);
+            } else {
+                bot.botWanderAngle += (Math.random() - 0.5) * 0.3;
+                desiredAngle = bot.botWanderAngle;
+            }
+
+            const incomingThreats = [];
+            for (const bullet of this.bullets) {
+                if (bullet.ownerId === bot.id) continue;
+                const speedSquared = bullet.vx * bullet.vx + bullet.vy * bullet.vy;
+                if (speedSquared < 1) continue;
+                const toBotX = bot.x - bullet.x;
+                const toBotY = bot.y - bullet.y;
+                const ticks = Math.max(0, Math.min(14,
+                    (toBotX * bullet.vx + toBotY * bullet.vy) / speedSquared));
+                const closest = {
+                    x: bullet.x + bullet.vx * ticks,
+                    y: bullet.y + bullet.vy * ticks
+                };
+                const distance = distanceBetween(closest, bot);
+                if (distance < bot.radius + 38) {
+                    incomingThreats.push({
+                        x: closest.x,
+                        y: closest.y,
+                        urgency: 1 - distance / (bot.radius + 38)
+                    });
+                }
+            }
+            for (const hazard of this.hazardZones) {
+                const distance = distanceBetween(hazard, bot);
+                if (distance < hazard.radius + 100) {
+                    incomingThreats.push({
+                        x: hazard.x,
+                        y: hazard.y,
+                        urgency: 1 - distance / (hazard.radius + 100)
+                    });
+                }
+            }
+            for (const bomb of this.bombs) {
+                if (bomb.ownerId === bot.id || bomb.timer > 45) continue;
+                const distance = distanceBetween(bomb, bot);
+                if (distance < 220) incomingThreats.push({
+                    x: bomb.x,
+                    y: bomb.y,
+                    urgency: 1 - distance / 220
+                });
+            }
+
+            let dangerAngle = null;
+            if (incomingThreats.length > 0) {
+                const threat = incomingThreats.sort((a, b) => b.urgency - a.urgency)[0];
+                const awayX = bot.x - threat.x;
+                const awayY = bot.y - threat.y;
+                dangerAngle = Math.atan2(awayY, awayX);
+                if (Math.hypot(awayX, awayY) < 1) dangerAngle += Math.PI / 2;
+            }
+
+            if (canTacticallyEngage) {
+                const towardTarget = Math.atan2(target.y - bot.y, target.x - bot.x);
+                if (targetDistance < 185) {
+                    desiredAngle = towardTarget + Math.PI +
+                        bot.botStrafeDirection * 0.3;
+                } else {
+                    desiredAngle = towardTarget + bot.botStrafeDirection * Math.PI / 2;
+                }
+            }
+            if (dangerAngle !== null) {
+                desiredAngle = dangerAngle +
+                    Math.atan2(Math.sin(desiredAngle - dangerAngle), Math.cos(desiredAngle - dangerAngle)) * 0.2;
+            }
+
+            let moveAngle = desiredAngle;
+            if (canTacticallyEngage || dangerAngle !== null || !goal) {
+                const movementGoal = {
+                    x: bot.x + Math.cos(desiredAngle) * 300,
+                    y: bot.y + Math.sin(desiredAngle) * 300
+                };
+                const moveWaypoint = findPathWaypoint(
+                    bot, movementGoal, solids, MAP_SIZE, 100, bot.radius + 7
+                );
+                if (distanceBetween(bot, movementGoal) > 55) {
+                    moveAngle = Math.atan2(moveWaypoint.y - bot.y, moveWaypoint.x - bot.x);
+                }
+            }
+            const moving = !goal || distanceBetween(bot, goal) > goalRadius ||
+                canTacticallyEngage || dangerAngle !== null;
+            bot.angle = desiredAngle;
             bot.inputs = moving ? {
                 w: Math.sin(moveAngle) < -0.2,
                 a: Math.cos(moveAngle) < -0.2,
                 s: Math.sin(moveAngle) > 0.2,
                 d: Math.cos(moveAngle) > 0.2,
-                angle
-            } : { w: false, a: false, s: false, d: false, angle };
-            bot.angle = angle;
+                angle: desiredAngle
+            } : { w: false, a: false, s: false, d: false, angle: desiredAngle };
 
-            if (target && targetDistance < 700 && now >= bot.botNextShotAt) {
-                this.handleShoot(bot.id, {
-                    angle: angle + (Math.random() - 0.5) * 0.22
-                });
-                bot.botNextShotAt = now + 550 + Math.random() * 350;
+            if (dangerAngle !== null && bot.dashProgress >= 100 && bot.dashCooldown <= 0) {
+                this.handleDash(bot.id);
             }
-            if (bot.ammo <= 0 && !bot.isReloading) this.handleReload(bot.id);
+
+            if (target && targetDistance < 900 && now >= bot.botNextShotAt) {
+                if (bot.ammo <= 0 && bot.hasOrbGun && bot.ammo2 > 0 && bot.currentWeapon !== 2) {
+                    this.handleSwitchWeapon(bot.id, 2);
+                } else if (bot.currentWeapon === 2 && bot.ammo2 <= 0 &&
+                    (bot.ammo > 0 || bot.charge < RECARGA_ORBES_COSTE)) {
+                    this.handleSwitchWeapon(bot.id, 1);
+                }
+                const projectileSpeed = bot.currentWeapon === 2 ? 14 : 18;
+                const aimAngle = getInterceptAngle(bot, target, targetVelocity, projectileSpeed, 55);
+                const hasLineOfSight = hasClearPath(bot, {
+                    x: target.x + targetVelocity.x * 8,
+                    y: target.y + targetVelocity.y * 8
+                }, shotBlockers);
+                if (hasLineOfSight) {
+                    if (bot.currentWeapon === 2 && bot.ammo2 <= 0 && bot.charge < RECARGA_ORBES_COSTE) {
+                        this.handleSwitchWeapon(bot.id, 1);
+                    } else if (bot.hasOrbGun && bot.ammo <= 0 && bot.ammo2 > 0) {
+                        this.handleSwitchWeapon(bot.id, 2);
+                    } else if (bot.currentWeapon === 2 && bot.ammo2 <= 0 && bot.charge >= RECARGA_ORBES_COSTE) {
+                        this.handleReload(bot.id);
+                    }
+                    this.handleShoot(bot.id, {
+                        angle: aimAngle + (Math.random() - 0.5) * 0.025
+                    });
+                }
+                bot.botNextShotAt = now + 170 + Math.random() * 110;
+            }
+
+            if (bot.currentWeapon === 1 && bot.ammo <= 3 && !bot.isReloading &&
+                (!target || targetDistance > 320 || bot.ammo <= 0)) {
+                this.handleReload(bot.id);
+            } else if (bot.currentWeapon === 2 && bot.ammo2 <= 0 && bot.charge >= RECARGA_ORBES_COSTE &&
+                !bot.isReloading && (!target || targetDistance > 320)) {
+                this.handleReload(bot.id);
+            }
+
+            if (bot.currentWeapon === 2 && bot.ammo2 <= 0 && bot.charge < RECARGA_ORBES_COSTE &&
+                bot.ammo > 0) {
+                this.handleSwitchWeapon(bot.id, 1);
+            }
+
+            const nearbyShop = this.shopZones.find((shop) =>
+                distanceBetween(shop, bot) < shop.radius + 15);
+            if (nearbyShop) {
+                if (bot.hp <= 60 && bot.charge >= ITEM_COSTOS.medkit) {
+                    this.handleBuyItem(bot.id, 'medkit');
+                } else if (bot.shield <= 0 && bot.charge >= ITEM_COSTOS.shield && bot.hp > 60) {
+                    this.handleBuyItem(bot.id, 'shield');
+                }
+            }
         });
     }
 
