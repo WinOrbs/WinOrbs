@@ -24,6 +24,11 @@ const { applyDeathLoss } = require('./apps/server/game/orbs');
 const { bankMatchOrbs, awardElimination } = require('./apps/server/game/score');
 const { applyDamage } = require('./apps/server/game/combat');
 const {
+    createPathfinder,
+    hasLineOfSight,
+    calculateAimAngle
+} = require('./apps/server/game/bot_navigation');
+const {
     assignBalancedTeam,
     canForceStartTeams,
     canDamagePlayer,
@@ -1150,6 +1155,12 @@ class GameRoom {
         bot.botLastX = bot.x;
         bot.botLastY = bot.y;
         bot.botLastMoveAngle = null;
+        bot.botRoute = null;
+        bot.botObservedTargets = Object.create(null);
+        bot.botTargetPlayerId = null;
+        bot.botNextPurchaseAt = 0;
+        bot.botNextOrbitAt = 0;
+        bot.botOrbitAngle = null;
         bot.botWanderAngle = Math.random() * Math.PI * 2;
         bot.botStrafeDir = Math.random() < 0.5 ? -1 : 1;
         bot.botPatrolSeed = Math.random() * Math.PI * 2;
@@ -1431,6 +1442,23 @@ class GameRoom {
         p.reloadWeapon = 0;
         p.canRespawn = false;
         p.respawnTimer = 0;
+        if (p.isBot) {
+            p.botRoute = null;
+            p.botNextDecisionAt = 0;
+            p.botLastMoveAt = Date.now();
+            p.botLastX = p.x;
+            p.botLastY = p.y;
+            p.botLastMoveAngle = null;
+            p.botObservedTargets = Object.create(null);
+            p.botTargetPlayerId = null;
+            p.botNextOrbitAt = 0;
+            p.botOrbitAngle = null;
+            p.botWanderAngle = Math.random() * Math.PI * 2;
+            p.botTarget = {
+                x: Math.max(120, Math.min(MAP_SIZE - 120, p.x + Math.cos(p.botWanderAngle) * 300)),
+                y: Math.max(120, Math.min(MAP_SIZE - 120, p.y + Math.sin(p.botWanderAngle) * 300))
+            };
+        }
     }
 
     startLoop() {
@@ -2043,6 +2071,16 @@ class GameRoom {
         if (!this.gameStarted) return;
         const bots = Object.values(this.players).filter((player) => player.isBot);
         const targets = Object.values(this.players).filter((player) => !player.isDead);
+        const solids = this.walls.concat(this.obstacles);
+        const navSignature = `${this.configVersion}:` + solids
+            .map((solid) => `${solid.id}:${solid.x},${solid.y},${solid.w},${solid.h},${solid.hp > 0 ? 1 : 0}`)
+            .join('|');
+        if (this.botNavigation?.signature !== navSignature) {
+            this.botNavigation = {
+                signature: navSignature,
+                pathfinder: createPathfinder(solids, MAP_SIZE, 22)
+            };
+        }
         const now = Date.now();
 
         bots.forEach((bot) => {
@@ -2054,23 +2092,25 @@ class GameRoom {
             const enemies = targets.filter((player) =>
                 player.id !== bot.id && (!bot.teamId || player.teamId !== bot.teamId));
 
-            const nearestEnemy = enemies.reduce((nearest, player) => {
+            const personality = bot.botPersonality || 'hunter';
+            const enemyScores = enemies.map((player) => {
                 const dist = Math.hypot(player.x - bot.x, player.y - bot.y);
-                if (!nearest || dist < nearest.dist) return { player, dist };
-                return nearest;
-            }, null);
-            const target = nearestEnemy ? nearestEnemy.player : null;
-            const targetDistance = target ? nearestEnemy.dist : Infinity;
+                return {
+                    player,
+                    dist,
+                    score: dist - Math.min(player.charge || 0, 120) * 0.45 -
+                        (player.hp < 50 ? 95 : 0) -
+                        (player.id === bot.botTargetPlayerId ? 70 : 0)
+                };
+            }).sort((a, b) => a.score - b.score);
+            const target = enemyScores[0]?.player || null;
+            const targetDistance = target ? Math.hypot(target.x - bot.x, target.y - bot.y) : Infinity;
             const distToCenter = Math.hypot(bot.x - this.zoneCx, bot.y - this.zoneCy);
             const distToBank = this.bankZone ? Math.hypot(bot.x - this.bankZone.x, bot.y - this.bankZone.y) : Infinity;
 
-            const personality = bot.botPersonality || 'hunter';
-            const aggression = { hunter: 1.15, collector: 0.95, evader: 0.8, skirmisher: 1.1 }[personality] || 1;
-            const lootBias = { hunter: 0.9, collector: 1.35, evader: 1.05, skirmisher: 1 }[personality] || 1;
-            const bankThreshold = personality === 'collector' ? 40 : 55;
-            const chaseRange = personality === 'evader' ? 560 : 760;
-            const retreatRange = personality === 'evader' ? 290 : 260;
-
+            const aggression = { hunter: 1.18, collector: 0.88, evader: 0.72, skirmisher: 1.05 }[personality] || 1;
+            const lootBias = { hunter: 0.9, collector: 1.4, evader: 1.1, skirmisher: 1 }[personality] || 1;
+            const preferredRange = { hunter: 205, collector: 285, evader: 350, skirmisher: 245 }[personality] || 250;
             const nearestOrb = this.droppedEnergy.reduce((nearest, item) => {
                 const dist = Math.hypot(item.x - bot.x, item.y - bot.y);
                 if (!nearest || dist < nearest.dist) return { item, dist };
@@ -2082,17 +2122,33 @@ class GameRoom {
                 return nearest;
             }, null);
 
-            const enemyThreat = enemies.filter((player) => {
-                const dist = Math.hypot(player.x - bot.x, player.y - bot.y);
-                return dist < retreatRange || (player.charge > bot.charge && dist < 440);
-            }).sort((a, b) => Math.hypot(a.x - bot.x, a.y - bot.y) - Math.hypot(b.x - bot.x, b.y - bot.y))[0] || null;
-
-            const lowHp = bot.hp < bot.maxHp * 0.38;
-            const urgentEscape = !!(enemyThreat && (lowHp || distToCenter > this.zoneRadius - 40 || bot.hp < 45));
-            const shouldBank = bot.charge >= bankThreshold && this.bankZone && distToBank < 900;
-            const shouldLoot = bot.charge < (personality === 'collector' ? 78 : 65) && nearestOrb && nearestOrb.dist < 900 * lootBias;
-            const shouldUseKit = lowHp && nearestKit && nearestKit.dist < 700;
-            const shouldChase = !!(target && targetDistance < chaseRange * aggression && (!urgentEscape || targetDistance < 220));
+            const enemyThreat = enemyScores.find(({ player, dist }) =>
+                dist < (personality === 'evader' ? 340 : 270) ||
+                (player.charge > bot.charge + 25 && dist < 420))?.player || null;
+            let lowHp = bot.hp < bot.maxHp * 0.38;
+            const zoneCritical = this.zoneShrinking && distToCenter > this.zoneRadius - 95;
+            if (now >= (bot.botNextPurchaseAt || 0)) {
+                let item = null;
+                if (lowHp && bot.charge >= ITEM_COSTOS.medkit) item = 'medkit';
+                else if (enemyThreat && bot.shield < 15 && bot.charge >= ITEM_COSTOS.shield) item = 'shield';
+                else if (targetDistance < 260 && bot.bombs < 1 && bot.charge >= ITEM_COSTOS.bomb) item = 'bomb';
+                else if (!bot.hasOrbGun && bot.charge >= ITEM_COSTOS.orbGun) item = 'orbGun';
+                if (item) {
+                    this.handleBuyItem(bot.id, item);
+                    bot.botNextPurchaseAt = now + 2500;
+                    lowHp = bot.hp < bot.maxHp * 0.38;
+                }
+            }
+            const urgentEscape = zoneCritical || !!(enemyThreat && (lowHp || bot.hp < 45));
+            const bankThreshold = personality === 'collector' ? 50 : 70;
+            const shouldBank = bot.charge >= bankThreshold && this.bankZone &&
+                (distToBank < 1050 || bot.charge >= bankThreshold * 1.5);
+            const shouldLoot = bot.charge < (personality === 'collector' ? 85 : 65) &&
+                nearestOrb && nearestOrb.dist < 950 * lootBias;
+            const shouldUseKit = lowHp && nearestKit && nearestKit.dist < 750;
+            const shouldChase = !!(target && targetDistance <
+                (personality === 'evader' ? 570 : 820) * aggression &&
+                (!urgentEscape || targetDistance < 220));
 
             let goal = bot.botTarget || {
                 x: bot.x + Math.cos(bot.botWanderAngle) * 120,
@@ -2101,9 +2157,20 @@ class GameRoom {
             let goalType = 'wander';
 
             if (urgentEscape) {
+                const enemyDistance = enemyThreat
+                    ? Math.max(1, Math.hypot(bot.x - enemyThreat.x, bot.y - enemyThreat.y))
+                    : 1;
+                let escapeX = enemyThreat ? (bot.x - enemyThreat.x) / enemyDistance : 0;
+                let escapeY = enemyThreat ? (bot.y - enemyThreat.y) / enemyDistance : 0;
+                if (zoneCritical) {
+                    const centerDistance = Math.max(1, distToCenter);
+                    escapeX += (this.zoneCx - bot.x) / centerDistance * 1.8;
+                    escapeY += (this.zoneCy - bot.y) / centerDistance * 1.8;
+                }
+                const escapeLength = Math.max(1, Math.hypot(escapeX, escapeY));
                 goal = {
-                    x: this.zoneCx + (bot.x - this.zoneCx) * -0.8 + (Math.random() - 0.5) * 140,
-                    y: this.zoneCy + (bot.y - this.zoneCy) * -0.8 + (Math.random() - 0.5) * 140
+                    x: Math.max(bot.radius, Math.min(MAP_SIZE - bot.radius, bot.x + escapeX / escapeLength * 500)),
+                    y: Math.max(bot.radius, Math.min(MAP_SIZE - bot.radius, bot.y + escapeY / escapeLength * 500))
                 };
                 goalType = 'flee';
             } else if (shouldUseKit) {
@@ -2120,46 +2187,120 @@ class GameRoom {
                 goalType = 'engage';
             }
 
-            const distToGoal = goal ? Math.hypot(bot.x - goal.x, bot.y - goal.y) : Infinity;
-            const stuckForTooLong = !!bot.botAI?.moving && now - bot.botLastMoveAt > 1100;
+            const stuckForTooLong = !!bot.botAI?.moving && now - bot.botLastMoveAt > 1000;
             if (goalType === 'wander') {
-                if (!bot.botTarget || distToGoal < 34 || stuckForTooLong || now >= (bot.botNextDecisionAt || 0)) {
+                const wanderDistance = bot.botTarget
+                    ? Math.hypot(bot.x - bot.botTarget.x, bot.y - bot.botTarget.y)
+                    : Infinity;
+                if (!bot.botTarget || wanderDistance < 40 || stuckForTooLong ||
+                    now >= (bot.botNextDecisionAt || 0)) {
                     const angle = bot.botPatrolSeed + this.tick * 0.09 + Math.random() * 1.6;
-                    const radius = 180 + Math.random() * 220;
+                    const radius = 220 + Math.random() * 260;
                     goal = {
-                        x: Math.max(120, Math.min(MAP_SIZE - 120, bot.x + Math.cos(angle) * radius * 0.7 + (Math.random() - 0.5) * 80)),
-                        y: Math.max(120, Math.min(MAP_SIZE - 120, bot.y + Math.sin(angle) * radius * 0.7 + (Math.random() - 0.5) * 80))
+                        x: Math.max(120, Math.min(MAP_SIZE - 120, bot.x + Math.cos(angle) * radius)),
+                        y: Math.max(120, Math.min(MAP_SIZE - 120, bot.y + Math.sin(angle) * radius))
                     };
                     bot.botTarget = goal;
                     bot.botWanderAngle = angle;
-                    bot.botNextDecisionAt = now + 650 + Math.random() * 950;
+                    bot.botNextDecisionAt = now + 1800 + Math.random() * 2200;
                 }
             } else {
                 bot.botTarget = goal;
             }
 
-            let angle;
-            if (goalType === 'flee' && enemyThreat) {
-                const evadeDir = Math.atan2(bot.y - enemyThreat.y, bot.x - enemyThreat.x);
-                angle = evadeDir + (Math.random() - 0.5) * 0.8;
-            } else if (goalType === 'engage' && target) {
-                angle = Math.atan2(target.y - bot.y, target.x - bot.x);
-                const orbit = (this.tick % 9) * 0.16 + bot.botPatrolSeed;
-                const offset = bot.botStrafeDir * (targetDistance < 250 ? Math.PI / 1.8 : Math.PI / 4);
-                angle += Math.sin(orbit) * offset * (0.35 + Math.random() * 0.7);
+            if (goalType === 'engage' && target) {
+                bot.botTargetPlayerId = target.id;
+                if (targetDistance > preferredRange + 65 ||
+                    !hasLineOfSight(bot, target, solids)) {
+                    goal = target;
+                } else {
+                    const radial = Math.atan2(bot.y - target.y, bot.x - target.x);
+                    let orbit = radial;
+                    if (targetDistance >= preferredRange - 55) {
+                        if (bot.botOrbitAngle === null || now >= bot.botNextOrbitAt) {
+                            bot.botOrbitAngle = radial + bot.botStrafeDir * 0.68;
+                            bot.botNextOrbitAt = now + 900;
+                        }
+                        orbit = bot.botOrbitAngle;
+                    }
+                    goal = {
+                        x: target.x + Math.cos(orbit) * preferredRange,
+                        y: target.y + Math.sin(orbit) * preferredRange
+                    };
+                }
+                if (bot.hasOrbGun && bot.ammo2 <= 0 &&
+                    bot.charge >= RECARGA_ORBES_COSTE && !bot.isReloading) {
+                    this.handleSwitchWeapon(bot.id, { weapon: 2 });
+                } else if (!bot.isReloading) {
+                    if (bot.hasOrbGun && bot.ammo2 > 0 && targetDistance > 270) {
+                        this.handleSwitchWeapon(bot.id, { weapon: 2 });
+                    } else if (bot.currentWeapon !== 1) {
+                        this.handleSwitchWeapon(bot.id, { weapon: 1 });
+                    }
+                }
             } else {
-                angle = Math.atan2(goal.y - bot.y, goal.x - bot.x);
+                bot.botTargetPlayerId = null;
             }
 
-            const distanceToGoal = Math.hypot(goal.x - bot.x, goal.y - bot.y);
-            let moveAngle = goalType === 'engage' && target && targetDistance < 350
-                ? angle + bot.botStrafeDir * (Math.PI / 2.2)
-                : angle;
-            const moving = distanceToGoal > (goal === this.bankZone ? this.bankZone.radius * 0.8 : 34)
-                || (goalType === 'engage' && target && targetDistance > 140);
+            const angle = goalType === 'engage' && target
+                ? calculateAimAngle(
+                    bot,
+                    target,
+                    now,
+                    bot.currentWeapon === 2 ? 14 : 18,
+                    personality
+                )
+                : Math.atan2(goal.y - bot.y, goal.x - bot.x);
 
+            const distanceToGoal = Math.hypot(goal.x - bot.x, goal.y - bot.y);
+            let moving = distanceToGoal > (goalType === 'bank' ? this.bankZone.radius * 0.8 : 34);
+            let waypoints = bot.botRoute?.waypoints || [];
+            let routeIndex = bot.botRoute?.index || 0;
+            while (routeIndex < waypoints.length &&
+                Math.hypot(waypoints[routeIndex].x - bot.x, waypoints[routeIndex].y - bot.y) < 38) {
+                routeIndex++;
+            }
+            const route = bot.botRoute;
+            const routeKey = goalType === 'engage' && target
+                ? `engage:${target.id}`
+                : `${goalType}:${goal.id || 'goal'}`;
+            const routeIdentityChanged = !route || route.key !== routeKey;
+            const goalShifted = route && Math.hypot(route.goalX - goal.x, route.goalY - goal.y) > 65;
+            const routeAge = route ? now - route.computedAt : Infinity;
+            const routeExpired = !route || routeAge >
+                (goalType === 'engage' ? 800 : 5000);
+            const routeEnd = waypoints[waypoints.length - 1];
+            const reachedUnreachableGoal = routeIndex >= waypoints.length && routeEnd &&
+                Math.hypot(routeEnd.x - goal.x, routeEnd.y - goal.y) > 55 &&
+                Math.hypot(routeEnd.x - bot.x, routeEnd.y - bot.y) < 48;
+            if (reachedUnreachableGoal) moving = false;
+            if (moving && (routeIdentityChanged || (goalShifted && routeAge >= 350) ||
+                routeExpired || stuckForTooLong ||
+                (waypoints.length > 0 && routeIndex >= waypoints.length))) {
+                waypoints = this.botNavigation.pathfinder.findPath(bot, goal) || [];
+                routeIndex = 0;
+                bot.botRoute = {
+                    key: routeKey,
+                    goalX: goal.x,
+                    goalY: goal.y,
+                    waypoints,
+                    index: 0,
+                    computedAt: now
+                };
+            }
+            if (bot.botRoute) bot.botRoute.index = routeIndex;
+
+            let moveAngle = angle;
             if (moving) {
-                const solids = this.walls.concat(this.obstacles);
+                const waypoint = waypoints[routeIndex];
+                moveAngle = waypoint
+                    ? Math.atan2(waypoint.y - bot.y, waypoint.x - bot.x)
+                    : Math.atan2(goal.y - bot.y, goal.x - bot.x);
+                if (goalType === 'engage' && target && targetDistance <= preferredRange + 65 &&
+                    hasLineOfSight(bot, target, solids)) {
+                    moveAngle = Math.atan2(target.y - bot.y, target.x - bot.x) +
+                        bot.botStrafeDir * Math.PI / 2;
+                }
                 const directionAt = (directionAngle) => {
                     let x = Math.cos(directionAngle);
                     let y = Math.sin(directionAngle);
@@ -2171,48 +2312,51 @@ class GameRoom {
                     }
                     return { x, y };
                 };
-                const isClear = (directionAngle) => {
-                    const direction = directionAt(directionAngle);
-                    const lookAhead = bot.radius + 30;
-                    for (let distance = 12; distance <= lookAhead; distance += 12) {
-                        const x = bot.x + direction.x * distance;
-                        const y = bot.y + direction.y * distance;
-                        if (x < bot.radius || x > MAP_SIZE - bot.radius ||
-                            y < bot.radius || y > MAP_SIZE - bot.radius) return false;
-                        const hitsSolid = solids.some((solid) => {
-                            if (solid.hp <= 0) return false;
-                            const nearestX = Math.max(solid.x, Math.min(x, solid.x + solid.w));
-                            const nearestY = Math.max(solid.y, Math.min(y, solid.y + solid.h));
-                            return Math.hypot(x - nearestX, y - nearestY) < bot.radius + 5;
-                        });
-                        if (hitsSolid) return false;
-                    }
-                    return true;
+                const direction = directionAt(moveAngle);
+                const next = {
+                    x: bot.x + direction.x * (bot.radius + 16),
+                    y: bot.y + direction.y * (bot.radius + 16)
                 };
-                const candidates = [0, 1, -1, 2, -2, 3, -3, 4].map((step) =>
-                    moveAngle + step * Math.PI / 4);
-                const viable = candidates.filter(isClear);
-                if (viable.length) {
-                    const scoreDirection = (candidate) => {
-                        const direction = directionAt(candidate);
-                        const projectedDistance = Math.hypot(
-                            goal.x - (bot.x + direction.x * 54),
-                            goal.y - (bot.y + direction.y * 54)
-                        );
-                        const turnCost = Math.abs(Math.atan2(
-                            Math.sin(candidate - moveAngle),
-                            Math.cos(candidate - moveAngle)
-                        )) * 20;
-                        const reverseCost = stuckForTooLong && bot.botLastMoveAngle !== null &&
-                            Math.cos(candidate - bot.botLastMoveAngle) > 0.7 ? 100 : 0;
-                        return projectedDistance + turnCost + reverseCost;
-                    };
-                    moveAngle = viable.reduce((best, candidate) =>
-                        scoreDirection(candidate) < scoreDirection(best) ? candidate : best);
-                } else if (stuckForTooLong) {
-                    moveAngle = bot.botLastMoveAngle === null
-                        ? moveAngle + Math.PI
-                        : bot.botLastMoveAngle + Math.PI;
+                const blocked = next.x < bot.radius || next.y < bot.radius ||
+                    next.x > MAP_SIZE - bot.radius || next.y > MAP_SIZE - bot.radius ||
+                    !hasLineOfSight(bot, next, solids);
+                if (blocked) {
+                    const candidates = [1, -1, 2, -2, 3, -3, 4]
+                        .map((step) => moveAngle + step * Math.PI / 4)
+                        .filter((candidate) => {
+                            const candidateDirection = directionAt(candidate);
+                            const point = {
+                                x: bot.x + candidateDirection.x * (bot.radius + 16),
+                                y: bot.y + candidateDirection.y * (bot.radius + 16)
+                            };
+                            return point.x >= bot.radius && point.y >= bot.radius &&
+                                point.x <= MAP_SIZE - bot.radius && point.y <= MAP_SIZE - bot.radius &&
+                                !solids.some((solid) => {
+                                    if (solid.hp <= 0) return false;
+                                    const nearestX = Math.max(solid.x, Math.min(point.x, solid.x + solid.w));
+                                    const nearestY = Math.max(solid.y, Math.min(point.y, solid.y + solid.h));
+                                    return Math.hypot(point.x - nearestX, point.y - nearestY) < bot.radius + 4;
+                                });
+                        });
+                    if (candidates.length) {
+                        moveAngle = candidates.reduce((best, candidate) => {
+                            const bestDirection = directionAt(best);
+                            const candidateDirection = directionAt(candidate);
+                            const projected = Math.hypot(
+                                goal.x - bot.x - candidateDirection.x * 45,
+                                goal.y - bot.y - candidateDirection.y * 45
+                            );
+                            const bestProjected = Math.hypot(
+                                goal.x - bot.x - bestDirection.x * 45,
+                                goal.y - bot.y - bestDirection.y * 45
+                            );
+                            return projected < bestProjected ? candidate : best;
+                        });
+                    } else if (stuckForTooLong) {
+                        moveAngle = bot.botLastMoveAngle === null
+                            ? moveAngle + Math.PI
+                            : bot.botLastMoveAngle + Math.PI / 2;
+                    }
                 }
             }
 
@@ -2238,9 +2382,10 @@ class GameRoom {
                 bot.botLastY = bot.y;
             }
 
-            if (goalType === 'engage' && target && targetDistance < 700 && now >= bot.botNextShotAt) {
-                const shotAngle = angle + (Math.random() - 0.5) * 0.22;
-                this.handleShoot(bot.id, { angle: shotAngle });
+            const canSeeTarget = target && hasLineOfSight(bot, target, solids);
+            if (goalType === 'engage' && target && targetDistance < 760 && canSeeTarget &&
+                now >= bot.botNextShotAt) {
+                this.handleShoot(bot.id, { angle });
                 bot.botNextShotAt = now + 420 + Math.random() * 240;
             }
 
@@ -2249,22 +2394,23 @@ class GameRoom {
                 bot.botNextDashAt = now + 1100 + Math.random() * 700;
             }
 
-            if (goalType === 'engage' && target && targetDistance < 240 && bot.bombs > 0 && now >= bot.botNextBombAt) {
-                this.lanzarBomba(bot, angle + (Math.random() - 0.5) * 0.4);
+            if (goalType === 'engage' && target && targetDistance < 240 &&
+                bot.bombs > 0 && now >= bot.botNextBombAt) {
+                this.lanzarBomba(bot, angle);
                 bot.botNextBombAt = now + 1500 + Math.random() * 900;
             }
 
             if (bot.ammo <= 0 && !bot.isReloading) this.handleReload(bot.id);
-            if (bot.ammo2 <= 0 && bot.hasOrbGun && !bot.isReloading && bot.charge >= 25) this.handleReload(bot.id);
+            if (bot.ammo2 <= 0 && bot.hasOrbGun && bot.currentWeapon === 2 &&
+                !bot.isReloading && bot.charge >= RECARGA_ORBES_COSTE) this.handleReload(bot.id);
 
-            const canShootOnMove = goalType === 'engage' && target && targetDistance < 520;
             bot.botAI = {
                 mode: goalType,
                 targetId: target ? target.id : null,
                 targetDistance: Number.isFinite(targetDistance) ? Math.round(targetDistance) : null,
                 angle: Number(angle.toFixed(2)),
                 moving: !!moving,
-                canShoot: !!canShootOnMove,
+                canShoot: !!(goalType === 'engage' && target && targetDistance < 760 && canSeeTarget),
                 track: goalType === 'engage' ? 'enemy' : goalType === 'bank' ? 'bank' : goalType === 'flee' ? 'danger' : 'loot'
             };
         });

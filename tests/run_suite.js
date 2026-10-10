@@ -8,6 +8,8 @@ const suites = Object.freeze({
         'check_scripts.js',
         'check_game_js.js',
         'test_bombas.js',
+        'test_bot_navigation.js',
+        'test_practice_bots.js',
         'test_config_tasa.js',
         'test_configuration.js',
         'test_combat_domain.js',
