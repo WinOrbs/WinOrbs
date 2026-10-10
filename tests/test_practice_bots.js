@@ -9,16 +9,31 @@ const {
     findPath: findBotPath,
     hasLineOfSight
 } = require('../apps/server/game/bot_navigation');
+const { choosePracticeBotIntent } = require('../apps/server/game/bot_ai');
+const { bankMatchOrbs } = require('../apps/server/game/score');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 const methodStart = source.indexOf('    updateBots() {');
 const methodEnd = source.indexOf('    update() {', methodStart);
 assert.ok(methodStart >= 0 && methodEnd > methodStart, 'practice bot update method exists');
 const methodSource = source.slice(methodStart, methodEnd);
+const emptyAmmoStart = source.indexOf('    avisarSinMunicion(p, texto) {');
+const shootStart = source.indexOf('    handleShoot(socketId, shootData) {');
+const shootEnd = source.indexOf('    lanzarBomba(', shootStart);
+assert.ok(emptyAmmoStart >= 0 && shootStart > emptyAmmoStart && shootEnd > shootStart,
+    'normal server shooting and empty-ammo handlers exist');
+const emptyAmmoSource = source.slice(emptyAmmoStart, shootStart);
+const shootSource = source.slice(shootStart, shootEnd);
 const physicsStart = source.indexOf('            let moveX = 0, moveY = 0;', methodEnd);
 const physicsEnd = source.indexOf('            p.isExtracting =', physicsStart);
 assert.ok(physicsStart >= 0 && physicsEnd > physicsStart, 'server player movement physics exists');
 const physicsSource = source.slice(physicsStart, physicsEnd);
+const orbScoringEnd = source.indexOf('            // Botiquines:', physicsEnd);
+const healthPickupEnd = source.indexOf('            // Lanza-Orbes', orbScoringEnd);
+assert.ok(orbScoringEnd > physicsEnd && healthPickupEnd > orbScoringEnd,
+    'normal orb banking and health pickup handlers exist');
+const orbScoringSource = source.slice(physicsEnd, orbScoringEnd);
+const healthPickupSource = source.slice(orbScoringEnd, healthPickupEnd);
 const updateStart = source.indexOf('    update() {', methodEnd);
 assert.ok(updateStart >= methodEnd &&
     source.indexOf('if (this.isPractice) this.updateBots();', updateStart) < updateStart + 200,
@@ -40,12 +55,24 @@ const sandbox = {
     createPathfinder,
     findBotPath,
     hasLineOfSight,
-    calculateAimAngle
+    calculateAimAngle,
+    choosePracticeBotIntent,
+    bankMatchOrbs,
+    validateShoot: () => ({ ok: true }),
+    SHOOT_COOLDOWN: { 1: 120, 2: 120 },
+    io: {
+        to: () => ({ emit: () => {} }),
+        sockets: { sockets: { get: () => null } }
+    }
 };
 const Room = new Function('sandbox',
-    'with (sandbox) { return class Room { ' + methodSource + ' }; }')(sandbox);
+    'with (sandbox) { return class Room { ' + methodSource + emptyAmmoSource + shootSource + ' }; }')(sandbox);
 const applyServerMovement = new Function('sandbox',
     'with (sandbox) { return function (p) { ' + physicsSource + ' }; }')(sandbox);
+const applyServerOrbScoring = new Function('sandbox',
+    'with (sandbox) { return function (p) { ' + orbScoringSource + ' }; }')(sandbox);
+const applyServerHealthPickup = new Function('sandbox',
+    'with (sandbox) { return function (p) { ' + healthPickupSource + ' }; }')(sandbox);
 
 function createPlayer(id, overrides = {}) {
     return {
@@ -75,10 +102,10 @@ function createPlayer(id, overrides = {}) {
         botNextOrbitAt: 0,
         botOrbitAngle: null,
         botNextDecisionAt: 9_999_999,
-        botLastMoveAt: now,
-        botLastX: 0,
-        botLastY: 0,
+        botStuckTicks: 0,
+        botRecoveryCooldownTicks: 0,
         botLastMoveAngle: null,
+        botObjective: null,
         botRoute: null,
         botObservedTargets: Object.create(null),
         botAI: { moving: false },
@@ -107,7 +134,7 @@ function createRoom(bot, human, wall) {
         zoneRadius: 250,
         zoneShrinking: false,
         bankZone: { x: 250, y: 250, radius: 30 },
-        shots: [],
+        bullets: [],
         dashes: [],
         respawned: [],
         purchases: []
@@ -115,7 +142,6 @@ function createRoom(bot, human, wall) {
     room.handleRespawn = (id) => room.respawned.push(id);
     room.handleBuyItem = (id, item) => room.purchases.push({ id, item });
     room.handleSwitchWeapon = () => {};
-    room.handleShoot = (id, shot) => room.shots.push({ id, shot });
     room.handleDash = (id) => room.dashes.push(id);
     room.lanzarBomba = () => {};
     room.handleReload = () => {};
@@ -134,8 +160,6 @@ function advanceWithServerCollision(player, room) {
         x: 150,
         y: 250,
         botTarget: { x: 400, y: 250 },
-        botLastX: 150,
-        botLastY: 250
     });
     const human = createPlayer('human', { x: 50, y: 450, isDead: true });
     const room = createRoom(bot, human, wall);
@@ -159,7 +183,7 @@ function advanceWithServerCollision(player, room) {
     const human = createPlayer('human', { x: 400, y: 250 });
     const room = createRoom(bot, human, wall);
     room.updateBots();
-    assert.equal(room.shots.length, 0, 'bot does not waste shots through solid cover');
+    assert.equal(room.bullets.length, 0, 'bot does not waste shots through solid cover');
     assert.equal(bot.botAI.mode, 'engage', 'bot still seeks an enemy behind cover');
     for (let tick = 0; tick < 140; tick++) {
         now += 17;
@@ -175,7 +199,8 @@ function advanceWithServerCollision(player, room) {
     human.y = 700;
     now += 1000;
     room.updateBots();
-    assert.ok(room.shots.length > 0, 'bot fires when the target becomes visible');
+    assert.ok(room.bullets.length > 0, 'bot uses the normal server shooting handler when visible');
+    assert.ok(bot.ammo < 15, 'normal firing consumes the bot’s ordinary ammunition');
 }
 
 {
@@ -206,9 +231,7 @@ function advanceWithServerCollision(player, room) {
     const bot = createPlayer('bot', {
         isBot: true,
         x: 600,
-        y: 600,
-        botLastX: 600,
-        botLastY: 600
+        y: 600
     });
     const human = createPlayer('human', { x: 805, y: 600 });
     const room = createRoom(bot, human, null);
@@ -238,10 +261,8 @@ function advanceWithServerCollision(player, room) {
         isBot: true,
         x: 600,
         y: 600,
-        botLastX: 600,
-        botLastY: 600,
-        botAI: { moving: false },
-        botLastMoveAt: now - 1000,
+        botAI: { moving: true },
+        botStuckTicks: 45,
         botRoute: {
             key: 'engage:human',
             goalX: 645.6,
@@ -265,6 +286,67 @@ function advanceWithServerCollision(player, room) {
     advanceWithServerCollision(bot, room);
     assert.ok(Math.hypot(bot.x - start.x, bot.y - start.y) > 0,
         'stuck combat recovery results in actual physical displacement');
+}
+
+{
+    const bot = createPlayer('bot', {
+        isBot: true,
+        x: 600,
+        y: 600,
+        botRoute: {
+            key: 'loot:partial-orb',
+            goalX: 750,
+            goalY: 600,
+            waypoints: [{ x: 600, y: 600 }],
+            index: 0,
+            computedAt: now
+        }
+    });
+    const human = createPlayer('human', { x: 1200, y: 600 });
+    const room = createRoom(bot, human, null);
+    room.practiceOwnerId = human.id;
+    room.droppedEnergy = [{ id: 'partial-orb', x: 750, y: 600, val: 10 }];
+
+    room.updateBots();
+    assert.equal(bot.botAI.mode, 'loot', 'bot retains the valid resource objective');
+    assert.equal(bot.botAI.moving, true,
+        'an exhausted partial route cannot cancel movement toward a reachable resource');
+    const start = { x: bot.x, y: bot.y };
+    advanceWithServerCollision(bot, room);
+    assert.ok(Math.hypot(bot.x - start.x, bot.y - start.y) > 0,
+        'the fallback from a partial route reaches the real movement loop');
+}
+
+{
+    const bot = createPlayer('bot', {
+        isBot: true,
+        x: 600,
+        y: 600,
+        botAI: { moving: true },
+        inputs: { w: false, a: false, s: false, d: true, angle: 0 }
+    });
+    const human = createPlayer('human', { x: 1200, y: 600 });
+    const room = createRoom(bot, human, {
+        id: 'blocking-wall',
+        x: 622,
+        y: 560,
+        w: 60,
+        h: 80,
+        hp: 100
+    });
+    room.practiceOwnerId = human.id;
+
+    for (let tick = 0; tick < 45; tick++) advanceWithServerCollision(bot, room);
+    assert.equal(bot.botStuckTicks, 45,
+        'the real post-collision movement loop counts consecutive zero-displacement ticks');
+
+    room.updateBots();
+    assert.equal(bot.botStuckTicks, 0, 'stuck recovery clears the measured no-progress counter');
+    assert.equal(bot.botRecoveryCooldownTicks, 90, 'recovery uses a bounded 90-tick cooldown');
+    const beforeRecoveryStep = { x: bot.x, y: bot.y };
+    advanceWithServerCollision(bot, room);
+    assert.ok(Math.hypot(bot.x - beforeRecoveryStep.x, bot.y - beforeRecoveryStep.y) >= 0.5,
+        'the recovered direction produces real movement around the blocking wall');
 }
 
 {
@@ -307,8 +389,6 @@ function advanceWithServerCollision(player, room) {
     });
     bots.slice(1).forEach((bot) => {
         room.players[bot.id] = bot;
-        bot.botLastX = bot.x;
-        bot.botLastY = bot.y;
     });
     room.practiceOwnerId = human.id;
     room.obstacles = [{
@@ -323,8 +403,10 @@ function advanceWithServerCollision(player, room) {
         start: { x: bot.x, y: bot.y },
         distance: 0,
         stillTicks: 0,
-        maxStillTicks: 0
+        maxStillTicks: 0,
+        scoreStart: bot.bankedScore || 0
     }]));
+    const simulationStartedAt = performance.now();
 
     for (let tick = 0; tick < 600; tick++) {
         now += 1000 / 60;
@@ -340,6 +422,7 @@ function advanceWithServerCollision(player, room) {
             sample.maxStillTicks = Math.max(sample.maxStillTicks, sample.stillTicks);
         }
     }
+    const simulationDurationMs = performance.now() - simulationStartedAt;
 
     const report = bots.map((bot) => {
         const sample = samples.get(bot.id);
@@ -348,10 +431,18 @@ function advanceWithServerCollision(player, room) {
             start: sample.start,
             end: { x: bot.x, y: bot.y },
             distance: Math.round(sample.distance),
-            maxStillTicks: sample.maxStillTicks
+            maxStillTicks: sample.maxStillTicks,
+            state: bot.botAI?.mode || null,
+            targetId: bot.botAI?.targetId || null,
+            scoreStart: sample.scoreStart,
+            scoreEnd: bot.bankedScore || 0
         };
     });
-    console.log('Five-bot 600-tick movement simulation:', JSON.stringify(report));
+    console.log('Five-bot 600-tick movement simulation:', JSON.stringify({
+        durationMs: Math.round(simulationDurationMs),
+        bots: report
+    }));
+    assert.ok(simulationDurationMs < 5000, 'multi-bot simulation completes within the performance budget');
     for (const result of report) {
         assert.ok(result.distance > 300, `${result.id} accumulates real movement over 600 ticks`);
         assert.ok(result.maxStillTicks < 90, `${result.id} does not remain stuck for 1.5 seconds`);
@@ -404,6 +495,76 @@ function advanceWithServerCollision(player, room) {
     room.updateBots();
     assert.equal(bot.botBankingOrbs, false, 'bot resumes hunting after depositing its orbs');
     assert.equal(bot.botAI.mode, 'engage', 'bot returns to the owner after banking');
+}
+
+{
+    const bot = createPlayer('bot', { isBot: true, x: 100, y: 250 });
+    const human = createPlayer('human', { x: 1200, y: 250 });
+    const room = createRoom(bot, human, null);
+    room.practiceOwnerId = human.id;
+    room.droppedEnergy = [
+        { id: 'committed-orb', x: 200, y: 250, val: 10 },
+        { id: 'new-nearer-orb', x: 280, y: 250, val: 10 }
+    ];
+
+    room.updateBots();
+    assert.equal(bot.botObjective.resourceId, 'committed-orb',
+        'bot commits to the first worthwhile resource');
+    room.droppedEnergy[1].x = 110;
+    room.updateBots();
+    assert.equal(bot.botObjective.resourceId, 'committed-orb',
+        'a newly nearer resource does not make the bot switch objectives every tick');
+
+    human.x = bot.x + 200;
+    room.updateBots();
+    assert.equal(bot.botAI.mode, 'engage',
+        'a nearby combat threat preempts resource collection');
+}
+
+{
+    const bot = createPlayer('bot', {
+        isBot: true,
+        x: 400,
+        y: 250,
+        bankedScore: 0
+    });
+    const human = createPlayer('human', { x: 1500, y: 250 });
+    const room = createRoom(bot, human, null);
+    room.practiceOwnerId = human.id;
+    room.droppedEnergy = [{ id: 'bank-test-orb', x: bot.x, y: bot.y, val: 70 }];
+    const start = { x: bot.x, y: bot.y };
+
+    applyServerOrbScoring.call(room, bot);
+    assert.equal(bot.charge, 70, 'bots collect match energy through the normal player pickup loop');
+    assert.equal(bot.bankedScore, 0, 'collecting unbanked energy does not award points yet');
+    assert.equal(room.droppedEnergy.length, 0, 'the normal pickup loop removes the collected orb');
+
+    room.updateBots();
+    assert.equal(bot.botAI.mode, 'bank', 'the state machine selects the existing bank objective');
+    for (let tick = 0; tick < 80 && bot.bankedScore === 0; tick++) {
+        now += 17;
+        room.tick++;
+        room.updateBots();
+        advanceWithServerCollision(bot, room);
+        applyServerOrbScoring.call(room, bot);
+    }
+    assert.equal(bot.charge, 0, 'the normal bank loop consumes carried energy');
+    assert.equal(bot.bankedScore, 70, 'the normal bankMatchOrbs rule awards the points');
+    console.log('Bot scoring simulation:', JSON.stringify({
+        start,
+        end: { x: bot.x, y: bot.y },
+        distance: Math.round(Math.hypot(bot.x - start.x, bot.y - start.y)),
+        state: bot.botAI.mode,
+        targetId: bot.botAI.targetId,
+        scoreStart: 0,
+        scoreEnd: bot.bankedScore
+    }));
+
+    bot.hp = 40;
+    room.droppedHealthKits = [{ id: 'health-test-kit', x: bot.x, y: bot.y, val: 30 }];
+    applyServerHealthPickup.call(room, bot);
+    assert.equal(bot.hp, 70, 'bots collect useful health kits through the normal pickup loop');
+    assert.equal(room.droppedHealthKits.length, 0, 'the normal health pickup loop consumes the kit');
 }
 
 {
