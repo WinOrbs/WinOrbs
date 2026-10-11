@@ -9,7 +9,10 @@ const {
     findPath: findBotPath,
     hasLineOfSight
 } = require('../apps/server/game/bot_navigation');
-const { choosePracticeBotIntent } = require('../apps/server/game/bot_ai');
+const {
+    choosePracticeBotIntent,
+    selectPracticeTarget
+} = require('../apps/server/game/bot_ai');
 const { bankMatchOrbs } = require('../apps/server/game/score');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
@@ -20,10 +23,14 @@ const methodSource = source.slice(methodStart, methodEnd);
 const emptyAmmoStart = source.indexOf('    avisarSinMunicion(p, texto) {');
 const shootStart = source.indexOf('    handleShoot(socketId, shootData) {');
 const shootEnd = source.indexOf('    lanzarBomba(', shootStart);
+const reloadStart = source.indexOf('    handleReload(socketId) {');
+const reloadEnd = source.indexOf('    handleSwitchWeapon(', reloadStart);
 assert.ok(emptyAmmoStart >= 0 && shootStart > emptyAmmoStart && shootEnd > shootStart,
     'normal server shooting and empty-ammo handlers exist');
+assert.ok(reloadStart > shootEnd && reloadEnd > reloadStart, 'normal server reload handler exists');
 const emptyAmmoSource = source.slice(emptyAmmoStart, shootStart);
 const shootSource = source.slice(shootStart, shootEnd);
+const reloadSource = source.slice(reloadStart, reloadEnd);
 const physicsStart = source.indexOf('            let moveX = 0, moveY = 0;', methodEnd);
 const physicsEnd = source.indexOf('            p.isExtracting =', physicsStart);
 assert.ok(physicsStart >= 0 && physicsEnd > physicsStart, 'server player movement physics exists');
@@ -38,6 +45,11 @@ const updateStart = source.indexOf('    update() {', methodEnd);
 assert.ok(updateStart >= methodEnd &&
     source.indexOf('if (this.isPractice) this.updateBots();', updateStart) < updateStart + 200,
     'bot AI remains limited to SOLO practice rooms');
+const reloadTickStart = source.indexOf('            if (p.isReloading) {', updateStart);
+const reloadTickEnd = source.indexOf('            if (p.isDashing) {', reloadTickStart);
+assert.ok(reloadTickStart > updateStart && reloadTickEnd > reloadTickStart,
+    'normal server reload timer loop exists');
+const reloadTickSource = source.slice(reloadTickStart, reloadTickEnd);
 
 let now = 1_000_000;
 class TestDate extends Date {
@@ -57,7 +69,9 @@ const sandbox = {
     hasLineOfSight,
     calculateAimAngle,
     choosePracticeBotIntent,
+    selectPracticeTarget,
     bankMatchOrbs,
+    RELOAD_TICKS: 150,
     validateShoot: () => ({ ok: true }),
     SHOOT_COOLDOWN: { 1: 120, 2: 120 },
     io: {
@@ -66,13 +80,16 @@ const sandbox = {
     }
 };
 const Room = new Function('sandbox',
-    'with (sandbox) { return class Room { ' + methodSource + emptyAmmoSource + shootSource + ' }; }')(sandbox);
+    'with (sandbox) { return class Room { ' + methodSource + emptyAmmoSource + shootSource +
+        reloadSource + ' }; }')(sandbox);
 const applyServerMovement = new Function('sandbox',
     'with (sandbox) { return function (p) { ' + physicsSource + ' }; }')(sandbox);
 const applyServerOrbScoring = new Function('sandbox',
     'with (sandbox) { return function (p) { ' + orbScoringSource + ' }; }')(sandbox);
 const applyServerHealthPickup = new Function('sandbox',
     'with (sandbox) { return function (p) { ' + healthPickupSource + ' }; }')(sandbox);
+const applyServerReloadTick = new Function('sandbox',
+    'with (sandbox) { return function (p) { ' + reloadTickSource + ' }; }')(sandbox);
 
 function createPlayer(id, overrides = {}) {
     return {
@@ -144,7 +161,6 @@ function createRoom(bot, human, wall) {
     room.handleSwitchWeapon = () => {};
     room.handleDash = (id) => room.dashes.push(id);
     room.lanzarBomba = () => {};
-    room.handleReload = () => {};
     return room;
 }
 
@@ -204,6 +220,51 @@ function advanceWithServerCollision(player, room) {
 }
 
 {
+    const bot = createPlayer('bot', {
+        isBot: true,
+        x: 600,
+        y: 600,
+        ammo: 2,
+        maxAmmo: 15
+    });
+    const human = createPlayer('human', { x: 1000, y: 600 });
+    const room = createRoom(bot, human, null);
+    room.practiceOwnerId = human.id;
+    const shotTimes = [];
+    let previousBulletCount = 0;
+
+    for (let tick = 0; tick < 180; tick++) {
+        now += 17;
+        room.tick++;
+        room.updateBots();
+        applyServerReloadTick.call(room, bot);
+        advanceWithServerCollision(bot, room);
+        if (room.bullets.length > previousBulletCount) {
+            shotTimes.push(now);
+            previousBulletCount = room.bullets.length;
+        }
+        if (bot.isReloading) break;
+    }
+    assert.equal(room.bullets.length, 2, 'bot spends only its two rounds before reloading');
+    assert.equal(bot.ammo, 0, 'bot ammunition reaches zero through the normal shooting handler');
+    assert.equal(bot.isReloading, true, 'empty ammunition starts the real timed reload');
+    assert.ok(shotTimes[1] - shotTimes[0] >= 760,
+        'bot fire cadence is deliberate rather than frantic');
+    const reloadStartedAt = now;
+
+    for (let tick = 0; tick < 150 && bot.isReloading; tick++) {
+        now += 17;
+        room.tick++;
+        room.updateBots();
+        applyServerReloadTick.call(room, bot);
+    }
+    assert.equal(bot.isReloading, false, 'the existing server reload timer completes normally');
+    assert.equal(bot.ammo, bot.maxAmmo, 'bot receives only the standard magazine after reloading');
+    assert.ok(now - reloadStartedAt >= 149 * 17,
+        'bot waits through the ordinary reload duration instead of receiving free ammunition');
+}
+
+{
     const bot = createPlayer('bot', { isBot: true, x: 150, y: 250 });
     const human = createPlayer('human', { x: 1400, y: 250 });
     const room = createRoom(bot, human, null);
@@ -225,6 +286,60 @@ function advanceWithServerCollision(player, room) {
         advanceWithServerCollision(bot, room);
     }
     assert.ok(bot.x > 700, 'bot keeps advancing toward the owner instead of stopping after spawning');
+}
+
+{
+    const firstBot = createPlayer('bot-first', {
+        isBot: true,
+        x: 300,
+        y: 300,
+        bankedScore: 5
+    });
+    const leadingBot = createPlayer('bot-leader', {
+        isBot: true,
+        x: 650,
+        y: 300,
+        bankedScore: 35,
+        eliminations: 2
+    });
+    const human = createPlayer('human', { x: 450, y: 700, isDead: true });
+    const room = createRoom(firstBot, human, null);
+    room.players[leadingBot.id] = leadingBot;
+    room.practiceOwnerId = human.id;
+
+    room.updateBots();
+    assert.equal(firstBot.botAI.targetId, leadingBot.id,
+        'after the owner dies, a bot targets a living rival');
+    assert.equal(leadingBot.botAI.targetId, firstBot.id,
+        'bots engage one another instead of remaining in owner-only mode');
+    assert.ok(room.bullets.some((bullet) => bullet.ownerId === firstBot.id) &&
+        room.bullets.some((bullet) => bullet.ownerId === leadingBot.id),
+    'rival bots use normal combat fire against each other');
+
+    const highestRanked = selectPracticeTarget(firstBot, [
+        createPlayer('low-score', { isBot: true, bankedScore: 10 }),
+        createPlayer('high-score', { isBot: true, bankedScore: 40 })
+    ], human.id);
+    assert.equal(highestRanked.id, 'high-score',
+        'bot target selection prioritizes the current leaderboard leader');
+}
+
+{
+    const bot = createPlayer('bot', { isBot: true, x: 300, y: 300 });
+    const human = createPlayer('human', { x: 700, y: 300, bankedScore: 10 });
+    const leadingRival = createPlayer('rival', {
+        isBot: true,
+        x: 400,
+        y: 300,
+        bankedScore: 40
+    });
+    const room = createRoom(bot, human, null);
+    room.players[leadingRival.id] = leadingRival;
+    room.practiceOwnerId = human.id;
+
+    room.updateBots();
+    assert.equal(bot.botAI.targetId, leadingRival.id,
+        'a bot contests the leaderboard leader instead of fixating on the owner');
 }
 
 {
@@ -519,6 +634,42 @@ function advanceWithServerCollision(player, room) {
     room.updateBots();
     assert.equal(bot.botAI.mode, 'engage',
         'a nearby combat threat preempts resource collection');
+}
+
+{
+    const firstBot = createPlayer('bot-first', {
+        isBot: true,
+        x: 300,
+        y: 300,
+        bankedScore: 5
+    });
+    const leadingBot = createPlayer('bot-leader', {
+        isBot: true,
+        x: 650,
+        y: 300,
+        bankedScore: 35,
+        eliminations: 2
+    });
+    const human = createPlayer('human', { x: 450, y: 700, isDead: true });
+    const room = createRoom(firstBot, human, null);
+    room.players[leadingBot.id] = leadingBot;
+    room.practiceOwnerId = human.id;
+
+    room.updateBots();
+    assert.equal(firstBot.botAI.targetId, leadingBot.id,
+        'after the owner dies, a bot targets a living rival');
+    assert.equal(leadingBot.botAI.targetId, firstBot.id,
+        'bots engage one another instead of remaining in owner-only mode');
+    assert.ok(room.bullets.some((bullet) => bullet.ownerId === firstBot.id) &&
+        room.bullets.some((bullet) => bullet.ownerId === leadingBot.id),
+    'rival bots use normal combat fire against each other');
+
+    const highestRanked = selectPracticeTarget(firstBot, [
+        createPlayer('low-score', { isBot: true, bankedScore: 10 }),
+        createPlayer('high-score', { isBot: true, bankedScore: 40 })
+    ], human.id);
+    assert.equal(highestRanked.id, 'high-score',
+        'bot target selection prioritizes the current leaderboard leader');
 }
 
 {

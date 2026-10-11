@@ -8,6 +8,27 @@ const BOT_MODES = Object.freeze({
     PATROL: 'wander'
 });
 
+function compareLeaderboardPosition(left, right) {
+    return (Number(right.bankedScore) || 0) - (Number(left.bankedScore) || 0) ||
+        (Number(right.eliminations) || 0) - (Number(left.eliminations) || 0);
+}
+
+function selectPracticeTarget(bot, enemies, practiceOwnerId) {
+    const owner = enemies.find((player) => player.id === practiceOwnerId && !player.isBot);
+    const leader = enemies.slice().sort((left, right) =>
+        (Number(right.bankedScore) || 0) - (Number(left.bankedScore) || 0) ||
+        (Number(right.eliminations) || 0) - (Number(left.eliminations) || 0) ||
+        (left.id === bot.botTargetPlayerId ? -1 : 0) -
+            (right.id === bot.botTargetPlayerId ? -1 : 0) ||
+        Math.hypot(left.x - bot.x, left.y - bot.y) -
+            Math.hypot(right.x - bot.x, right.y - bot.y) ||
+        String(left.id).localeCompare(String(right.id)))[0] || null;
+    if (!owner) return leader;
+    if (!leader || leader.id === owner.id ||
+        compareLeaderboardPosition(owner, leader) <= 0) return owner;
+    return leader;
+}
+
 function choosePracticeBotIntent(bot, context) {
     const {
         target,
@@ -111,4 +132,8 @@ function choosePracticeBotIntent(bot, context) {
     return intent;
 }
 
-module.exports = Object.freeze({ BOT_MODES, choosePracticeBotIntent });
+module.exports = Object.freeze({
+    BOT_MODES,
+    choosePracticeBotIntent,
+    selectPracticeTarget
+});

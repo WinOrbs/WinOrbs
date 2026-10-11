@@ -28,7 +28,10 @@ const {
     hasLineOfSight,
     calculateAimAngle
 } = require('./apps/server/game/bot_navigation');
-const { choosePracticeBotIntent } = require('./apps/server/game/bot_ai');
+const {
+    choosePracticeBotIntent,
+    selectPracticeTarget
+} = require('./apps/server/game/bot_ai');
 const {
     assignBalancedTeam,
     canForceStartTeams,
@@ -2116,11 +2119,8 @@ class GameRoom {
                         (player.id === bot.botTargetPlayerId ? 70 : 0)
                 };
             }).sort((a, b) => a.score - b.score);
-            const practiceOwner = this.isPractice
-                ? enemies.find((player) => player.id === this.practiceOwnerId && !player.isBot)
-                : null;
-            const target = this.isPractice && this.practiceOwnerId
-                ? practiceOwner || null
+            const target = this.isPractice
+                ? selectPracticeTarget(bot, enemies, this.practiceOwnerId)
                 : enemyScores[0]?.player || null;
             const targetDistance = target ? Math.hypot(target.x - bot.x, target.y - bot.y) : Infinity;
             const distToCenter = Math.hypot(bot.x - this.zoneCx, bot.y - this.zoneCy);
@@ -2228,7 +2228,7 @@ class GameRoom {
                     if (targetDistance >= preferredRange - 55) {
                         if (bot.botOrbitAngle === null || now >= bot.botNextOrbitAt) {
                             bot.botOrbitAngle = radial + bot.botStrafeDir * 0.68;
-                            bot.botNextOrbitAt = now + 900;
+                            bot.botNextOrbitAt = now + 1600;
                         }
                         orbit = bot.botOrbitAngle;
                     }
@@ -2424,15 +2424,16 @@ class GameRoom {
 
             const canSeeTarget = target && hasLineOfSight(bot, target, solids);
             if (goalType === 'engage' && target && targetDistance < 760 && canSeeTarget &&
+                !bot.isReloading && (bot.currentWeapon === 2 ? bot.ammo2 > 0 : bot.ammo > 0) &&
                 now >= bot.botNextShotAt) {
                 this.handleShoot(bot.id, { angle });
-                bot.botNextShotAt = now + 420 + Math.random() * 240;
+                bot.botNextShotAt = now + 760 + Math.random() * 320;
             }
 
             if (goalType === 'engage' && target &&
-                targetDistance > preferredRange + 180 && now >= bot.botNextDashAt) {
+                targetDistance > preferredRange + 240 && now >= bot.botNextDashAt) {
                 this.handleDash(bot.id);
-                bot.botNextDashAt = now + 850 + Math.random() * 350;
+                bot.botNextDashAt = now + 1700 + Math.random() * 500;
             }
 
             if (goalType === 'engage' && target && targetDistance < 240 &&
