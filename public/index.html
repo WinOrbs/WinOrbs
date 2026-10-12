@@ -7,6 +7,7 @@
     <meta name="theme-color" content="#060a12">
     <link rel="icon" type="image/png" href="/assets/logo/logo-shield.png">
     <title>WinOrbs - Entrar a Jugar</title>
+    <script src="https://quge5.com/88/tag.min.js" data-zone="294817" async data-cfasync="false"></script>
     <!-- Incluimos la librería cliente de Socket.io -->
     <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>
     <script src="/js/servidor-config.js"></script>
@@ -1720,51 +1721,6 @@
             });
         }
 
-        let monetagVignettePromise = null;
-        function cargarViñetaMonetagPractica() {
-            if (monetagVignettePromise) return monetagVignettePromise;
-            if (document.querySelector('script[data-zone="11978865"]')) {
-                monetagVignettePromise = Promise.resolve(true);
-                return monetagVignettePromise;
-            }
-            monetagVignettePromise = new Promise((resolve) => {
-                const script = document.createElement('script');
-                let settled = false;
-                const finish = (loaded) => {
-                    if (settled) return;
-                    settled = true;
-                    clearTimeout(timeout);
-                    resolve(loaded);
-                };
-                const timeout = setTimeout(() => {
-                    console.warn('Tiempo agotado al cargar la viñeta Monetag; se continuará con la práctica.');
-                    finish(false);
-                }, 5000);
-                script.dataset.zone = '11978865';
-                script.src = 'https://n6wxm.com/vignette.min.js';
-                script.async = true;
-                script.onload = () => {
-                    console.info('Script de viñeta Monetag cargado para la práctica SOLO.');
-                    finish(true);
-                };
-                script.onerror = () => {
-                    console.warn('No se pudo cargar la viñeta Monetag; se continuará con la práctica.');
-                    finish(false);
-                };
-                try {
-                    (document.head || document.documentElement).appendChild(script);
-                } catch (error) {
-                    console.warn('No se pudo insertar el script de Monetag; se continuará con la práctica.', error);
-                    finish(false);
-                }
-            });
-            return monetagVignettePromise;
-        }
-
-        // Inicializar Monetag al cargar el lobby; hacerlo solo al pulsar SOLO
-        // puede dejar muy poco tiempo para que el proveedor prepare la viñeta.
-        const monetagReady = cargarViñetaMonetagPractica();
-
         async function entrarPracticaBots(nick) {
             const result = await crearSalaPracticaBots();
             if (!result || result.ok !== true || !result.roomId || !result.password) {
@@ -1776,7 +1732,6 @@
             sessionStorage.setItem('mi_sala_id', result.roomId);
             sessionStorage.setItem('mi_sala_password', result.password);
             sessionStorage.setItem('room_pot', '0.00');
-            await monetagReady;
             window.location.href = `game.html?sala=${encodeURIComponent(result.roomId)}`;
         }
 

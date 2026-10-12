@@ -1,13 +1,10 @@
 # Práctica SOLO y boletos
 
-La práctica contra bots es gratis. Al abrir el lobby se inicializa la viñeta de
-Monetag de la zona `11978865`, para darle tiempo a prepararse antes de que el
-jugador inicie SOLO. Al entrar a la práctica se espera a que el script cargue
-antes de navegar; si falla o tarda más de cinco segundos, se permite iniciar la
-partida. La carga del script no confirma que el anuncio haya sido mostrado o
-completado, ya que la decisión de servir una impresión corresponde a Monetag.
-La viñeta se carga una sola vez por página y no sustituye al service worker de
-Monetag.
+La práctica contra bots es gratis. El lobby carga el MultiTag de Monetag,
+zona `294817`, mediante `https://quge5.com/88/tag.min.js`. El juego no espera
+por el script para permitir la partida: la carga del tag no confirma que un
+anuncio haya sido mostrado, ya que la decisión de servir una impresión
+corresponde a Monetag.
 
 ## Combate de práctica
 
