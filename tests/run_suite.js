@@ -21,6 +21,7 @@ const suites = Object.freeze({
         'test_identity_domain.js',
         'test_intro.js',
         'test_lobby.js',
+        'test_match_history.js',
         'test_png_sprites.js',
         'test_red.js',
         'test_realtime_metrics.js',

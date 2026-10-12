@@ -22,6 +22,10 @@ const {
 const { MATCH_STATUS, canTransition } = require('./apps/server/game/lifecycle');
 const { applyDeathLoss } = require('./apps/server/game/orbs');
 const { bankMatchOrbs, awardElimination } = require('./apps/server/game/score');
+const {
+    buildMatchHistoryRecord,
+    listPlayerMatchHistory
+} = require('./apps/server/game/match_history');
 const { applyDamage } = require('./apps/server/game/combat');
 const {
     createPathfinder,
@@ -1866,6 +1870,28 @@ class GameRoom {
         const gameId = this.id + '_' + Date.now();
         const leaderboard = this.getLeaderboard();
         this.resultLock = lockResult(leaderboard);
+        if (FIREBASE_DB) {
+            const historyRecord = buildMatchHistoryRecord({
+                gameId,
+                roomId: this.id,
+                roomName: this.name,
+                mode: this.mode,
+                isPractice: this.isPractice,
+                finishedAt: Date.now(),
+                leaderboard
+            });
+            if (historyRecord) {
+                FIREBASE_DB.collection('historialPartidas').doc(gameId).set(historyRecord)
+                    .catch((error) => {
+                        logger.error('match_history.persist_failed', {
+                            gameId,
+                            errorCode: typeof error?.code === 'string'
+                                ? error.code.slice(0, 64)
+                                : 'FIRESTORE_UNAVAILABLE'
+                        });
+                    });
+            }
+        }
         let progressionProcessing = null;
         let soloTicketProcessing = null;
 
@@ -3023,7 +3049,6 @@ class GameRoom {
         const players = Object.values(this.players);
         if (this.isPractice) {
             return players.sort((a, b) =>
-                Number(a.isDead) - Number(b.isDead) ||
                 (b.bankedScore - a.bankedScore) ||
                 ((Number(b.eliminations) || 0) - (Number(a.eliminations) || 0)));
         }
@@ -3525,6 +3550,37 @@ io.on('connection', (socket) => {
     // efectos en el juego ni en la economía. Lo usa test_latencia.js para medir
     // el RTT REAL del canal de juego (Socket.IO), no solo el de un GET.
     socket.on('latProbe', (t0, cb) => { if (typeof cb === 'function') cb(t0); });
+
+    socket.on('pedirHistorialPartidas', async (payload = {}, acknowledge) => {
+        const reply = typeof acknowledge === 'function' ? acknowledge : () => {};
+        const now = Date.now();
+        if (now - (socket.__matchHistoryRequestAt || 0) < 1000) {
+            return reply({ ok: false, error: 'RATE_LIMIT' });
+        }
+        socket.__matchHistoryRequestAt = now;
+        const request = payload && typeof payload === 'object' ? payload : {};
+        const token = typeof request.token === 'string' ? request.token : '';
+        if (!FIREBASE_DB || !firebaseAdmin || !token || token.length > 8192) {
+            return reply({ ok: false, error: 'NO_AUTH' });
+        }
+        try {
+            const decoded = await firebaseAdmin.auth().verifyIdToken(token);
+            const result = await listPlayerMatchHistory(FIREBASE_DB, decoded.uid, {
+                cursorId: request.cursorId || null
+            });
+            reply({ ok: true, ...result });
+        } catch (error) {
+            if (error instanceof TypeError) {
+                return reply({ ok: false, error: 'INVALID_CURSOR' });
+            }
+            logger.error('match_history.read_failed', {
+                errorCode: typeof error?.code === 'string'
+                    ? error.code.slice(0, 64)
+                    : 'FIRESTORE_UNAVAILABLE'
+            });
+            reply({ ok: false, error: 'UNAVAILABLE' });
+        }
+    });
 
     socket.on('pedirRankingGlobal', async (payload = {}) => {
         const now = Date.now();

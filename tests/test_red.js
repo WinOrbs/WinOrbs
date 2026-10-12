@@ -105,6 +105,19 @@ check('puntos asegurados siguen siendo el criterio principal',
 check('las eliminaciones resuelven empates de puntos',
     ranked[1].eliminations === 3 && ranked[2].eliminations === 1);
 
+const practiceRanked = getLeaderboard.call({
+    isPractice: true,
+    players: {
+        user: { nick: 'Tú', bankedScore: 209, eliminations: 19, isDead: true },
+        bot3: { nick: 'BOT 3', bankedScore: 90, eliminations: 10, isDead: false },
+        bot2: { nick: 'BOT 2', bankedScore: 80, eliminations: 8, isDead: false }
+    }
+});
+check('el podio SOLO ordena primero por puntos asegurados, aunque el jugador haya sido eliminado',
+    practiceRanked[0].nick === 'Tú' && practiceRanked[0].bankedScore === 209);
+check('el estado vivo/eliminado no coloca a un bot con menos puntos por encima del jugador',
+    practiceRanked[1].nick === 'BOT 3' && practiceRanked[1].bankedScore === 90);
+
 // ── 6) Fase 2: simulación 60 Hz, emisión 30 Hz ──
 check('la constante de emisión viene de configuración central',
     /const TICK_EMITIR_CADA = config\.timing\.ticksPerEmission/.test(server) &&

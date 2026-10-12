@@ -11,6 +11,12 @@
     /* ── Neón Arena: la base (vars, atmósfera, formularios, botones, msgs) vive en /css/arena.css ── */
     body { padding: 20px; }
 
+    .profile-layout {
+      width: min(1180px, 100%); margin: 0 auto;
+      display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+      gap: 18px; align-items: start;
+    }
+
     .top-bar {
       max-width: 560px; margin: 0 auto 16px;
       display: flex; justify-content: space-between; align-items: center;
@@ -36,7 +42,7 @@
     }
 
     .card {
-      max-width: 560px; margin: 0 auto;
+      min-width: 0; margin: 0;
       background: var(--surface);
       backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
       border: 1px solid var(--line); border-radius: 18px;
@@ -51,6 +57,33 @@
     }
     h2::before { content: "// "; color: var(--muted); }
     .sub { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+
+    .history-card { position: sticky; top: 20px; max-height: calc(100vh - 40px); overflow: auto; }
+    .history-card h2 { margin-top: 0; }
+    .history-status { color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .history-list { display: grid; gap: 10px; }
+    .history-match {
+      border: 1px solid var(--line); border-radius: 12px;
+      background: rgba(255, 255, 255, .025); overflow: hidden;
+    }
+    .history-match summary {
+      cursor: pointer; list-style: none; padding: 12px;
+      display: grid; gap: 5px; color: var(--text);
+    }
+    .history-match summary::-webkit-details-marker { display: none; }
+    .history-match summary:hover { background: rgba(56, 189, 248, .06); }
+    .history-match-title { font-family: var(--font-display); font-size: 13px; font-weight: 700; }
+    .history-match-meta { color: var(--muted); font-size: 11px; }
+    .history-leaderboard { margin: 0; padding: 0 12px 12px 34px; }
+    .history-leaderboard li { padding: 5px 0; color: var(--muted); font-size: 12px; }
+    .history-leaderboard li:first-child { color: #f5c84c; font-weight: 700; }
+    .history-player-stats { display: block; color: var(--muted); font-size: 11px; font-weight: 400; }
+    #btn-historial-mas { margin-top: 12px; }
+
+    @media (max-width: 850px) {
+      .profile-layout { grid-template-columns: minmax(0, 1fr); max-width: 560px; }
+      .history-card { position: static; max-height: none; }
+    }
   </style>
 </head>
 <body>
@@ -68,7 +101,8 @@
     <span class="saldo-chip" id="chip-saldo">$0.00</span>
   </div>
 
-  <div class="card">
+  <main class="profile-layout">
+  <section class="card">
     <h1>👤 Mi Perfil</h1>
     <p class="sub" id="sub-cuenta">Cargando sesión…</p>
     <div class="msg" id="msg"></div>
@@ -106,8 +140,21 @@
     </div>
 
     <button class="btn sec" id="btn-salir">Cerrar sesión</button>
-  </div>
+  </section>
 
+  <aside class="card history-card" aria-labelledby="historial-titulo">
+    <h2 id="historial-titulo">Historial de partidas</h2>
+    <p class="history-status" id="historial-estado" role="status" aria-live="polite">
+      Inicia sesión para consultar tus resultados.
+    </p>
+    <div class="history-list" id="historial-lista"></div>
+    <button class="btn sec" id="btn-historial-mas" type="button" hidden>
+      Cargar más partidas
+    </button>
+  </aside>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import {
@@ -132,8 +179,10 @@
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
+    const socket = window.io();
 
     const $ = (id) => document.getElementById(id);
+    const historyState = { cursorId: null, loading: false, initialized: false };
 
     function msg(texto, tipo) {
       const m = $("msg");
@@ -177,7 +226,102 @@
       } catch (e) {
         msg("No se pudo cargar el perfil: " + (e.code || e.message), "err");
       }
+      if (!historyState.initialized) {
+        historyState.initialized = true;
+        await cargarHistorial(true);
+      }
     });
+
+    function fechaPartida(timestamp) {
+      if (!Number.isFinite(timestamp)) return "Fecha no disponible";
+      return new Intl.DateTimeFormat("es", {
+        dateStyle: "medium",
+        timeStyle: "short"
+      }).format(new Date(timestamp));
+    }
+
+    function renderizarPartida(match) {
+      const details = document.createElement("details");
+      details.className = "history-match";
+      const summary = document.createElement("summary");
+      const title = document.createElement("span");
+      title.className = "history-match-title";
+      const winner = match.leaderboard?.[0]?.nick || "Sin ganador";
+      title.textContent = `${match.roomName || "Partida"} · 1.º ${winner}`;
+      const meta = document.createElement("span");
+      meta.className = "history-match-meta";
+      const mode = match.isPractice ? "Práctica SOLO" : (match.mode === "teams" ? "Equipos" : "FFA");
+      meta.textContent = `${fechaPartida(match.finishedAt)} · ${mode} · ${match.leaderboard.length} participantes`;
+      summary.append(title, meta);
+      details.appendChild(summary);
+
+      const leaderboard = document.createElement("ol");
+      leaderboard.className = "history-leaderboard";
+      match.leaderboard.forEach((player) => {
+        const row = document.createElement("li");
+        const name = document.createElement("span");
+        name.textContent = `${player.position}. ${player.nick}${player.isBot ? " (BOT)" : ""}`;
+        const stats = document.createElement("span");
+        stats.className = "history-player-stats";
+        stats.textContent = `${player.score} pts asegurados · ${player.eliminations} kills`;
+        row.append(name, stats);
+        leaderboard.appendChild(row);
+      });
+      details.appendChild(leaderboard);
+      return details;
+    }
+
+    async function cargarHistorial(reset = false) {
+      if (!usuarioActual || historyState.loading || !socket) return;
+      historyState.loading = true;
+      const button = $("btn-historial-mas");
+      button.disabled = true;
+      $("historial-estado").textContent = reset ? "Cargando tus partidas…" : "Cargando más partidas…";
+      if (reset) {
+        historyState.cursorId = null;
+        $("historial-lista").replaceChildren();
+      }
+      try {
+        const token = await usuarioActual.getIdToken();
+        const response = await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error("HISTORY_TIMEOUT")), 10000);
+          socket.timeout(9000).emit("pedirHistorialPartidas", {
+            token,
+            cursorId: historyState.cursorId
+          }, (timeoutError, result) => {
+            clearTimeout(timeout);
+            if (timeoutError) reject(new Error("HISTORY_TIMEOUT"));
+            else resolve(result);
+          });
+        });
+        if (!response?.ok) {
+          if (response?.error === "NO_AUTH") throw new Error("NO_AUTH");
+          if (response?.error === "RATE_LIMIT") throw new Error("RATE_LIMIT");
+          throw new Error("HISTORY_UNAVAILABLE");
+        }
+        const list = $("historial-lista");
+        response.matches.forEach((match) => list.appendChild(renderizarPartida(match)));
+        historyState.cursorId = response.nextCursor;
+        button.hidden = !historyState.cursorId;
+        $("historial-estado").textContent = list.childElementCount
+          ? "Selecciona una partida para ver la clasificación completa."
+          : "Aún no hay partidas guardadas para esta cuenta. El historial comienza con las partidas terminadas desde esta actualización.";
+      } catch (error) {
+        $("historial-estado").textContent = error.message === "NO_AUTH"
+          ? "No se pudo verificar tu sesión. Vuelve a iniciar sesión e inténtalo de nuevo."
+          : error.message === "RATE_LIMIT"
+            ? "Espera un momento antes de volver a solicitar el historial."
+            : "No se pudo cargar el historial. Comprueba tu conexión e inténtalo de nuevo.";
+        if (error.message === "HISTORY_TIMEOUT") {
+          $("historial-estado").textContent = "El servidor tardó demasiado. Puedes volver a intentarlo.";
+        }
+      } finally {
+        historyState.loading = false;
+        button.disabled = false;
+      }
+    }
+
+    $("btn-historial-mas").addEventListener("click", () => cargarHistorial());
 
     // Valida el formato de un apodo. Devuelve el mensaje de error o null.
     // Solo se bloquea lo que REALMENTE rompe la reserva apodos/{clave}: '/' no
