@@ -457,7 +457,7 @@
     }
 
     function reportarErrorLogin(etapa, error) {
-      console.error("WinOrbs login/register failed", {
+      console.error("WinOrbs authentication operation failed", {
         etapa: etapa,
         codigo: error && typeof error.code === "string" ? error.code : null
       });
@@ -479,12 +479,13 @@
 
       try {
         await sendPasswordResetEmail(auth, email);
+        console.info("WinOrbs password reset request accepted by Firebase Auth");
         mostrarError("Si existe una cuenta con ese correo, recibirás instrucciones para restablecer la contraseña.", true);
       } catch (err) {
+        reportarErrorLogin("auth.password-reset", err);
         if (err && err.code === "auth/user-not-found") {
           mostrarError("Si existe una cuenta con ese correo, recibirás instrucciones para restablecer la contraseña.", true);
         } else {
-          reportarErrorLogin("auth.password-reset", err);
           mostrarError(err && err.code === "auth/too-many-requests"
             ? "Has solicitado demasiados correos. Espera unos minutos e inténtalo de nuevo."
             : err && err.code === "auth/operation-not-allowed"
