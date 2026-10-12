@@ -9,11 +9,8 @@ const { createConfig } = require('../apps/server/config/env');
 const { createStructuredLogger } = require('../apps/server/observability/logger');
 
 function request(url, options = {}) {
-    const body = options.body;
-    const requestOptions = { ...options };
-    delete requestOptions.body;
     return new Promise((resolve, reject) => {
-        const req = http.request(url, requestOptions, (res) => {
+        const req = http.request(url, options, (res) => {
             const chunks = [];
             res.on('data', (chunk) => chunks.push(chunk));
             res.on('end', () => resolve({
@@ -23,96 +20,8 @@ function request(url, options = {}) {
             }));
         });
         req.on('error', reject);
-        if (body) req.write(body);
         req.end();
     });
-}
-
-async function testPasswordResetEndpoint() {
-    const sentEmails = [];
-    const logLines = [];
-    let failSending = false;
-    const firebaseRuntime = {
-        firebaseAdmin: {
-            auth: () => ({
-                generatePasswordResetLink: async (email) => {
-                    if (email === 'missing@example.com') {
-                        const error = new Error('private account details');
-                        error.code = 'auth/user-not-found';
-                        throw error;
-                    }
-                    return `https://firebase.example/reset?email=${encodeURIComponent(email)}&oobCode=test`;
-                }
-            })
-        }
-    };
-    const { server } = createHttpServer({
-        rootDir: process.cwd(),
-        isOriginAllowed: () => true,
-        getFirebaseRuntime: () => firebaseRuntime,
-        resendClient: {
-            emails: {
-                send: async (message) => {
-                    if (failSending) return { error: new Error('private Resend details') };
-                    sentEmails.push(message);
-                    return { data: { id: 'email-test-id' } };
-                }
-            }
-        },
-        logger: createStructuredLogger({ sink: (line) => logLines.push(line) })
-    });
-    await new Promise((resolve, reject) => {
-        server.once('error', reject);
-        server.listen(0, '127.0.0.1', resolve);
-    });
-
-    try {
-        const origin = `http://127.0.0.1:${server.address().port}`;
-        const postEmail = (email) => {
-            const body = JSON.stringify({ email });
-            return request(`${origin}/api/enviar-correo-recuperacion`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Content-Length': Buffer.byteLength(body)
-                },
-                body
-            });
-        };
-
-        let response = await postEmail('not-an-email');
-        assert.strictEqual(response.statusCode, 400);
-
-        response = await postEmail('Player@Example.com');
-        assert.strictEqual(response.statusCode, 202);
-        const genericResponse = JSON.parse(response.body);
-        assert.strictEqual(genericResponse.ok, true);
-        assert.strictEqual(sentEmails.length, 1);
-        assert.deepStrictEqual(sentEmails[0].to, ['player@example.com']);
-        assert.strictEqual(sentEmails[0].from, 'WinOrbs <onboarding@resend.dev>');
-        assert.ok(sentEmails[0].html.includes('&amp;oobCode=test'));
-        assert.ok(sentEmails[0].text.includes('oobCode=test'));
-
-        response = await postEmail('missing@example.com');
-        assert.strictEqual(response.statusCode, 202);
-        assert.deepStrictEqual(JSON.parse(response.body), genericResponse);
-
-        failSending = true;
-        response = await postEmail('another@example.com');
-        assert.strictEqual(response.statusCode, 202);
-        assert.deepStrictEqual(JSON.parse(response.body), genericResponse);
-        assert.strictEqual(logLines.join('').includes('private account details'), false);
-        assert.strictEqual(logLines.join('').includes('private Resend details'), false);
-
-        await postEmail('rate-4@example.com');
-        await postEmail('rate-5@example.com');
-        response = await postEmail('rate-6@example.com');
-        assert.strictEqual(response.statusCode, 429);
-    } finally {
-        await new Promise((resolve, reject) => {
-            server.close((error) => error ? reject(error) : resolve());
-        });
-    }
 }
 
 async function testMissingReadinessProvider() {
@@ -140,7 +49,6 @@ async function testMissingReadinessProvider() {
 }
 
 async function main() {
-    await testPasswordResetEndpoint();
     await testMissingReadinessProvider();
 
     const config = createConfig({

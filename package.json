@@ -38,7 +38,6 @@
     "express": "^5.2.1",
     "firebase": "^13.0.0",
     "firebase-admin": "13.10.0",
-    "resend": "^6.32.1",
     "socket.io": "^4.8.3"
   },
   "devDependencies": {

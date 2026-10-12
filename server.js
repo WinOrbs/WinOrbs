@@ -85,7 +85,6 @@ const { app, server } = createHttpServer({
     trustProxy: config.server.trustProxy,
     getFirebaseRuntime: () => firebaseRuntime,
     isReady: () => Boolean(io && firebaseRuntime),
-    resendApiKey: process.env.RESEND_API_KEY || '',
     logger
 });
 const io = createSocketServer(server, {
