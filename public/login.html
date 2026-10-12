@@ -330,6 +330,7 @@
       createUserWithEmailAndPassword,
       signInWithEmailAndPassword,
       signInAnonymously,
+      sendPasswordResetEmail,
       signOut,
       GoogleAuthProvider,
       signInWithPopup
@@ -462,7 +463,7 @@
       });
     }
 
-    // El backend genera el enlace con Firebase Admin y lo envía mediante Resend.
+    // Firebase Auth envía el correo de recuperación directamente.
     linkOlvido.addEventListener("click", async function (e) {
       e.preventDefault();
       limpiarError();
@@ -477,25 +478,20 @@
       btnEntrar.disabled = true;
 
       try {
-        const servidorUrl = (window.SERVIDOR_URL || "").replace(/\/$/, "");
-        const respuesta = await fetch(servidorUrl + "/api/enviar-correo-recuperacion", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: email })
-        });
-
-        if (respuesta.status === 429) throw new Error("RATE_LIMITED");
-        if (respuesta.status === 503) throw new Error("MAIL_NOT_CONFIGURED");
-        if (!respuesta.ok) throw new Error("RESET_FAILED");
-
+        await sendPasswordResetEmail(auth, email);
+        console.info("WinOrbs password reset request accepted by Firebase Auth");
         mostrarError("Si existe una cuenta con ese correo, recibirás instrucciones para restablecer la contraseña.", true);
       } catch (err) {
         reportarErrorLogin("auth.password-reset", err);
-        mostrarError(err.message === "RATE_LIMITED"
-          ? "Has solicitado demasiados correos. Espera unos minutos e inténtalo de nuevo."
-          : err.message === "MAIL_NOT_CONFIGURED"
-            ? "El envío del correo no está configurado. Contacta con soporte."
-            : "No se pudo iniciar la recuperación. Inténtalo de nuevo más tarde.");
+        if (err && err.code === "auth/user-not-found") {
+          mostrarError("Si existe una cuenta con ese correo, recibirás instrucciones para restablecer la contraseña.", true);
+        } else {
+          mostrarError(err && err.code === "auth/too-many-requests"
+            ? "Has solicitado demasiados correos. Espera unos minutos e inténtalo de nuevo."
+            : err && err.code === "auth/operation-not-allowed"
+              ? "La recuperación por correo no está habilitada en Firebase."
+              : "No se pudo iniciar la recuperación. Inténtalo de nuevo más tarde.");
+        }
       } finally {
         btnEntrar.disabled = false;
       }
