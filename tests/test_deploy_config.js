@@ -54,9 +54,9 @@ assert.ok(httpServer.includes("app.get('/sw.js', (req, res) => res.sendFile(root
 assert.ok(indexHtml.includes("script.dataset.zone = '11978865'"), 'SOLO lobby must load the configured Monetag vignette zone');
 assert.ok(indexHtml.includes("script.src = 'https://n6wxm.com/vignette.min.js'"), 'SOLO lobby must load the Monetag vignette script');
 assert.ok(
-    /const monetagReady = cargarViñetaMonetagPractica\(\);\s+try \{\s+await entrarPracticaBots\(nick, monetagReady\);/.test(indexHtml) &&
+    /const monetagReady = cargarViñetaMonetagPractica\(\);\s+async function entrarPracticaBots\(nick\)/.test(indexHtml) &&
         /await monetagReady;\s+window\.location\.href = `game\.html/.test(indexHtml),
-    'lobby must wait for Monetag to load before navigating to practice'
+    'lobby must initialize Monetag before SOLO is selected and wait before navigating to practice'
 );
 assert.ok(
     /}, 5000\);\s+script\.dataset\.zone = '11978865';/.test(indexHtml),

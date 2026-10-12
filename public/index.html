@@ -1761,7 +1761,11 @@
             return monetagVignettePromise;
         }
 
-        async function entrarPracticaBots(nick, monetagReady) {
+        // Inicializar Monetag al cargar el lobby; hacerlo solo al pulsar SOLO
+        // puede dejar muy poco tiempo para que el proveedor prepare la viñeta.
+        const monetagReady = cargarViñetaMonetagPractica();
+
+        async function entrarPracticaBots(nick) {
             const result = await crearSalaPracticaBots();
             if (!result || result.ok !== true || !result.roomId || !result.password) {
                 alert((result && result.error) || 'No se pudo crear la práctica con bots.');
@@ -1786,9 +1790,8 @@
             }
             practicaPendiente = true;
             botonModoSolo.disabled = true;
-            const monetagReady = cargarViñetaMonetagPractica();
             try {
-                await entrarPracticaBots(nick, monetagReady);
+                await entrarPracticaBots(nick);
             } finally {
                 practicaPendiente = false;
                 botonModoSolo.disabled = false;
