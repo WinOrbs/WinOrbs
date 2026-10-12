@@ -183,7 +183,12 @@
     const socket = window.io(window.SERVIDOR_URL || undefined, { transports: ["websocket"] });
 
     const $ = (id) => document.getElementById(id);
-    const historyState = { cursorId: null, loading: false, initialized: false };
+    const historyState = {
+      cursorId: null,
+      loading: false,
+      initialized: false,
+      retryFromFirstPage: false
+    };
 
     function msg(texto, tipo) {
       const m = $("msg");
@@ -298,21 +303,33 @@
         if (!response?.ok) {
           if (response?.error === "NO_AUTH") throw new Error("NO_AUTH");
           if (response?.error === "RATE_LIMIT") throw new Error("RATE_LIMIT");
+          if (response?.error === "INVALID_CURSOR") throw new Error("INVALID_CURSOR");
+          if (response?.error === "INDEX_REQUIRED") throw new Error("INDEX_REQUIRED");
+          if (response?.error === "FIRESTORE_ACCESS") throw new Error("FIRESTORE_ACCESS");
           throw new Error("HISTORY_UNAVAILABLE");
         }
         const list = $("historial-lista");
         response.matches.forEach((match) => list.appendChild(renderizarPartida(match)));
         historyState.cursorId = response.nextCursor;
+        historyState.retryFromFirstPage = false;
         button.hidden = !historyState.cursorId;
+        button.textContent = "Cargar más partidas";
         $("historial-estado").textContent = list.childElementCount
           ? "Selecciona una partida para ver la clasificación completa."
           : "Aún no hay partidas guardadas para esta cuenta. El historial comienza con las partidas terminadas desde esta actualización.";
       } catch (error) {
-        $("historial-estado").textContent = error.message === "NO_AUTH"
-          ? "No se pudo verificar tu sesión. Vuelve a iniciar sesión e inténtalo de nuevo."
-          : error.message === "RATE_LIMIT"
-            ? "Espera un momento antes de volver a solicitar el historial."
-            : "No se pudo cargar el historial. Comprueba tu conexión e inténtalo de nuevo.";
+        const messages = {
+          NO_AUTH: "No se pudo verificar tu sesión. Vuelve a iniciar sesión e inténtalo de nuevo.",
+          RATE_LIMIT: "Espera un momento antes de volver a solicitar el historial.",
+          INVALID_CURSOR: "La página del historial expiró. Vuelve a cargar la lista.",
+          INDEX_REQUIRED: "Falta habilitar el índice de historial en Firestore. Despliega firestore.indexes.json y espera a que el índice esté activo.",
+          FIRESTORE_ACCESS: "El servidor no tiene acceso a Firestore. Revisa las credenciales Firebase Admin de Render.",
+          HISTORY_UNAVAILABLE: "No se pudo consultar Firestore. Comprueba la conexión del servidor e inténtalo de nuevo."
+        };
+        $("historial-estado").textContent = messages[error.message] || messages.HISTORY_UNAVAILABLE;
+        if (error.message === "INVALID_CURSOR") historyState.retryFromFirstPage = true;
+        button.hidden = false;
+        button.textContent = error.message === "INVALID_CURSOR" ? "Recargar historial" : "Reintentar";
         if (error.message === "HISTORY_TIMEOUT") {
           $("historial-estado").textContent = "El servidor tardó demasiado. Puedes volver a intentarlo.";
         }
@@ -322,7 +339,11 @@
       }
     }
 
-    $("btn-historial-mas").addEventListener("click", () => cargarHistorial());
+    $("btn-historial-mas").addEventListener("click", () => {
+      const restart = historyState.retryFromFirstPage;
+      historyState.retryFromFirstPage = false;
+      cargarHistorial(restart);
+    });
 
     // Valida el formato de un apodo. Devuelve el mensaje de error o null.
     // Solo se bloquea lo que REALMENTE rompe la reserva apodos/{clave}: '/' no

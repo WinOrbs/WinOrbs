@@ -23,6 +23,7 @@ const { MATCH_STATUS, canTransition } = require('./apps/server/game/lifecycle');
 const { applyDeathLoss } = require('./apps/server/game/orbs');
 const { bankMatchOrbs, awardElimination } = require('./apps/server/game/score');
 const {
+    classifyMatchHistoryError,
     buildMatchHistoryRecord,
     listPlayerMatchHistory
 } = require('./apps/server/game/match_history');
@@ -3563,8 +3564,18 @@ io.on('connection', (socket) => {
         if (!FIREBASE_DB || !firebaseAdmin || !token || token.length > 8192) {
             return reply({ ok: false, error: 'NO_AUTH' });
         }
+        let decoded;
         try {
-            const decoded = await firebaseAdmin.auth().verifyIdToken(token);
+            decoded = await firebaseAdmin.auth().verifyIdToken(token);
+        } catch (error) {
+            logger.warn('match_history.auth_failed', {
+                errorCode: typeof error?.code === 'string'
+                    ? error.code.slice(0, 64)
+                    : 'INVALID_ID_TOKEN'
+            });
+            return reply({ ok: false, error: 'NO_AUTH' });
+        }
+        try {
             const result = await listPlayerMatchHistory(FIREBASE_DB, decoded.uid, {
                 cursorId: request.cursorId || null
             });
@@ -3573,12 +3584,13 @@ io.on('connection', (socket) => {
             if (error instanceof TypeError) {
                 return reply({ ok: false, error: 'INVALID_CURSOR' });
             }
+            const errorCode = classifyMatchHistoryError(error);
             logger.error('match_history.read_failed', {
                 errorCode: typeof error?.code === 'string'
                     ? error.code.slice(0, 64)
-                    : 'FIRESTORE_UNAVAILABLE'
+                    : errorCode
             });
-            reply({ ok: false, error: 'UNAVAILABLE' });
+            reply({ ok: false, error: errorCode });
         }
     });
 

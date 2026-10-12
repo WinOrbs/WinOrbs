@@ -4,9 +4,15 @@ const assert = require('node:assert/strict');
 const {
     COLLECTION,
     PAGE_SIZE,
+    classifyMatchHistoryError,
     buildMatchHistoryRecord,
     listPlayerMatchHistory
 } = require('../apps/server/game/match_history');
+
+assert.equal(classifyMatchHistoryError({ code: 9 }), 'INDEX_REQUIRED');
+assert.equal(classifyMatchHistoryError({ code: 'failed-precondition' }), 'INDEX_REQUIRED');
+assert.equal(classifyMatchHistoryError({ code: 7 }), 'FIRESTORE_ACCESS');
+assert.equal(classifyMatchHistoryError({ code: 'unavailable' }), 'UNAVAILABLE');
 
 const source = buildMatchHistoryRecord({
     gameId: 'room-1_100',

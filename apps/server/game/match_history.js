@@ -3,6 +3,17 @@
 const COLLECTION = 'historialPartidas';
 const PAGE_SIZE = 20;
 
+function classifyMatchHistoryError(error) {
+    const code = error?.code;
+    if (code === 9 || code === '9' || code === 'failed-precondition') {
+        return 'INDEX_REQUIRED';
+    }
+    if (code === 7 || code === '7' || code === 'permission-denied') {
+        return 'FIRESTORE_ACCESS';
+    }
+    return 'UNAVAILABLE';
+}
+
 function buildMatchHistoryRecord({
     gameId,
     roomId,
@@ -91,6 +102,7 @@ async function listPlayerMatchHistory(firestore, uid, { cursorId = null } = {}) 
 module.exports = Object.freeze({
     COLLECTION,
     PAGE_SIZE,
+    classifyMatchHistoryError,
     buildMatchHistoryRecord,
     listPlayerMatchHistory
 });
