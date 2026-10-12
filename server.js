@@ -86,7 +86,6 @@ const { app, server } = createHttpServer({
     getFirebaseRuntime: () => firebaseRuntime,
     isReady: () => Boolean(io && firebaseRuntime),
     resendApiKey: process.env.RESEND_API_KEY || '',
-    resendFromEmail: process.env.RESEND_FROM_EMAIL || '',
     logger
 });
 const io = createSocketServer(server, {

@@ -163,7 +163,7 @@ function createHttpServer({
     isReady = () => false,
     statusProbeTimeoutMs = 1000,
     resendApiKey = process.env.RESEND_API_KEY || '',
-    resendFromEmail = process.env.RESEND_FROM_EMAIL || '',
+    resendFromEmail = process.env.RESEND_FROM_EMAIL || 'WinOrbs <onboarding@resend.dev>',
     resendClient,
     logger = createStructuredLogger()
 } = {}) {

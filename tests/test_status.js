@@ -50,7 +50,6 @@ async function testPasswordResetEndpoint() {
         rootDir: process.cwd(),
         isOriginAllowed: () => true,
         getFirebaseRuntime: () => firebaseRuntime,
-        resendFromEmail: 'WinOrbs <soporte@example.com>',
         resendClient: {
             emails: {
                 send: async (message) => {
@@ -90,7 +89,7 @@ async function testPasswordResetEndpoint() {
         assert.strictEqual(genericResponse.ok, true);
         assert.strictEqual(sentEmails.length, 1);
         assert.deepStrictEqual(sentEmails[0].to, ['player@example.com']);
-        assert.strictEqual(sentEmails[0].from, 'WinOrbs <soporte@example.com>');
+        assert.strictEqual(sentEmails[0].from, 'WinOrbs <onboarding@resend.dev>');
         assert.ok(sentEmails[0].html.includes('&amp;oobCode=test'));
         assert.ok(sentEmails[0].text.includes('oobCode=test'));
 
