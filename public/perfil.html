@@ -154,7 +154,8 @@
   </aside>
   </main>
 
-  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>
+  <script src="/js/servidor-config.js"></script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import {
@@ -179,7 +180,7 @@
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
-    const socket = window.io();
+    const socket = window.io(window.SERVIDOR_URL || undefined, { transports: ["websocket"] });
 
     const $ = (id) => document.getElementById(id);
     const historyState = { cursorId: null, loading: false, initialized: false };
