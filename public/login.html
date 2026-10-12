@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#060a12">
   <title>WinOrbs — Login</title>
+  <script src="/js/servidor-config.js"></script>
   <!-- Design System Neón Arena compartido -->
   <link rel="stylesheet" href="css/arena.css">
   <style>
@@ -476,17 +477,23 @@
       btnEntrar.disabled = true;
 
       try {
-        const respuesta = await fetch("https://winorbs.onrender.com/api/enviar-correo-recuperacion", {
+        const servidorUrl = (window.SERVIDOR_URL || "").replace(/\/$/, "");
+        const respuesta = await fetch(servidorUrl + "/api/enviar-correo-recuperacion", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: email })
         });
 
+        if (respuesta.status === 429) {
+          throw new Error("RATE_LIMITED");
+        }
         if (!respuesta.ok) throw new Error("No se pudo enviar el correo.");
 
-        mostrarError("¡Correo de recuperación enviado! Revisa tu bandeja de entrada.", true);
+        mostrarError("Si existe una cuenta con ese correo, recibirás instrucciones para restablecer la contraseña.", true);
       } catch (err) {
-        mostrarError("No se pudo enviar el correo de recuperación. Inténtalo de nuevo.");
+        mostrarError(err.message === "RATE_LIMITED"
+          ? "Has solicitado demasiados correos. Espera unos minutos e inténtalo de nuevo."
+          : "No se pudo iniciar la recuperación. Inténtalo de nuevo más tarde.");
       } finally {
         btnEntrar.disabled = false;
       }
