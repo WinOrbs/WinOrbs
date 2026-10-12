@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#060a12">
   <title>WinOrbs — Login</title>
   <!-- Design System Neón Arena compartido -->
-  <link rel="stylesheet" href="/css/arena.css">
+  <link rel="stylesheet" href="css/arena.css">
   <style>
     /* ── Neón Arena: la base (vars, atmósfera, formularios) vive en /css/arena.css ── */
     html, body { height: 100%; }
@@ -241,6 +241,15 @@
     }
     .auth-toggle a:hover { text-decoration: underline; text-shadow: 0 0 12px rgba(56, 189, 248, .5); }
 
+    .reset-pass { margin-top: 12px; }
+    .reset-pass a {
+      color: var(--cyan);
+      font-size: 13px;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .reset-pass a:hover { text-decoration: underline; text-shadow: 0 0 12px rgba(56, 189, 248, .5); }
+
     /* ── Pulso de energía del logo ── */
     @keyframes arena-pulse {
       0%, 100% { filter: drop-shadow(0 0 6px rgba(56, 189, 248, .55)) drop-shadow(0 0 22px rgba(56, 189, 248, .25)); }
@@ -268,7 +277,7 @@
 
         <div class="social-message">
           <div class="line"></div>
-          <p class="message">Login with social accounts</p>
+          <p class="message">Inicia con redes sociales</p>
           <div class="line"></div>
         </div>
         <div class="social-icons">
@@ -304,7 +313,9 @@
         <div class="auth-toggle">
           <a href="#" id="toggle-registro">¿No tienes cuenta? Crear cuenta</a>
         </div>
-
+        <div class="reset-pass">
+          <a href="#" id="reset-pass">¿Olvidaste tu contraseña?</a>
+        </div>
         <div class="auth-guest-wrap">
           <button class="auth-guest" type="button">Jugar como invitado</button>
         </div>
@@ -331,6 +342,44 @@
       serverTimestamp
     } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
     import { firebaseConfig } from "./js/firebase-config.js";
+    import { sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+
+    const linkOlvido = document.getElementById("link-olvido");
+
+      linkOlvido.addEventListener("click", async function (e) {
+        e.preventDefault();
+        limpiarError();
+
+    const email = emailInput.value.trim().toLowerCase();
+    const arroba = email.indexOf("@");
+
+      if (!email || arroba < 1 || arroba === email.length - 1) {
+        return mostrarError("Ingresa tu correo arriba para recuperar la contraseña.");
+        }
+
+        btnEntrar.disabled = true;
+
+        try {
+          // Opción A (Estándar con Firebase): Envía el correo por defecto de Firebase
+          // await sendPasswordResetEmail(auth, email);
+          
+          // Opción B (Usando tu backend con Resend):
+          const respuesta = await fetch("https://winorbs.onrender.com/api/enviar-correo-recuperacion", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: email })
+          });
+
+          if (!respuesta.ok) throw new Error("No se pudo enviar el correo.");
+
+          mostrarError("¡Correo de recuperación enviado! Revisa tu bandeja de entrada.");
+          errBox.style.color = "#38bdf8"; // Cambiar a color cian de éxito
+        } catch (err) {
+          mostrarError("No se pudo enviar el correo de recuperación. Inténtalo de nuevo.");
+        } finally {
+          btnEntrar.disabled = false;
+        }
+      });
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
@@ -345,6 +394,7 @@
     const btnEntrar = document.getElementById("btn-entrar");
     const btnGuest = document.querySelector(".auth-guest");
     const toggleLink = document.getElementById("toggle-registro");
+    const resetPass = document.getElementById(".reset-pass");
 
     let modoRegistro = false;
 

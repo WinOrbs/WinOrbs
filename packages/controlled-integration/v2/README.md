@@ -4,7 +4,7 @@ Isolated orchestration layer that exercises the WinOrbs 2.0 V2 stack through a
 full match lifecycle without deploying anything, without touching the legacy
 runtime, and without modifying CLOSED layers. It is a test/integration module
 only: it never routes production traffic and never exports a network server.
-
+ 
 ## What it does
 
 `createControlledEnvironment(options)` assembles a self-contained environment
