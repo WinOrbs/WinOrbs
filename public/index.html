@@ -1721,11 +1721,15 @@
             });
         }
 
-        async function entrarPracticaBots(nick) {
+        async function entrarPracticaBots(nick, iniciadoEn) {
             const result = await crearSalaPracticaBots();
             if (!result || result.ok !== true || !result.roomId || !result.password) {
                 alert((result && result.error) || 'No se pudo crear la práctica con bots.');
                 return;
+            }
+            const esperaRestante = 5000 - (Date.now() - iniciadoEn);
+            if (esperaRestante > 0) {
+                await new Promise((resolve) => setTimeout(resolve, esperaRestante));
             }
             sessionStorage.setItem('mi_nick', nick);
             sessionStorage.setItem('mi_skin', JSON.stringify(window.skinSeleccionada || { c1: '#38bdf8' }));
@@ -1745,11 +1749,16 @@
             }
             practicaPendiente = true;
             botonModoSolo.disabled = true;
+            const estadoModoSolo = botonModoSolo.querySelector('.mode-state');
+            const textoEstadoAnterior = estadoModoSolo && estadoModoSolo.textContent;
+            if (estadoModoSolo) estadoModoSolo.textContent = 'Preparando anuncio…';
+            const iniciadoEn = Date.now();
             try {
-                await entrarPracticaBots(nick);
+                await entrarPracticaBots(nick, iniciadoEn);
             } finally {
                 practicaPendiente = false;
                 botonModoSolo.disabled = false;
+                if (estadoModoSolo && textoEstadoAnterior) estadoModoSolo.textContent = textoEstadoAnterior;
             }
         }
 

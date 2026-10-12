@@ -58,8 +58,13 @@ assert.ok(
 assert.ok(
     !indexHtml.includes('n6wxm.com/vignette.min.js') &&
         !indexHtml.includes('cargarViñetaMonetagPractica') &&
-        !gameHtml.includes('quge5.com/88/tag.min.js'),
-    'lobby must use only MultiTag and game page must not load it again'
+        /<script src="https:\/\/quge5\.com\/88\/tag\.min\.js" data-zone="294817" async data-cfasync="false"><\/script>/.test(gameHtml),
+    'lobby and game page must load only the configured Monetag MultiTag'
+);
+assert.ok(
+    /const esperaRestante = 5000 - \(Date\.now\(\) - iniciadoEn\);/.test(indexHtml) &&
+        /await new Promise\(\(resolve\) => setTimeout\(resolve, esperaRestante\)\);/.test(indexHtml),
+    'SOLO must allow at least five seconds for Monetag before navigating to the game'
 );
 assert.ok(indexHtml.includes('id="solo-ticket-bar"'), 'lobby must render solo ticket progress');
 assert.ok(server.includes('recordSoloVictory({'), 'server must record SOLO wins from its authoritative result');
