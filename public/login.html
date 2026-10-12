@@ -269,7 +269,6 @@
     <div class="atmo-grain"></div>
   </div>
   <div id="app">
-    <!-- Solo pantalla de login -->
     <section>
       <div class="login-card">
         <div class="logo-login" style="background-image: url(assets/login/logo-login.png);"></div>
@@ -288,7 +287,6 @@
           </button>
         </div>
 
-        <!-- Login / Registro (Firebase Auth: email + contraseña) -->
         <form class="auth-pane" id="login-form" novalidate>
           <div class="field" id="field-user" style="display: none;">
             <svg class="input-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
@@ -310,11 +308,12 @@
           </div>
           <button class="auth-btn" type="submit" id="btn-entrar">Entrar</button>
         </form>
+
         <div class="auth-toggle">
           <a href="#" id="toggle-registro">¿No tienes cuenta? Crear cuenta</a>
         </div>
         <div class="reset-pass">
-          <a href="#" id="reset-pass">¿Olvidaste tu contraseña?</a>
+          <a href="#" id="link-olvido">¿Olvidaste tu contraseña?</a>
         </div>
         <div class="auth-guest-wrap">
           <button class="auth-guest" type="button">Jugar como invitado</button>
@@ -322,6 +321,7 @@
       </div>
     </section>
   </div>
+
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import {
@@ -340,46 +340,8 @@
       setDoc,
       runTransaction,
       serverTimestamp
-    } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    } from "https://www.gstatic.com/firestore/10.8.0/firebase-firestore.js"; // Nota: Asegúrate de mantener la ruta correcta de gstatic si usas 10.8.0
     import { firebaseConfig } from "./js/firebase-config.js";
-    import { sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-
-    const linkOlvido = document.getElementById("link-olvido");
-
-      linkOlvido.addEventListener("click", async function (e) {
-        e.preventDefault();
-        limpiarError();
-
-    const email = emailInput.value.trim().toLowerCase();
-    const arroba = email.indexOf("@");
-
-      if (!email || arroba < 1 || arroba === email.length - 1) {
-        return mostrarError("Ingresa tu correo arriba para recuperar la contraseña.");
-        }
-
-        btnEntrar.disabled = true;
-
-        try {
-          // Opción A (Estándar con Firebase): Envía el correo por defecto de Firebase
-          // await sendPasswordResetEmail(auth, email);
-          
-          // Opción B (Usando tu backend con Resend):
-          const respuesta = await fetch("https://winorbs.onrender.com/api/enviar-correo-recuperacion", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: email })
-          });
-
-          if (!respuesta.ok) throw new Error("No se pudo enviar el correo.");
-
-          mostrarError("¡Correo de recuperación enviado! Revisa tu bandeja de entrada.");
-          errBox.style.color = "#38bdf8"; // Cambiar a color cian de éxito
-        } catch (err) {
-          mostrarError("No se pudo enviar el correo de recuperación. Inténtalo de nuevo.");
-        } finally {
-          btnEntrar.disabled = false;
-        }
-      });
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
@@ -394,12 +356,15 @@
     const btnEntrar = document.getElementById("btn-entrar");
     const btnGuest = document.querySelector(".auth-guest");
     const toggleLink = document.getElementById("toggle-registro");
-    const resetPass = document.getElementById(".reset-pass");
+    const linkOlvido = document.getElementById("link-olvido");
 
     let modoRegistro = false;
 
-    function mostrarError(msg) {
+    function mostrarError(msg, esExito = false) {
       errBox.textContent = msg;
+      errBox.style.color = esExito ? "#38bdf8" : "#ff8f8f";
+      errBox.style.background = esExito ? "rgba(56, 189, 248, .1)" : "rgba(248, 113, 113, .1)";
+      errBox.style.borderColor = esExito ? "rgba(56, 189, 248, .3)" : "rgba(248, 113, 113, .3)";
       errBox.classList.add("visible");
     }
 
@@ -420,16 +385,8 @@
       return (base.length >= 3 ? base : "Jugador") + "_" + Math.random().toString(36).slice(2, 5);
     }
 
-    // Apodos ÚNICOS: reserva atómica en apodos/{lower} → { uid }.
-    // Sin esto dos cuentas podían usar el mismo apodo y la conciliación de
-    // premios quedaba ambigua. La transacción falla si el apodo ya es de otro.
     function claveApodo(apodo) { return String(apodo || "").trim().toLowerCase(); }
 
-    // Valida el formato de un apodo. Devuelve el mensaje de error o null.
-    // Solo se bloquea lo que REALMENTE rompe la reserva apodos/{clave}: '/' no
-    // puede ir en un ID de documento, los IDs '__x__' son reservados por
-    // Firestore, y < > & " los rechazan las reglas. Letras con acento, ñ y
-    // espacios siguen permitidos.
     function motivoApodoInvalido(apodo) {
       const s = String(apodo || "").trim();
       if (s.length < 3) return "El nombre de usuario debe tener al menos 3 caracteres.";
@@ -442,7 +399,6 @@
 
     async function reclamarApodo(uid, apodo) {
       const clave = claveApodo(apodo);
-      // Red de seguridad: los flujos ya validan antes con motivoApodoInvalido().
       if (motivoApodoInvalido(apodo)) throw new Error("APODO_INVALIDO");
       try {
         await runTransaction(db, async (t) => {
@@ -454,25 +410,17 @@
             throw new Error("APODO_EN_USO");
           }
           t.set(refA, { uid: uid, apodo: String(apodo).trim() });
-          // El apodoLower del perfil SOLO se marca si el perfil YA existe: si aún
-          // no existe lo crea el llamador con el documento completo (la regla
-          // 'create' de usuarios exige saldo:0 / baneado:false / apodo, y un
-          // merge previo dejaría el perfil incompleto y la creación sería denegada).
           if (snapU.exists()) t.set(refU, { apodoLower: clave }, { merge: true });
         });
         return true;
       } catch (e) {
-        // Colisión real de apodo: se propaga para que el llamador lo informe.
         if (e && e.message === "APODO_EN_USO") throw e;
-        // Reglas de Firestore sin publicar (colección 'apodos'): no se puede
-        // garantizar la unicidad, pero NO se bloquea el registro/login.
         if (e && (e.code === "permission-denied" || e.code === "unauthenticated")) {
-          console.warn("WinOrbs: publica las reglas de firestore.rules (colección 'apodos') para garantizar apodos únicos.");
           try {
             const refU = doc(db, "usuarios", uid);
             const snapU = await getDoc(refU);
             if (snapU.exists()) await setDoc(refU, { apodoLower: clave }, { merge: true });
-          } catch (e2) { /* sin permisos: se sigue sin marca */ }
+          } catch (e2) { }
           return false;
         }
         throw e;
@@ -486,10 +434,9 @@
         await runTransaction(db, async (t) => {
           const refA = doc(db, "apodos", clave);
           const snapA = await t.get(refA);
-          // Solo libera si la reserva sigue siendo tuya (no pisa a otro).
           if (snapA.exists() && snapA.data().uid === uid) t.delete(refA);
         });
-      } catch (e) { /* liberar es best-effort */ }
+      } catch (e) { }
     }
 
     function mensajeFirebase(code) {
@@ -514,6 +461,37 @@
       });
     }
 
+    // Lógica para enviar correo de recuperación con Resend
+    linkOlvido.addEventListener("click", async function (e) {
+      e.preventDefault();
+      limpiarError();
+
+      const email = emailInput.value.trim().toLowerCase();
+      const arroba = email.indexOf("@");
+
+      if (!email || arroba < 1 || arroba === email.length - 1) {
+        return mostrarError("Ingresa tu correo arriba para recuperar la contraseña.");
+      }
+
+      btnEntrar.disabled = true;
+
+      try {
+        const respuesta = await fetch("https://winorbs.onrender.com/api/enviar-correo-recuperacion", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: email })
+        });
+
+        if (!respuesta.ok) throw new Error("No se pudo enviar el correo.");
+
+        mostrarError("¡Correo de recuperación enviado! Revisa tu bandeja de entrada.", true);
+      } catch (err) {
+        mostrarError("No se pudo enviar el correo de recuperación. Inténtalo de nuevo.");
+      } finally {
+        btnEntrar.disabled = false;
+      }
+    });
+
     // Alternar entre modo login y modo registro
     toggleLink.addEventListener("click", function (e) {
       e.preventDefault();
@@ -525,8 +503,6 @@
       limpiarError();
     });
 
-    // Crea el documento de perfil si no existe (cuentas sin perfil)
-    // + reclama el apodo para que nadie más pueda usarlo.
     async function asegurarPerfil(uid, apodo, email) {
       const ref = doc(db, "usuarios", uid);
       const snap = await getDoc(ref);
@@ -543,9 +519,8 @@
         return { apodo: apodo, baneado: false };
       }
       const actual = snap.data() || {};
-      // Perfil viejo sin reserva: intenta reclamar su propio apodo (best-effort).
       if (actual.apodo && !actual.apodoLower) {
-        try { await reclamarApodo(uid, actual.apodo); } catch (e) { /* otro lo tomó: se verá al cambiarlo */ }
+        try { await reclamarApodo(uid, actual.apodo); } catch (e) { }
       }
       return actual;
     }
@@ -578,10 +553,8 @@
           etapa = "auth.sign-up";
           const cred = await createUserWithEmailAndPassword(auth, email, pass);
           try {
-            // 1) Reserva el apodo (atómico: falla si ya es de otra cuenta)
             etapa = "firestore.reserve-nickname";
             await reclamarApodo(cred.user.uid, apodo);
-            // 2) Crea el perfil (la regla 'create' exige la reserva previa)
             etapa = "firestore.create-profile";
             await setDoc(doc(db, "usuarios", cred.user.uid), {
               apodo: apodo,
@@ -592,8 +565,6 @@
               creadoEn: serverTimestamp()
             });
           } catch (errApodo) {
-            // Revierte TODO: libera la reserva y borra la cuenta Auth, para no
-            // dejar ni un apodo bloqueado ni un usuario sin perfil válido.
             reportarErrorLogin(etapa, errApodo);
             try { await liberarApodo(cred.user.uid, apodo); } catch (e0) { }
             try { await cred.user.delete(); } catch (e2) { try { await signOut(auth); } catch (e3) { } }
@@ -608,8 +579,6 @@
         } else {
           etapa = "auth.sign-in";
           const cred = await signInWithEmailAndPassword(auth, email, pass);
-          // Si la cuenta aún no tiene perfil, se crea con apodo aleatorio;
-          // reintenta si colisiona con un apodo existente (máx. 5).
           let perfil = null;
           let baseApodo = apodoDesdeEmail(email);
           etapa = "firestore.load-profile";
@@ -642,8 +611,6 @@
       }
     });
 
-    // Entrar como invitado (cuenta anónima de Firebase con perfil propio)
-    // El apodo aleatorio también se reserva para mantener la unicidad global.
     btnGuest.addEventListener("click", async function () {
       limpiarError();
       btnGuest.disabled = true;
@@ -656,7 +623,7 @@
             await reclamarApodo(cred.user.uid, candidato);
             apodo = candidato;
             break;
-          } catch (eApodo) { /* colisión improbable: reintenta */ }
+          } catch (eApodo) { }
         }
         if (!apodo) {
           try { await cred.user.delete(); } catch (e2) { }
@@ -674,7 +641,6 @@
             creadoEn: serverTimestamp()
           }, { merge: true });
         } catch (errPerfil) {
-          // Nada a medias: libera la reserva y borra la cuenta anónima
           try { await liberarApodo(cred.user.uid, apodo); } catch (e0) { }
           try { await cred.user.delete(); } catch (e2) { }
           btnGuest.disabled = false;
@@ -688,7 +654,6 @@
       }
     });
 
-    // Iniciar sesión con Google (Firebase Auth popup)
     const btnGoogle = document.querySelector(".social-icons .icon");
     btnGoogle.addEventListener("click", async function () {
       limpiarError();
@@ -697,7 +662,6 @@
         const cred = await signInWithPopup(auth, new GoogleAuthProvider());
         const email = cred.user.email || "";
         let apodoBase = apodoDesdeEmail(email);
-        // Google genera apodo aleatorio: reintenta si colisiona (máx. 5).
         let perfil = null;
         let ultimoError = null;
         for (let intento = 0; intento < 5; intento++) {
