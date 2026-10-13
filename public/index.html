@@ -7,15 +7,16 @@
     <meta name="theme-color" content="#060a12">
     <link rel="icon" type="image/png" href="/assets/logo/logo-shield.png">
     <title>WinOrbs - Entrar a Jugar</title>
-    <script src="https://quge5.com/88/tag.min.js" data-zone="294817" async data-cfasync="false"></script>
+    <script src="https://quge5.com/88/tag.min.js" data-zone="295428" async data-cfasync="false"
+        onload="this.dataset.monetagStatus='loaded'" onerror="this.dataset.monetagStatus='failed'"></script>
     <!-- Incluimos la librería cliente de Socket.io -->
     <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>
     <script src="/js/servidor-config.js"></script>
-    <!-- Tipografía: Chakra Petch (display) + Rajdhani (UI) · sin conexión cae al system stack -->
+    <!-- Tipografía del lobby: Space Grotesk para títulos e Inter para interfaz -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Rajdhani:wght@400;500;600;700&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="/css/login-stars.css">
     <link rel="stylesheet" href="/css/starfield-layout.css">
@@ -36,8 +37,8 @@
             --red: #f87171;
             --text: #e2e8f0;
             --muted: #94a3b8;
-            --font-display: 'Chakra Petch', 'Rajdhani', 'Segoe UI', system-ui, sans-serif;
-            --font-body: 'Rajdhani', 'Segoe UI', system-ui, sans-serif;
+            --font-display: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
+            --font-body: 'Inter', 'Segoe UI', system-ui, sans-serif;
         }
 
         html { height: 100%; }
@@ -814,20 +815,39 @@
         .brand { flex-direction: row; align-items: center; gap: 14px; }
         .brand-tag { display: none; }
         .topbar-right { justify-content: flex-end; gap: clamp(10px, 2vw, 24px); }
+        .brand { height: 48px; gap: 9px; }
+        .brand-wordmark { display: block; width: clamp(136px, 14vw, 180px); max-height: 48px; object-fit: contain; }
         .header-progress {
             display: grid;
-            grid-template-columns: auto minmax(90px, 150px);
+            grid-template-columns: auto minmax(96px, 140px) auto;
             align-items: center;
-            gap: 5px 10px;
-            min-width: 180px;
+            gap: 8px;
+            min-width: 0;
             color: var(--muted);
             font: 700 10px var(--font-display);
         }
-        .header-progress-label { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 8px; }
-        .header-progress-label strong { color: #e2e8f0; }
-        .header-progress-track { height: 5px; overflow: hidden; border-radius: 99px; background: rgba(148, 163, 184, .16); }
-        .header-progress-fill { display: block; width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #0ea5e9, #67e8f9); box-shadow: 0 0 10px rgba(56, 189, 248, .6); }
-        .header-progress-xp { color: #bae6fd; font-size: 9px; white-space: nowrap; }
+        .header-progress-level { color: #e2e8f0; font-size: 12px; white-space: nowrap; }
+        .header-progress-track {
+            position: relative;
+            display: block;
+            width: 100%;
+            height: 8px;
+            overflow: hidden;
+            border: 1px solid rgba(125, 211, 252, .28);
+            border-radius: 99px;
+            background: linear-gradient(180deg, rgba(2, 6, 17, .95), rgba(15, 23, 42, .88));
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, .7), 0 0 9px rgba(56, 189, 248, .1);
+        }
+        .header-progress-fill {
+            display: block;
+            width: 0;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, #0284c7 0%, #22d3ee 70%, #a5f3fc 100%);
+            box-shadow: 0 0 10px rgba(34, 211, 238, .75);
+            transition: width .45s cubic-bezier(.2, .7, .2, 1);
+        }
+        .header-progress-xp { min-width: 64px; color: #bae6fd; font-size: 9px; white-space: nowrap; }
         .topbar-actions .mini-btn { display: inline-flex; align-items: center; gap: 7px; }
 
         .arena {
@@ -979,28 +999,84 @@
         .play-modes .mode-selector {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: clamp(8px, 2vw, 22px);
+            align-items: center;
+            gap: clamp(2px, 1vw, 14px);
             margin: 0;
         }
         .play-modes .mode-portal {
-            min-height: 0;
-            padding: 10px 8px;
-            gap: 5px;
+            --mode-glow: rgba(56, 189, 248, .55);
+            position: relative;
+            isolation: isolate;
+            min-height: 176px;
+            padding: 25px 9px 27px;
+            gap: 4px;
             justify-content: center;
-            border: 1px solid rgba(148, 163, 184, .12);
-            border-radius: 18px;
-            background: linear-gradient(155deg, rgba(15, 23, 42, .55), rgba(2, 6, 17, .32));
+            overflow: hidden;
+            clip-path: polygon(50% 0, 92% 17%, 87% 59%, 76% 79%, 50% 100%, 24% 79%, 13% 59%, 8% 17%);
+            background:
+                linear-gradient(155deg, rgba(11, 29, 53, .97), rgba(3, 9, 23, .98) 58%, rgba(5, 24, 40, .96)),
+                url("/assets/logo/logo-escudo.svg") center 48% / 108% 108% no-repeat;
+            filter: drop-shadow(0 7px 12px rgba(0, 0, 0, .4));
+            transform: translateY(0) scale(1);
+            transition: transform .28s cubic-bezier(.2, .85, .25, 1), filter .28s ease;
+            will-change: transform, filter;
         }
+        .play-modes .mode-portal::before,
+        .play-modes .mode-portal::after {
+            position: absolute;
+            z-index: 0;
+            inset: 0;
+            content: "";
+            pointer-events: none;
+            clip-path: inherit;
+        }
+        .play-modes .mode-portal::before {
+            border: 1px solid rgba(125, 211, 252, .2);
+            background:
+                linear-gradient(145deg, rgba(56, 189, 248, .14), transparent 42%, rgba(14, 165, 233, .1)),
+                url("/assets/logo/logo-escudo.svg") center / contain no-repeat;
+            opacity: .35;
+            transition: opacity .25s ease, background-color .25s ease;
+        }
+        .play-modes .mode-portal::after {
+            inset: -80% -50%;
+            background: linear-gradient(110deg, transparent 42%, rgba(224, 248, 255, .46) 49%, rgba(125, 211, 252, .12) 53%, transparent 60%);
+            opacity: 0;
+            transform: translateX(-55%) rotate(8deg);
+        }
+        .play-modes .mode-portal:hover:not(:disabled),
+        .play-modes .mode-portal:focus-visible {
+            z-index: 1;
+            transform: translateY(-8px) scale(1.055);
+            filter: drop-shadow(0 0 10px var(--mode-glow)) drop-shadow(0 14px 18px rgba(0, 0, 0, .42));
+        }
+        .play-modes .mode-portal:hover::before,
+        .play-modes .mode-portal:focus-visible::before,
+        .play-modes .mode-portal[aria-pressed="true"]::before { opacity: .85; }
+        .play-modes .mode-portal:hover::after,
+        .play-modes .mode-portal:focus-visible::after { animation: shieldSweep .8s ease-out; }
         .play-modes .mode-portal[aria-pressed="true"] {
-            border-color: rgba(56, 189, 248, .68);
-            background: linear-gradient(155deg, rgba(8, 47, 73, .68), rgba(2, 6, 17, .52));
-            box-shadow: inset 0 0 24px rgba(56, 189, 248, .09), 0 0 24px rgba(56, 189, 248, .16);
+            --mode-glow: rgba(34, 211, 238, .78);
+            filter: drop-shadow(0 0 11px var(--mode-glow)) drop-shadow(0 10px 16px rgba(0, 0, 0, .4));
+            animation: selectedShieldGlow 2.4s ease-in-out infinite;
         }
-        .play-modes .mode-art { width: min(100%, 142px); filter: drop-shadow(0 7px 10px rgba(15, 23, 42, .4)); }
+        .play-modes .mode-portal[data-modo="solo"] { --mode-glow: rgba(167, 139, 250, .68); }
+        .play-modes .mode-portal[data-modo="teams"] { --mode-glow: rgba(52, 211, 153, .65); }
+        .play-modes .mode-art { width: min(100%, 100px); filter: drop-shadow(0 3px 7px rgba(0, 0, 0, .5)); }
+        .play-modes .mode-art, .play-modes .mode-copy { position: relative; z-index: 1; }
         .play-modes .mode-copy { gap: 3px; }
-        .play-modes .mode-name { font-size: 14px; }
+        .play-modes .mode-name { font-size: 14px; text-shadow: 0 2px 8px #020617; }
         .play-modes .mode-sub { font-size: 11px; }
         .play-modes .mode-state { font-size: 8px; }
+        @keyframes shieldSweep {
+            0% { opacity: 0; transform: translateX(-55%) rotate(8deg); }
+            25% { opacity: 1; }
+            100% { opacity: 0; transform: translateX(55%) rotate(8deg); }
+        }
+        @keyframes selectedShieldGlow {
+            0%, 100% { filter: drop-shadow(0 0 7px var(--mode-glow)) drop-shadow(0 9px 14px rgba(0, 0, 0, .36)); }
+            50% { filter: drop-shadow(0 0 15px var(--mode-glow)) drop-shadow(0 11px 18px rgba(0, 0, 0, .4)); }
+        }
         .play-tools { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
         .change-skin-btn, .play-now-btn {
             display: inline-flex;
@@ -1150,24 +1226,26 @@
         @media (max-width: 760px) {
             .topbar { align-items: center; }
             .brand { flex-direction: row; align-items: center; gap: 4px; }
+            .brand-wordmark { width: 124px; max-height: 42px; }
             .topbar-right { width: 100%; }
             .topbar-actions { justify-content: flex-end; }
             .topbar-actions .mini-btn { padding: 7px 9px; font-size: 0; }
             .topbar-actions .btn-icon { width: 18px; height: 18px; }
-            .header-progress { min-width: 125px; grid-template-columns: auto minmax(55px, 85px); gap: 4px 6px; }
+            .header-progress { grid-template-columns: auto minmax(70px, 1fr) auto; gap: 6px; }
             .arena { padding: 12px 12px 88px; gap: 12px; }
             .play-stage { min-height: 510px; padding: 18px 10px; }
             #progress-dialog .progression-grid { grid-template-columns: minmax(0, 1fr); }
         }
         @media (max-width: 480px) {
             .topbar { gap: 6px; padding: 9px; }
-            .brand .logo { font-size: 18px; }
+            .brand { gap: 3px; }
+            .brand-wordmark { width: 108px; max-height: 36px; }
             .topbar-right { gap: 5px; flex: 1; }
             .chip-user { max-width: 104px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 6px 7px; font-size: 10px; }
-            .header-progress { min-width: 84px; grid-template-columns: minmax(55px, 1fr); }
-            .header-progress-label { font-size: 9px; }
-            .header-progress-track { grid-column: 1; }
-            .header-progress-xp { display: none; }
+            .header-progress { grid-template-columns: auto minmax(42px, 1fr); gap: 3px 5px; }
+            .header-progress-level { font-size: 10px; }
+            .header-progress-track { grid-column: 1 / -1; grid-row: 2; height: 6px; }
+            .header-progress-xp { grid-column: 2; grid-row: 1; min-width: 0; font-size: 8px; }
             .chip-tasa { display: none; }
             .chip-balance { padding: 6px 7px; font-size: 10px; white-space: nowrap; }
             .topbar-actions { gap: 4px; }
@@ -1178,8 +1256,8 @@
             .play-stage { border-radius: 24px; }
             .play-stage::before { border-radius: 18px; }
             .play-orb-wrap { width: 118px; }
-            .play-modes .mode-portal { padding: 8px 4px; }
-            .play-modes .mode-art { width: min(100%, 96px); }
+            .play-modes .mode-portal { min-height: 150px; padding: 22px 5px 24px; }
+            .play-modes .mode-art { width: min(100%, 82px); }
             .play-tools { margin: 8px 0 12px; }
             .change-skin-btn { min-height: 38px; padding: 8px 12px; font-size: 11px; }
             .play-now-btn { min-height: 58px; margin-top: 12px; }
@@ -1194,6 +1272,8 @@
         }
         @media (prefers-reduced-motion: reduce) {
             .play-orb, .floating-dialog > .panel { animation: none; }
+            .play-modes .mode-portal, .header-progress-fill { transition: none; }
+            .play-modes .mode-portal::after, .play-modes .mode-portal[aria-pressed="true"] { animation: none !important; }
         }
     </style>
 </head>
@@ -1218,20 +1298,17 @@
     </div>
 
     <header class="topbar">
-        <div class="brand">
-            <h1 class="logo">WIN<span>ORBS</span></h1>
-            <span class="brand-tag">Compite en vivo y gana dinero real</span>
-        </div>
+        <a class="brand" href="index.html" aria-label="WinOrbs, lobby principal">
+            <img class="brand-wordmark" src="/assets/logo/logo-login.svg" alt="WinOrbs">
+        </a>
         <div class="topbar-right">
             <span class="chip chip-user" id="user-chip">Cargando…</span>
             <div class="header-progress" aria-label="Progreso de nivel">
-                <div class="header-progress-label">
-                    <strong id="header-level">Lv. 1</strong>
-                    <span class="header-progress-xp" id="header-progress-text">0/100 XP</span>
-                </div>
-                <div class="header-progress-track" id="header-progress" role="progressbar" aria-label="Progreso al siguiente nivel" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <strong class="header-progress-level" id="header-level">Lv. 1</strong>
+                <div class="header-progress-track" id="header-progress" role="progressbar" aria-label="Experiencia del nivel actual" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0 de 100 XP">
                     <span class="header-progress-fill" id="header-progress-fill"></span>
                 </div>
+                <span class="header-progress-xp" id="header-progress-text">0/100 XP</span>
             </div>
             <span class="chip-tasa" id="chip-tasa" hidden>$1 = Bs. <b id="tasa-valor-txt">…</b></span>
             <span class="chip chip-balance">
@@ -1638,14 +1715,15 @@
             const config = window.__progresionConfig || {};
             const missions = Array.isArray(config.dailyMissions) ? config.dailyMissions : [];
             const visualRewards = Array.isArray(config.visualRewards) ? config.visualRewards : [];
-            const xp = Math.max(0, Number(progress.totalXp ?? progress.xp) || 0);
+            const rawXp = Number(progress.totalXp ?? progress.xp);
+            const xp = Number.isSafeInteger(rawXp) && rawXp >= 0 ? rawXp : 0;
             const level = Math.max(1, Math.floor(Number(progress.level) || 1));
             const baseXpPerLevel = Math.max(1, Number(config.levelCurve && config.levelCurve.baseXpPerLevel) || 100);
             const xpAtLevel = baseXpPerLevel * (level - 1) * level / 2;
             const xpAtNextLevel = baseXpPerLevel * level * (level + 1) / 2;
             const xpForNext = xpAtNextLevel - xpAtLevel;
-            const xpIntoLevel = xp - xpAtLevel;
-            const percentage = xpForNext ? Math.min(100, Math.floor(xpIntoLevel / xpForNext * 100)) : 100;
+            const xpIntoLevel = Math.min(xpForNext, Math.max(0, xp - xpAtLevel));
+            const percentage = xpForNext > 0 ? Math.floor(xpIntoLevel / xpForNext * 100) : 100;
             document.getElementById('progresion-nivel').textContent = 'Nivel ' + level;
             document.getElementById('progresion-xp').textContent = xp.toLocaleString('es-ES') + ' XP';
             document.getElementById('progresion-siguiente').textContent = xpForNext
@@ -1661,9 +1739,13 @@
             const headerProgressText = document.getElementById('header-progress-text');
             if (headerLevel) headerLevel.textContent = 'Lv. ' + level;
             if (headerProgressFill) headerProgressFill.style.width = percentage + '%';
-            if (headerProgress) headerProgress.setAttribute('aria-valuenow', String(percentage));
+            if (headerProgress) {
+                headerProgress.setAttribute('aria-valuenow', String(percentage));
+                headerProgress.setAttribute('aria-valuetext',
+                    `${xpIntoLevel} de ${xpForNext} XP, ${percentage}% del nivel`);
+            }
             if (headerProgressText) headerProgressText.textContent =
-                xpIntoLevel.toLocaleString('es-ES') + '/' + xpForNext.toLocaleString('es-ES') + ' XP';
+                `${xpIntoLevel}/${xpForNext} XP`;
 
             const missionList = document.getElementById('progresion-misiones');
             missionList.replaceChildren();
@@ -2331,15 +2413,48 @@
             });
         }
 
-        async function entrarPracticaBots(nick, iniciadoEn) {
-            const result = await crearSalaPracticaBots();
+        function esperarTagMonetag(timeoutMs) {
+            const script = document.querySelector('script[src="https://quge5.com/88/tag.min.js"]');
+            if (!script) {
+                console.warn('No se encontró el tag de Monetag; se permitirá iniciar la práctica.');
+                return Promise.resolve(false);
+            }
+            if (script.dataset.monetagStatus === 'loaded') return Promise.resolve(true);
+            if (script.dataset.monetagStatus === 'failed') {
+                console.warn('No se pudo cargar el tag de Monetag; se permitirá iniciar la práctica.');
+                return Promise.resolve(false);
+            }
+
+            return new Promise((resolve) => {
+                let timeout;
+                const terminar = (cargado) => {
+                    clearTimeout(timeout);
+                    script.removeEventListener('load', alCargar);
+                    script.removeEventListener('error', alFallar);
+                    if (!cargado) {
+                        console.warn('Monetag no cargó a tiempo o falló; se permitirá iniciar la práctica.');
+                    }
+                    resolve(cargado);
+                };
+                const alCargar = () => terminar(true);
+                const alFallar = () => terminar(false);
+                script.addEventListener('load', alCargar);
+                script.addEventListener('error', alFallar);
+
+                if (script.dataset.monetagStatus === 'loaded') return terminar(true);
+                if (script.dataset.monetagStatus === 'failed') return terminar(false);
+                timeout = setTimeout(() => terminar(false), timeoutMs);
+            });
+        }
+
+        async function entrarPracticaBots(nick) {
+            const [result] = await Promise.all([
+                crearSalaPracticaBots(),
+                esperarTagMonetag(5000)
+            ]);
             if (!result || result.ok !== true || !result.roomId || !result.password) {
                 alert((result && result.error) || 'No se pudo crear la práctica con bots.');
                 return;
-            }
-            const esperaRestante = 5000 - (Date.now() - iniciadoEn);
-            if (esperaRestante > 0) {
-                await new Promise((resolve) => setTimeout(resolve, esperaRestante));
             }
             sessionStorage.setItem('mi_nick', nick);
             sessionStorage.setItem('mi_skin', JSON.stringify(window.skinSeleccionada || { c1: '#38bdf8' }));
@@ -2362,9 +2477,8 @@
             const estadoModoSolo = botonModoSolo.querySelector('.mode-state');
             const textoEstadoAnterior = estadoModoSolo && estadoModoSolo.textContent;
             if (estadoModoSolo) estadoModoSolo.textContent = 'Preparando anuncio…';
-            const iniciadoEn = Date.now();
             try {
-                await entrarPracticaBots(nick, iniciadoEn);
+                await entrarPracticaBots(nick);
             } finally {
                 practicaPendiente = false;
                 botonModoSolo.disabled = false;

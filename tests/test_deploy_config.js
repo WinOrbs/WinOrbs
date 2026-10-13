@@ -52,19 +52,22 @@ assert.ok(defaults.includes("host: '0.0.0.0'"), 'server default host must remain
 assert.ok(packageJson.scripts.build.includes("fs.copyFileSync('sw.js','dist/sw.js')"), 'Cloudflare Pages build must publish the Monetag service worker');
 assert.ok(httpServer.includes("app.get('/sw.js', (req, res) => res.sendFile(rootDir + '/sw.js'))"), 'Express static hosting must expose the root service worker');
 assert.ok(
-    /<script src="https:\/\/quge5\.com\/88\/tag\.min\.js" data-zone="294817" async data-cfasync="false"><\/script>/.test(indexHtml),
+    /<script src="https:\/\/quge5\.com\/88\/tag\.min\.js" data-zone="295428" async data-cfasync="false"(?:\s+[^>]*)?><\/script>/.test(indexHtml),
     'lobby must load the configured Monetag MultiTag script'
 );
 assert.ok(
     !indexHtml.includes('n6wxm.com/vignette.min.js') &&
         !indexHtml.includes('cargarViñetaMonetagPractica') &&
-        /<script src="https:\/\/quge5\.com\/88\/tag\.min\.js" data-zone="294817" async data-cfasync="false"><\/script>/.test(gameHtml),
+        /<script src="https:\/\/quge5\.com\/88\/tag\.min\.js" data-zone="295428" async data-cfasync="false"(?:\s+[^>]*)?><\/script>/.test(gameHtml),
     'lobby and game page must load only the configured Monetag MultiTag'
 );
 assert.ok(
-    /const esperaRestante = 5000 - \(Date\.now\(\) - iniciadoEn\);/.test(indexHtml) &&
-        /await new Promise\(\(resolve\) => setTimeout\(resolve, esperaRestante\)\);/.test(indexHtml),
-    'SOLO must allow at least five seconds for Monetag before navigating to the game'
+    /onload="this\.dataset\.monetagStatus='loaded'" onerror="this\.dataset\.monetagStatus='failed'"/.test(indexHtml) &&
+        /script\.addEventListener\('load', alCargar\)/.test(indexHtml) &&
+        /script\.addEventListener\('error', alFallar\)/.test(indexHtml) &&
+        /esperarTagMonetag\(5000\)/.test(indexHtml) &&
+        /Promise\.all\(\[\s*crearSalaPracticaBots\(\),\s*esperarTagMonetag\(5000\)\s*\]\)/.test(indexHtml),
+    'SOLO must wait for Monetag to load, fail, or time out after five seconds before navigating'
 );
 assert.ok(indexHtml.includes('id="solo-ticket-bar"'), 'lobby must render solo ticket progress');
 assert.ok(server.includes('recordSoloVictory({'), 'server must record SOLO wins from its authoritative result');
