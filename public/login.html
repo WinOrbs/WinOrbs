@@ -6,33 +6,42 @@
   <meta name="theme-color" content="#060a12">
   <title>WinOrbs — Login</title>
   <script src="/js/servidor-config.js"></script>
-  <!-- Design System Neón Arena compartido -->
-  <link rel="stylesheet" href="css/arena.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/login-stars.css">
   <style>
-    /* ── Neón Arena: la base (vars, atmósfera, formularios) vive en /css/arena.css ── */
+    :root {
+      color-scheme: dark;
+      --surface: rgba(15, 23, 42, .55);
+      --surface-deep: rgba(2, 6, 17, .72);
+      --line: rgba(56, 189, 248, .16);
+      --line-glow: rgba(56, 189, 248, .5);
+      --cyan: #38bdf8;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --font-display: 'Chakra Petch', 'Rajdhani', 'Segoe UI', system-ui, sans-serif;
+      --font-body: 'Rajdhani', 'Segoe UI', system-ui, sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; }
-
-    /* Fondo de marca, atenuado bajo la atmósfera del arena */
-    #login-bg {
+    body {
+      min-height: 100vh;
+      background: #060a12;
+      color: var(--text);
+      font-family: var(--font-body);
+      font-size: 16px;
+      -webkit-font-smoothing: antialiased;
+    }
+    ::selection { background: rgba(56, 189, 248, .35); }
+    button:focus-visible, a:focus-visible, input:focus-visible {
+      outline: 2px solid rgba(56, 189, 248, .7);
+      outline-offset: 2px;
+    }
+    .container {
       position: fixed;
       inset: 0;
       z-index: 0;
-      background: url(assets/login/loginbg.jpg) center/cover no-repeat;
-      opacity: .35;
-      filter: saturate(.8);
-      pointer-events: none;
-    }
-
-    /* La atmósfera (orbs + grid + viñeta + grain) flota sobre la imagen */
-    .atmo { z-index: 0; }
-
-    /* Veladura hacia el fondo profundo */
-    body.auth-mode::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background: radial-gradient(ellipse at 50% 0%, rgba(6, 10, 18, .15), rgba(3, 6, 12, .8));
-      z-index: 1;
       pointer-events: none;
     }
 
@@ -71,18 +80,20 @@
 
     /* ── Logo de marca con pulso de energía cian ── */
     .logo-login {
-      width: 320px;
-      max-width: 100%;
-      height: 100px;
-      position: relative;
-      margin: 0 auto 10px;
-      background-size: cover;
-      background-repeat: no-repeat;
-      background-position: center;
+      width: 100%;
+      max-width: 330px;
+      margin: 0 auto 12px;
       cursor: pointer;
-      animation: arena-pulse 2.4s infinite ease-in-out;
       transition: transform .3s;
-      overflow: visible;
+    }
+    .logo-login img {
+      display: block;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 438 / 161;
+      object-fit: contain;
+      filter: drop-shadow(0 0 7px rgba(56, 189, 248, .4)) drop-shadow(0 8px 14px rgba(0, 0, 0, .3));
+      animation: arena-pulse 2.8s ease-in-out infinite;
     }
     .logo-login:hover { transform: scale(1.06); }
 
@@ -259,20 +270,18 @@
   </style>
 </head>
 <body class="auth-mode">
-  <div id="login-bg" aria-hidden="true"></div>
-  <div class="atmo" aria-hidden="true">
-    <div class="orb orb-a"></div>
-    <div class="orb orb-b"></div>
-    <div class="orb orb-c"></div>
-    <div class="orb orb-d"></div>
-    <div class="atmo-grid"></div>
-    <div class="atmo-vignette"></div>
-    <div class="atmo-grain"></div>
+  <div class="container" aria-hidden="true">
+    <div id="stars"></div>
+    <div id="stars2"></div>
+    <div id="stars3"></div>
+    <div></div>
   </div>
   <div id="app">
     <section>
       <div class="login-card">
-        <div class="logo-login" style="background-image: url(assets/login/logo-login.png);"></div>
+        <div class="logo-login">
+          <img src="/assets/logo/logo-login.svg" alt="WinOrbs">
+        </div>
         <div class="auth-err"></div>
 
         <div class="social-message">
