@@ -61,7 +61,7 @@ class TestDate extends Date {
 const sandbox = {
     Date: TestDate,
     Math,
-    MAP_SIZE: 5000,
+    MAP_SIZE: 7000,
     ITEM_COSTOS: { medkit: 30, shield: 50, bomb: 40, orbGun: 100 },
     RECARGA_ORBES_COSTE: 25,
     createPathfinder,

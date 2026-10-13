@@ -93,7 +93,7 @@ const io = createSocketServer(server, {
     logger
 });
 
-const MAP_SIZE = 5000;
+const MAP_SIZE = 7000;
 const rooms = {};
 const realtimeMetrics = createRealtimeMetrics();
 
@@ -182,7 +182,7 @@ const PISTOLA_MAX_AMMO = 15;        // balas por cargador de la Pistola Base
 // cierra en los ZONA_CIERRE_T segundos finales. ZONA_AVISO_T segundos antes de
 // que arranque el cierre se MARCA en el mapa dónde caerá la zona final
 // (zoneNext), para que dé tiempo a rotar como en cualquier battle royale.
-// El radio inicial cubre la esquina del mapa (MAP_SIZE/2·√2 ≈ 3535), así nadie
+// El radio inicial cubre la esquina del mapa (MAP_SIZE/2·√2), así nadie
 // recibe daño de zona al arrancar. Cada fase indica el radio objetivo cuando
 // quedan `t` segundos; entre fases el radio se interpola linealmente.
 const ZONA_RADIO_INICIAL = Math.ceil(MAP_SIZE / 2 * 1.4142);
@@ -191,9 +191,9 @@ const ZONA_CIERRE_T = 40;           // s finales en los que la zona se cierra
 const ZONA_AVISO_T = 70;            // s restantes cuando se marca la zona final
 const ZONA_FASES = [
     { t: ZONA_CIERRE_T, r: ZONA_RADIO_INICIAL },
-    { t: 30, r: 2600 },
-    { t: 20, r: 1800 },
-    { t: 10, r: 1000 },
+    { t: 30, r: 3800 },
+    { t: 20, r: 2600 },
+    { t: 10, r: 1400 },
     { t: 0, r: ZONA_RADIO_FINAL }
 ];
 const ZONA_DPS = [4, 8, 12, 16, 20]; // HP/s fuera de la zona, por fase de cierre
@@ -227,12 +227,12 @@ const TIENDA_MIN_JUGADOR = 250;         // no reubicar encima de un jugador vivo
 // prende en cadena a los que tenga cerca (cola con retardo, sin recursión).
 const OBSTACULOS_TIPOS = {
     roca: { radio: 0, dano: 0, hp: 30 },
-    coche: { radio: 150, dano: 45, hp: 36 },
-    moto: { radio: 100, dano: 25, hp: 18 },
-    barril: { radio: 130, dano: 40, hp: 12 }
+    coche: { radio: 220, dano: 45, hp: 54 },
+    moto: { radio: 150, dano: 25, hp: 30 },
+    barril: { radio: 160, dano: 40, hp: 18 }
 };
 const BARRIL_CADENA_TICKS = 6;      // retardo de la reacción en cadena (~0,1 s)
-const BARRIL_CADENA_RADIO = 40;     // margen extra de encendido entre explosivos
+const BARRIL_CADENA_RADIO = 65;    // margen extra para que los grupos de barriles encadenen
 const COCHE_ORBES = 2;              // orbes que suelta un coche destruido
 const COCHE_ORBE_VAL = 10;
 const MOTO_TURBO_TICKS = 120;       // ~2 s de turbo ×1.9 al reventar una moto
@@ -956,13 +956,13 @@ class GameRoom {
     // daño de bomba se reutilizan sin tocar nada.
     generateObstacles() {
         const defs = [
-            { tipo: 'roca', n: 14, ancho: [60, 120], alto: [60, 120] },
-            { tipo: 'coche', n: 6, ancho: [70, 70], alto: [44, 44] },
-            { tipo: 'moto', n: 6, ancho: [46, 46], alto: [26, 26] },
-            { tipo: 'barril', n: 8, ancho: [30, 30], alto: [30, 30] }
+            { tipo: 'roca', n: 24, ancho: [100, 190], alto: [90, 180] },
+            { tipo: 'coche', n: 10, ancho: [190, 230], alto: [90, 112] },
+            { tipo: 'moto', n: 10, ancho: [108, 132], alto: [48, 66] },
+            { tipo: 'barril', n: 8, ancho: [48, 56], alto: [48, 56] }
         ];
         const obs = [];
-        const entreSi = 60;   // separación mínima entre obstáculos (evita racimos)
+        const entreSi = 90;   // separación mínima entre coberturas aisladas
         for (const d of defs) {
             const hp = (OBSTACULOS_TIPOS[d.tipo] || {}).hp || 30;
             for (let i = 0; i < d.n; i++) {
@@ -981,6 +981,48 @@ class GameRoom {
                     obs.push({ id: 'o' + obs.length, x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h), hp, maxHp: hp, tipo: d.tipo });
                     break;
                 }
+            }
+        }
+
+        const barrelHp = OBSTACULOS_TIPOS.barril.hp;
+        const clusterOffsets = [
+            [-82, -34], [0, -34], [82, -34],
+            [-41, 38], [41, 38]
+        ];
+        for (let group = 0; group < 4; group++) {
+            for (let attempt = 0; attempt < 100; attempt++) {
+                const centerX = 500 + Math.random() * (MAP_SIZE - 1000);
+                const centerY = 500 + Math.random() * (MAP_SIZE - 1000);
+                const cluster = clusterOffsets.map(([dx, dy]) => ({
+                    x: Math.round(centerX + dx - 27),
+                    y: Math.round(centerY + dy - 27),
+                    w: 54,
+                    h: 54
+                }));
+                const invalid = cluster.some((barrel) =>
+                    barrel.x < 150 || barrel.y < 150 ||
+                    barrel.x + barrel.w > MAP_SIZE - 150 ||
+                    barrel.y + barrel.h > MAP_SIZE - 150 ||
+                    Math.hypot(barrel.x + barrel.w / 2 - this.bankZone.x,
+                        barrel.y + barrel.h / 2 - this.bankZone.y) < this.bankZone.radius + 130 ||
+                    (this.speedPads || []).some((pad) =>
+                        barrel.x < pad.x + pad.w + 55 && barrel.x + barrel.w > pad.x - 55 &&
+                        barrel.y < pad.y + pad.h + 55 && barrel.y + barrel.h > pad.y - 55) ||
+                    obs.some((other) =>
+                        barrel.x < other.x + other.w + 35 && barrel.x + barrel.w + 35 > other.x &&
+                        barrel.y < other.y + other.h + 35 && barrel.y + barrel.h + 35 > other.y)
+                );
+                if (invalid) continue;
+                cluster.forEach((barrel) => {
+                    obs.push({
+                        id: 'o' + obs.length,
+                        ...barrel,
+                        hp: barrelHp,
+                        maxHp: barrelHp,
+                        tipo: 'barril'
+                    });
+                });
+                break;
             }
         }
         return obs;
@@ -1016,15 +1058,15 @@ class GameRoom {
         const overlapsObstaculo = (r) => (this.obstacles || []).some(o =>
             r.x - 40 < o.x + o.w && r.x + r.w + 40 > o.x &&
             r.y - 40 < o.y + o.h && r.y + r.h + 40 > o.y);
-        const maxGrupo = 5;
+        const maxGrupo = 7;
         // Coordenadas enteras: la geometría viaja en CADA estado del juego
-        // (34 obstáculos + ~28 muros = ~6.9 KB/tick). Redondear aquí, una sola
+        // (~70 obstáculos + ~36 muros). Redondear aquí, una sola
         // vez, quita los 18 decimales de Math.random() sin tocar el gameplay
         // (la colisión usa la caja redondeada, sub-píxel de diferencia).
         const redondea = (v) => ({ x: Math.round(v.x), y: Math.round(v.y), w: Math.round(v.w), h: Math.round(v.h) });
         for (let i = 0; i < 60 && walls.length < maxGrupo * 4; i++) {
-            const w = 80 + Math.random() * 110;
-            const h = 40 + Math.random() * 90;
+            const w = 160 + Math.random() * 150;
+            const h = 80 + Math.random() * 110;
             const x = margin + Math.random() * Math.max(1, MAP_SIZE / 2 - margin - minGap - w);
             const y = margin + Math.random() * Math.max(1, MAP_SIZE / 2 - margin - minGap - h);
             const variantes = [
@@ -1039,14 +1081,14 @@ class GameRoom {
             variantes.forEach(v => walls.push({ id: 'w' + walls.length, ...v, hp: 30, maxHp: 30, tipo: 'muro' }));
         }
 
-        // Muros finos: tiras de 14 px que aguantan 3 balas (hp 15). Sirven de
+        // Muros finos: tiras de 24 px que aguantan 3 balas (hp 15). Sirven de
         // cobertura ligera y rompen líneas de tiro sin bloquear pasillos.
         let gruposFinos = 0;
         for (let i = 0; i < 60 && gruposFinos < 2; i++) {
             const vertical = Math.random() < 0.5;
-            const largo = 140 + Math.random() * 80;      // 140-220 px
-            const w = vertical ? 14 : largo;
-            const h = vertical ? largo : 14;
+            const largo = 220 + Math.random() * 100;     // 220-320 px
+            const w = vertical ? 24 : largo;
+            const h = vertical ? largo : 24;
             const x = margin + Math.random() * Math.max(1, MAP_SIZE / 2 - margin - minGap - w);
             const y = margin + Math.random() * Math.max(1, MAP_SIZE / 2 - margin - minGap - h);
             const variantes = [
@@ -2949,7 +2991,10 @@ class GameRoom {
         const destruidos = [];
         for (let i = this.obstacles.length - 1; i >= 0; i--) {
             const obs = this.obstacles[i];
-            const dist = Math.hypot(obs.x - bomb.currentX, obs.y - bomb.currentY);
+            const dist = Math.hypot(
+                obs.x + obs.w / 2 - bomb.currentX,
+                obs.y + obs.h / 2 - bomb.currentY
+            );
             if (dist >= 150) continue;
             obs.hp -= 50;
             if (obs.hp > 0) continue;

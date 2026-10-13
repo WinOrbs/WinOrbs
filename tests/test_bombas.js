@@ -37,7 +37,7 @@ const io = {
   to: (id) => ({ emit: (ev) => { if (ev === 'playSound') sonidos.push(ev); } }),
   sockets: { sockets: new Map([['p1', { emit: (ev, d) => avisosDirectos.push(String(d)) }]]) }
 };
-const MAP_SIZE = 5000;
+const MAP_SIZE = 7000;
 const sandboxBase = {
   io, MAP_SIZE, Date, console, Math, isFinite, validateShoot,
   SHOOT_COOLDOWN: { 1: 120, 2: 400, 3: 500 },

@@ -289,9 +289,13 @@ async function parte2(p1, admin, m) {
         /this\.shopZones = this\.generarTiendas\(\);/.test(src) &&
         src.includes('zona - TIENDA_RADIO - 60'));
     log('Obstáculos tipados con hp por tipo (roca/coche/moto/barril)',
-        src.includes("{ tipo: 'coche',  n: 6,  ancho: [70, 70],  alto: [44, 44] }") &&
-        src.includes("coche:  { radio: 150, dano: 45, hp: 36 }") &&
-        src.includes("barril: { radio: 130, dano: 40, hp: 12 }"));
+        src.includes("const MAP_SIZE = 7000;") &&
+        src.includes("{ tipo: 'coche', n: 10, ancho: [190, 230], alto: [90, 112] }") &&
+        src.includes("{ tipo: 'moto', n: 10, ancho: [108, 132], alto: [48, 66] }") &&
+        src.includes("coche: { radio: 220, dano: 45, hp: 54 }") &&
+        src.includes("barril: { radio: 160, dano: 40, hp: 18 }") &&
+        src.includes('for (let group = 0; group < 4; group++)') &&
+        src.includes('const clusterOffsets = ['));
     log('Balas: dañan coche/moto/barril (−6) pero atraviesan las rocas',
         /obs\.hp <= 0 \|\| !obs\.tipo \|\| obs\.tipo === 'roca'\) continue;/.test(src) &&
         src.includes('this.explotarObstaculo(obs, b.ownerId)'));
@@ -304,7 +308,7 @@ async function parte2(p1, admin, m) {
         src.includes('MOTO_TURBO_TICKS = 120') && src.includes('p.turboTimer = MOTO_TURBO_TICKS'));
     log('explodeBomb hace estallar los explosivos alcanzados (rocas siguen en silencio)',
         /if \(obs\.tipo && obs\.tipo !== 'roca'\) destruidos\.push\(obs\);/.test(src));
-    log('Muros finos de 3 balas (14 px, hp 15) con esquema simétrico',
+    log('Muros realistas y muros finos de 3 balas (24 px, hp 15) con esquema simétrico',
         /hp: 15, maxHp: 15, tipo: 'fino'/.test(src) && src.includes("const vertical = Math.random() < 0.5;"));
     log('Cliente: obstáculos por tipo, anillo de tienda y marcador de zona final',
         fs.readFileSync(path.join(__dirname, '..', 'public', 'game.html'), 'utf8')

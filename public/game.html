@@ -537,6 +537,7 @@
             border-radius: 14px;
             z-index: 5;
             box-shadow: var(--shadow);
+            cursor: zoom-in;
         }
 
         /* ============ Tienda Modal ============ */
@@ -2141,6 +2142,41 @@
 
         #minimap { image-rendering: pixelated; }
 
+        #minimap.expanded {
+            position: fixed !important;
+            top: 50% !important;
+            right: auto !important;
+            bottom: auto !important;
+            left: 50% !important;
+            width: min(88vmin, 680px) !important;
+            height: min(88vmin, 680px) !important;
+            transform: translate(-50%, -50%) !important;
+            z-index: 80 !important;
+            opacity: 0.76 !important;
+            background: rgba(3, 8, 20, 0.52) !important;
+            clip-path: none !important;
+            image-rendering: auto;
+            pointer-events: none;
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.08),
+                0 12px 48px rgba(0, 0, 0, 0.5) !important;
+        }
+
+        .map-close-btn {
+            display: none;
+            position: fixed;
+            top: max(8px, calc(50% - min(44vmin, 340px) - 42px));
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 81;
+            padding: 8px 14px;
+            border: 1px solid rgba(125, 211, 252, 0.7);
+            background: rgba(3, 8, 20, 0.88);
+            color: #e0f2fe;
+            font: 600 12px var(--font-body);
+            cursor: pointer;
+        }
+
+        body.map-expanded .map-close-btn { display: block; }
         /* HUD superior: items en columna con etiqueta pixel */
         .hud-item {
             display: flex;
@@ -3001,7 +3037,9 @@
         <ol id="leader-list"></ol>
     </div>
 
-    <canvas id="minimap"></canvas>
+    <canvas id="minimap" title="Pulsa M para ampliar o cerrar el mapa"
+        aria-label="Minimapa. Pulsa M para ampliar o cerrar el mapa."></canvas>
+    <button id="map-close-btn" class="map-close-btn" type="button">Cerrar mapa (M)</button>
 
     <!-- Tienda -->
     <div class="shop-modal" id="shop-modal">
@@ -3719,6 +3757,9 @@
         const ctx = canvas.getContext("2d");
         const miniCanvas = document.getElementById("minimap");
         const miniCtx = miniCanvas.getContext("2d");
+        let mapaExpandido = false;
+        const TAMANO_MINIMAPA = 160;
+        const TAMANO_MAPA_EXPANDIDO = 700;
 
         // DATOS DE SESIÓN Y SALA
         const roomId = sessionStorage.getItem("mi_sala_id") || sessionStorage.getItem("player_room");
@@ -3748,12 +3789,27 @@
             canvas.width = Math.round(window.innerWidth * dpr);
             canvas.height = Math.round(window.innerHeight * dpr);
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-            miniCanvas.width = 160;
-            miniCanvas.height = 160;
+            const tamanoMapa = mapaExpandido ? TAMANO_MAPA_EXPANDIDO : TAMANO_MINIMAPA;
+            if (miniCanvas.width !== tamanoMapa || miniCanvas.height !== tamanoMapa) {
+                miniCanvas.width = tamanoMapa;
+                miniCanvas.height = tamanoMapa;
+            }
         }
         window.addEventListener("resize", resize);
         if (window.visualViewport) window.visualViewport.addEventListener("resize", resize);
         resize();
+
+        function cambiarMapaExpandido(expandido) {
+            mapaExpandido = expandido;
+            miniCanvas.classList.toggle('expanded', mapaExpandido);
+            document.body.classList.toggle('map-expanded', mapaExpandido);
+            const tamanoMapa = mapaExpandido ? TAMANO_MAPA_EXPANDIDO : TAMANO_MINIMAPA;
+            miniCanvas.width = tamanoMapa;
+            miniCanvas.height = tamanoMapa;
+            renderMinimap();
+        }
+        miniCanvas.addEventListener('click', () => cambiarMapaExpandido(!mapaExpandido));
+        document.getElementById('map-close-btn').addEventListener('click', () => cambiarMapaExpandido(false));
 
         // Detección de dispositivo táctil y controles
         const joystickContainer = document.getElementById("joystick-container");
@@ -4243,7 +4299,7 @@
         let isGameOver = false;
         let spectatorActive = false;
         let spectatorFollowId = null;
-        const spectatorCamera = { x: 2500, y: 2500 };
+        const spectatorCamera = { x: 3500, y: 3500 };
 
         function seleccionarEquipo(teamId) {
             if (gameState?.mode !== 'teams' || gameState.gameStarted || gameState.lobbyActive) return;
@@ -4423,6 +4479,12 @@
         window.addEventListener("keydown", (e) => {
             initAudio();
             const k = e.key.toLowerCase();
+            const editableTarget = e.target && e.target.closest &&
+                e.target.closest('input, textarea, select, [contenteditable="true"]');
+            if (k === 'm' && !e.repeat && !editableTarget) {
+                cambiarMapaExpandido(!mapaExpandido);
+                e.preventDefault();
+            }
             if (['w', 'arrowup'].includes(k)) keys.w = true;
             if (['a', 'arrowleft'].includes(k)) keys.a = true;
             if (['s', 'arrowdown'].includes(k)) keys.s = true;
@@ -5074,7 +5136,7 @@
             // que manda el servidor (fallback: centro del mapa, como antes).
             const zoneWarn = document.getElementById("zone-warning");
             if (zoneWarn) {
-                const mapSizeHud = gameState.mapSize || 5000;
+                const mapSizeHud = gameState.mapSize || 7000;
                 const zxHud = gameState.zoneCx ?? mapSizeHud / 2;
                 const zyHud = gameState.zoneCy ?? mapSizeHud / 2;
                 const distZona = Math.hypot(me.x - zxHud, me.y - zyHud);
@@ -5121,8 +5183,8 @@
             requestAnimationFrame(render);
             if (!gameState || !myPlayerId) return;
 
-            const me = gameState.players[myPlayerId] || { x: 2500, y: 2500 };
-            const mapBounds = gameState.mapSize || 5000;
+            const me = gameState.players[myPlayerId] || { x: 3500, y: 3500 };
+            const mapBounds = gameState.mapSize || 7000;
             const viewZoom = isTouchDevice ? 0.72 : 0.92;
             let cameraX = me.x;
             let cameraY = me.y;
@@ -5198,7 +5260,7 @@
 
             // Fondo del mapa: textura teselada (la rejilla va incluida en el tile).
             // Fallback: rejilla de líneas original si el sprite no cargó.
-            const MAP_SIZE = gameState.mapSize || 5000;
+            const MAP_SIZE = gameState.mapSize || 7000;
             const patron = patronFondo();
             if (patron) {
                 ctx.imageSmoothingEnabled = false;
@@ -5207,8 +5269,9 @@
                 ctx.imageSmoothingEnabled = true;
             } else {
                 ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1.5;
-                for (let x = 5000; x <= MAP_SIZE; x += 5000) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, MAP_SIZE); ctx.stroke(); }
-                for (let y = 5000; y <= MAP_SIZE; y += 5000) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(MAP_SIZE, y); ctx.stroke(); }
+                const gridStep = MAP_SIZE / 5;
+                for (let x = gridStep; x < MAP_SIZE; x += gridStep) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, MAP_SIZE); ctx.stroke(); }
+                for (let y = gridStep; y < MAP_SIZE; y += gridStep) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(MAP_SIZE, y); ctx.stroke(); }
             }
 
             // Zonas Peligrosas
@@ -5729,13 +5792,54 @@
         // MINIMAPA MULTIJUGADOR
         function renderMinimap() {
             if (!gameState) return;
-            const MAP_SIZE = gameState.mapSize || 5000;
-            miniCtx.clearRect(0, 0, 160, 160);
-            let scale = 160 / MAP_SIZE;
+            const MAP_SIZE = gameState.mapSize || 7000;
+            const size = miniCanvas.width || TAMANO_MINIMAPA;
+            const scale = size / MAP_SIZE;
+            const detail = size / TAMANO_MINIMAPA;
+            miniCtx.clearRect(0, 0, size, size);
+            miniCtx.fillStyle = 'rgba(5, 12, 24, 0.88)';
+            miniCtx.fillRect(0, 0, size, size);
+
+            miniCtx.strokeStyle = 'rgba(125, 160, 190, 0.14)';
+            miniCtx.lineWidth = Math.max(1, detail * 0.55);
+            const gridStep = MAP_SIZE / 7;
+            for (let i = 1; i < 7; i++) {
+                const point = gridStep * i * scale;
+                miniCtx.beginPath();
+                miniCtx.moveTo(point, 0);
+                miniCtx.lineTo(point, size);
+                miniCtx.moveTo(0, point);
+                miniCtx.lineTo(size, point);
+                miniCtx.stroke();
+            }
+
+            const mapConfigCurrent = roomConfig &&
+                Array.isArray(roomConfig.obstacles) && Array.isArray(roomConfig.walls) &&
+                (gameState.configVersion === undefined || roomConfig.v === undefined ||
+                    gameState.configVersion === roomConfig.v);
+            const mapWalls = mapConfigCurrent
+                ? combinarMapa(roomConfig.walls, gameState.murosHp)
+                : (gameState.walls || []);
+            const mapObstacles = mapConfigCurrent
+                ? combinarMapa(roomConfig.obstacles, gameState.obstaculosHp)
+                : (gameState.obstacles || []);
+            mapWalls.forEach((wall) => {
+                miniCtx.fillStyle = wall.tipo === 'fino' ? 'rgba(156, 163, 175, 0.65)' : 'rgba(203, 213, 225, 0.78)';
+                miniCtx.fillRect(wall.x * scale, wall.y * scale,
+                    Math.max(1, wall.w * scale), Math.max(1, wall.h * scale));
+            });
+            mapObstacles.forEach((obstacle) => {
+                miniCtx.fillStyle = obstacle.tipo === 'barril' ? 'rgba(248, 90, 70, 0.95)'
+                    : obstacle.tipo === 'coche' ? 'rgba(59, 130, 246, 0.9)'
+                    : obstacle.tipo === 'moto' ? 'rgba(168, 85, 247, 0.9)'
+                    : 'rgba(148, 163, 184, 0.85)';
+                miniCtx.fillRect(obstacle.x * scale, obstacle.y * scale,
+                    Math.max(1, obstacle.w * scale), Math.max(1, obstacle.h * scale));
+            });
 
             miniCtx.fillStyle = '#38bdf8';
             (gameState.shopZones || []).forEach(sz => {
-                miniCtx.beginPath(); miniCtx.arc(sz.x * scale, sz.y * scale, 3, 0, Math.PI * 2); miniCtx.fill();
+                miniCtx.beginPath(); miniCtx.arc(sz.x * scale, sz.y * scale, Math.max(2, 2.5 * detail), 0, Math.PI * 2); miniCtx.fill();
             });
 
             // El banco sale de roomConfig si lo hay; si no, del propio gameState
@@ -5744,12 +5848,12 @@
             const bancoMini = (roomConfig && roomConfig.bankZone) || gameState.bankZone;
             if (bancoMini) {
                 miniCtx.fillStyle = '#22c55e';
-                miniCtx.beginPath(); miniCtx.arc(bancoMini.x * scale, bancoMini.y * scale, 5, 0, Math.PI * 2); miniCtx.fill();
+                miniCtx.beginPath(); miniCtx.arc(bancoMini.x * scale, bancoMini.y * scale, Math.max(3, 5 * detail), 0, Math.PI * 2); miniCtx.fill();
             }
 
             miniCtx.fillStyle = '#eab308';
             (gameState.airdrops || []).forEach(ad => {
-                miniCtx.beginPath(); miniCtx.arc(ad.x * scale, ad.y * scale, 4, 0, Math.PI * 2); miniCtx.fill();
+                miniCtx.beginPath(); miniCtx.arc(ad.x * scale, ad.y * scale, Math.max(2, 3.5 * detail), 0, Math.PI * 2); miniCtx.fill();
             });
 
             if (gameState.zoneRadius > 0) {
@@ -5758,7 +5862,7 @@
                 const zx = gameState.zoneCx ?? MAP_SIZE / 2;
                 const zy = gameState.zoneCy ?? MAP_SIZE / 2;
                 miniCtx.strokeStyle = gameState.zoneShrinking ? 'rgba(245, 158, 11, 0.95)' : 'rgba(148, 163, 184, 0.8)';
-                miniCtx.lineWidth = 2;
+                miniCtx.lineWidth = Math.max(1, 1.5 * detail);
                 miniCtx.beginPath();
                 miniCtx.arc(zx * scale, zy * scale, gameState.zoneRadius * scale, 0, Math.PI * 2);
                 miniCtx.stroke();
@@ -5769,13 +5873,13 @@
                     miniCtx.save();
                     miniCtx.setLineDash([3, 3]);
                     miniCtx.strokeStyle = 'rgba(250, 204, 21, 0.95)';
-                    miniCtx.lineWidth = 2;
+                    miniCtx.lineWidth = Math.max(1, 1.5 * detail);
                     miniCtx.beginPath();
                     miniCtx.arc(zN.x * scale, zN.y * scale, Math.max(2, zN.radius * scale), 0, Math.PI * 2);
                     miniCtx.stroke();
                     miniCtx.restore();
                     miniCtx.strokeStyle = 'rgba(250, 204, 21, 0.95)';
-                    miniCtx.lineWidth = 1;
+                    miniCtx.lineWidth = Math.max(1, detail);
                     miniCtx.beginPath();
                     miniCtx.moveTo(zN.x * scale - 4, zN.y * scale);
                     miniCtx.lineTo(zN.x * scale + 4, zN.y * scale);
@@ -5783,6 +5887,21 @@
                     miniCtx.lineTo(zN.x * scale, zN.y * scale + 4);
                     miniCtx.stroke();
                 }
+            }
+
+            const jugador = gameState.players[myPlayerId];
+            if (jugador && !jugador.isDead) {
+                const zoom = isTouchDevice ? 0.72 : 0.92;
+                const viewportW = Math.min(MAP_SIZE, window.innerWidth / zoom);
+                const viewportH = Math.min(MAP_SIZE, window.innerHeight / zoom);
+                miniCtx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+                miniCtx.lineWidth = Math.max(1, detail);
+                miniCtx.strokeRect(
+                    (jugador.x - viewportW / 2) * scale,
+                    (jugador.y - viewportH / 2) * scale,
+                    viewportW * scale,
+                    viewportH * scale
+                );
             }
 
             Object.values(gameState.players).forEach(p => {
@@ -5793,7 +5912,8 @@
                         ? (gameState.teams?.[p.teamId]?.color ||
                             (p.teamId === gameState.players[myPlayerId]?.teamId ? '#38bdf8' : '#f87171'))
                         : '#ef4444';
-                miniCtx.beginPath(); miniCtx.arc(p.x * scale, p.y * scale, p.id === myPlayerId ? 4 : 3, 0, Math.PI * 2); miniCtx.fill();
+                miniCtx.beginPath(); miniCtx.arc(p.x * scale, p.y * scale,
+                    Math.max(2, (p.id === myPlayerId ? 4 : 3) * detail), 0, Math.PI * 2); miniCtx.fill();
             });
         }
 
