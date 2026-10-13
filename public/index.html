@@ -805,6 +805,396 @@
             .panel { padding: 16px; }
             .sala-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
         }
+
+        /* ── Lobby de juego: escena central y navegación flotante ── */
+        .topbar {
+            position: relative;
+            padding: 12px clamp(14px, 3vw, 36px);
+        }
+        .brand { flex-direction: row; align-items: center; gap: 14px; }
+        .brand-tag { display: none; }
+        .topbar-right { justify-content: flex-end; gap: clamp(10px, 2vw, 24px); }
+        .header-progress {
+            display: grid;
+            grid-template-columns: auto minmax(90px, 150px);
+            align-items: center;
+            gap: 5px 10px;
+            min-width: 180px;
+            color: var(--muted);
+            font: 700 10px var(--font-display);
+        }
+        .header-progress-label { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 8px; }
+        .header-progress-label strong { color: #e2e8f0; }
+        .header-progress-track { height: 5px; overflow: hidden; border-radius: 99px; background: rgba(148, 163, 184, .16); }
+        .header-progress-fill { display: block; width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #0ea5e9, #67e8f9); box-shadow: 0 0 10px rgba(56, 189, 248, .6); }
+        .header-progress-xp { color: #bae6fd; font-size: 9px; white-space: nowrap; }
+        .topbar-actions .mini-btn { display: inline-flex; align-items: center; gap: 7px; }
+
+        .arena {
+            display: grid;
+            flex: 1;
+            grid-template-columns: minmax(215px, 1fr) minmax(360px, 1.55fr) minmax(235px, 1fr);
+            grid-template-areas: "ranking play withdrawals";
+            align-items: center;
+            gap: clamp(14px, 2vw, 30px);
+            width: 100%;
+            max-width: 1520px;
+            min-height: 0;
+            margin: 0 auto;
+            padding: 20px clamp(16px, 2vw, 30px) 100px;
+        }
+        .lobby-ranking { grid-area: ranking; width: 100%; min-width: 0; padding: 18px; }
+        .lobby-ranking .progression-block { padding: 0; border: 0; background: transparent; }
+        .lobby-ranking .progression-level { margin: 0 0 12px; }
+        .lobby-ranking .progression-level h2 { margin: 0; color: #e2e8f0; font: 700 13px var(--font-display); letter-spacing: 1px; }
+        .lobby-ranking .progression-action { min-height: 30px; padding: 5px 9px; }
+        .lobby-ranking .progression-ranking { gap: 8px; }
+        .lobby-ranking .progression-rank:nth-child(n + 4) { display: none; }
+        .lobby-ranking .progression-rank-self { margin-top: 12px; font-size: 10px; }
+        .lobby-ranking .progression-message { margin: 6px 0 0; font-size: 10px; }
+        .lobby-withdrawals { grid-area: withdrawals; width: 100%; min-width: 0; padding: 18px; }
+        .lobby-withdrawals .retiros-lista { max-height: 300px; overflow: auto; }
+        .lobby-withdrawals .retiros-foot { margin-bottom: 0; font-size: 10px; }
+        .play-stage {
+            grid-area: play;
+            position: relative;
+            isolation: isolate;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            min-width: 0;
+            min-height: min(690px, calc(100svh - 180px));
+            padding: 18px clamp(8px, 1.6vw, 26px);
+            overflow: hidden;
+            border: 1px solid rgba(56, 189, 248, .13);
+            border-radius: 36px;
+            background: radial-gradient(ellipse at 50% 42%, rgba(7, 22, 41, .3), rgba(2, 6, 17, .12) 58%, transparent 78%);
+        }
+        .play-stage::before {
+            position: absolute;
+            z-index: 0;
+            inset: 4%;
+            border: 1px solid rgba(56, 189, 248, .08);
+            border-radius: 30px;
+            content: "";
+            pointer-events: none;
+        }
+        #play-canvas {
+            position: absolute;
+            z-index: 0;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        .play-content {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: min(100%, 640px);
+            text-align: center;
+        }
+        .play-welcome, .play-nickname, .play-mode-label, .play-mode-hint, .play-question,
+        .play-modes .mode-sub, .play-modes .mode-state, .solo-ticket-message { display: none; }
+        .play-stage .solo-ticket-progress { display: none; width: min(100%, 360px); margin-top: 12px; }
+        .play-welcome {
+            margin-bottom: 4px;
+            color: #f8fafc;
+            font: 700 clamp(20px, 3vw, 30px)/1.1 var(--font-display);
+            letter-spacing: 2px;
+            text-shadow: 0 0 28px rgba(56, 189, 248, .35);
+        }
+        .play-nickname {
+            margin-bottom: 12px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+        .play-nickname strong { color: var(--cyan); }
+        .play-orb-wrap {
+            position: relative;
+            display: grid;
+            place-items: center;
+            width: clamp(100px, 16vw, 150px);
+            aspect-ratio: 1;
+            margin: 0 auto 4px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(56, 189, 248, .18), transparent 70%);
+            filter: drop-shadow(0 0 26px rgba(56, 189, 248, .3));
+        }
+        .play-orb {
+            position: relative;
+            width: 64%;
+            height: 64%;
+            overflow: hidden;
+            border: 3px solid var(--skin-border, #bae6fd);
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 26%, var(--skin-c1, #38bdf8), var(--skin-c2, #0284c7) 72%);
+            box-shadow: inset -10px -12px 18px rgba(0, 0, 0, .4), 0 0 28px var(--skin-c1, #38bdf8);
+            animation: heroOrbFloat 4.2s ease-in-out infinite;
+        }
+        .play-orb::after {
+            position: absolute;
+            top: 17%;
+            left: 22%;
+            width: 24%;
+            aspect-ratio: 1;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, .62);
+            content: "";
+            filter: blur(2px);
+        }
+        .play-orb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+        @keyframes heroOrbFloat {
+            0%, 100% { transform: translateY(0) rotate(-5deg); }
+            50% { transform: translateY(-8px) rotate(5deg); }
+        }
+        .play-mode-label {
+            margin: 0 0 8px;
+            color: var(--muted);
+            font: 700 10px var(--font-display);
+            letter-spacing: 2.6px;
+            text-transform: uppercase;
+        }
+        .play-mode-summary {
+            display: flex;
+            align-items: baseline;
+            justify-content: center;
+            gap: 9px;
+            margin-bottom: 4px;
+        }
+        .play-mode-summary strong {
+            color: #f8fafc;
+            font: 700 clamp(23px, 4vw, 34px)/1 var(--font-display);
+            letter-spacing: 2px;
+            text-shadow: 0 0 18px rgba(56, 189, 248, .3);
+        }
+        .play-mode-summary span { color: var(--green); font: 700 15px var(--font-display); }
+        .play-mode-hint { min-height: 19px; color: var(--muted); font-size: 12px; }
+        .play-question { margin: 12px 0 5px; }
+        .play-modes { width: min(100%, 600px); }
+        .play-modes .mode-selector {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: clamp(8px, 2vw, 22px);
+            margin: 0;
+        }
+        .play-modes .mode-portal {
+            min-height: 0;
+            padding: 10px 8px;
+            gap: 5px;
+            justify-content: center;
+            border: 1px solid rgba(148, 163, 184, .12);
+            border-radius: 18px;
+            background: linear-gradient(155deg, rgba(15, 23, 42, .55), rgba(2, 6, 17, .32));
+        }
+        .play-modes .mode-portal[aria-pressed="true"] {
+            border-color: rgba(56, 189, 248, .68);
+            background: linear-gradient(155deg, rgba(8, 47, 73, .68), rgba(2, 6, 17, .52));
+            box-shadow: inset 0 0 24px rgba(56, 189, 248, .09), 0 0 24px rgba(56, 189, 248, .16);
+        }
+        .play-modes .mode-art { width: min(100%, 142px); filter: drop-shadow(0 7px 10px rgba(15, 23, 42, .4)); }
+        .play-modes .mode-copy { gap: 3px; }
+        .play-modes .mode-name { font-size: 14px; }
+        .play-modes .mode-sub { font-size: 11px; }
+        .play-modes .mode-state { font-size: 8px; }
+        .play-tools { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+        .change-skin-btn, .play-now-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 9px;
+            border-radius: 14px;
+            font-family: var(--font-display);
+            font-weight: 700;
+            letter-spacing: 1.2px;
+            cursor: pointer;
+            transition: transform .2s ease, box-shadow .2s ease, filter .2s ease;
+        }
+        .change-skin-btn {
+            min-height: 42px;
+            padding: 9px 18px;
+            color: var(--text);
+            border: 1px solid var(--line);
+            background: rgba(15, 23, 42, .68);
+        }
+        .change-skin-btn:hover { color: var(--cyan); border-color: var(--line-glow); }
+        .play-now-btn {
+            min-width: min(420px, 100%);
+            min-height: 66px;
+            margin-top: 16px;
+            padding: 14px 32px;
+            color: #041019;
+            border: 1px solid rgba(186, 230, 253, .65);
+            background: linear-gradient(100deg, #0ea5e9, #38bdf8 48%, #67e8f9);
+            box-shadow: 0 0 0 1px rgba(56, 189, 248, .25), 0 0 22px rgba(56, 189, 248, .46), 0 12px 35px rgba(2, 132, 199, .3);
+            font-size: clamp(17px, 2vw, 22px);
+            text-shadow: 0 1px rgba(255, 255, 255, .3);
+        }
+        .play-now-btn:hover { transform: translateY(-3px) scale(1.015); filter: brightness(1.08); box-shadow: 0 0 34px rgba(56, 189, 248, .65), 0 16px 38px rgba(2, 132, 199, .35); }
+        .play-now-btn:disabled { opacity: .55; cursor: wait; transform: none; }
+        .play-stage .solo-ticket-progress { width: min(100%, 510px); margin: 14px 0 0; padding: 9px 12px; }
+        .play-stage .solo-ticket-message { display: none; }
+        .play-stage .solo-ticket-progress-head { font-size: 11px; }
+
+        .bottom-dock {
+            position: fixed;
+            z-index: 30;
+            right: 50%;
+            bottom: max(14px, env(safe-area-inset-bottom));
+            display: grid;
+            grid-template-columns: repeat(2, minmax(110px, 1fr));
+            width: min(390px, calc(100vw - 28px));
+            padding: 7px;
+            border: 1px solid rgba(56, 189, 248, .28);
+            border-radius: 20px;
+            background: rgba(5, 12, 24, .88);
+            box-shadow: 0 14px 46px rgba(0, 0, 0, .48), 0 0 28px rgba(56, 189, 248, .13);
+            backdrop-filter: blur(18px);
+            transform: translateX(50%);
+        }
+        .dock-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            min-height: 56px;
+            padding: 5px 8px;
+            color: var(--muted);
+            border: 1px solid transparent;
+            border-radius: 13px;
+            background: transparent;
+            font: 700 10px var(--font-display);
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: color .18s, border-color .18s, background .18s, transform .18s;
+        }
+        .dock-btn:hover, .dock-btn[aria-expanded="true"] {
+            color: #e0f2fe;
+            border-color: rgba(56, 189, 248, .34);
+            background: rgba(56, 189, 248, .1);
+            transform: translateY(-2px);
+        }
+        .dock-icon { font-size: 19px; line-height: 1; }
+
+        .floating-dialog {
+            position: fixed;
+            inset: 0;
+            width: min(1120px, calc(100vw - 28px));
+            max-width: none;
+            max-height: none;
+            margin: auto;
+            padding: 0;
+            overflow: visible;
+            color: var(--text);
+            border: 0;
+            background: transparent;
+        }
+        .floating-dialog::backdrop {
+            background: rgba(1, 5, 12, .76);
+            backdrop-filter: blur(9px);
+        }
+        .floating-dialog > .panel {
+            max-height: min(82svh, 900px);
+            margin: 0;
+            overflow: auto;
+            overscroll-behavior: contain;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(56, 189, 248, .35) transparent;
+            animation: dialogEnter .22s ease-out both;
+        }
+        @keyframes dialogEnter { from { opacity: 0; transform: translateY(12px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        .floating-dialog .dialog-close {
+            position: sticky;
+            z-index: 3;
+            top: 8px;
+            float: right;
+            width: 38px;
+            height: 38px;
+            margin: 8px 8px -46px 0;
+            color: var(--text);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: rgba(2, 6, 17, .84);
+            font-size: 23px;
+            line-height: 1;
+            cursor: pointer;
+        }
+        .floating-dialog .dialog-close:hover { color: var(--cyan); border-color: var(--line-glow); }
+        #skin-dialog { width: min(620px, calc(100vw - 28px)); }
+        #skin-dialog .panel-config { min-height: 0; }
+        #skin-dialog .escudo-wrap { display: none; }
+        #skin-dialog .skins-grid { grid-template-columns: repeat(auto-fill, minmax(105px, 1fr)); }
+        #rooms-dialog { width: min(1180px, calc(100vw - 28px)); }
+        #rooms-dialog .panel-salas { min-height: 0; }
+        #rooms-dialog .mode-selector, #rooms-dialog .solo-ticket-progress { display: none; }
+        #rooms-dialog .grid-salas { max-height: min(48svh, 520px); min-height: 180px; }
+        #progress-dialog { width: min(1180px, calc(100vw - 28px)); }
+        #progress-dialog .progression-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .dialog-heading { margin: 0 0 16px; color: #f8fafc; font: 700 18px var(--font-display); }
+        .dialog-heading::before { content: "// "; color: var(--cyan); }
+
+        @media (max-width: 1000px) {
+            .arena {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                grid-template-areas: "play play" "ranking withdrawals";
+                align-items: stretch;
+            }
+            .play-stage { min-height: 540px; }
+        }
+        @media (max-width: 760px) {
+            .topbar { align-items: center; }
+            .brand { flex-direction: row; align-items: center; gap: 4px; }
+            .topbar-right { width: 100%; }
+            .topbar-actions { justify-content: flex-end; }
+            .topbar-actions .mini-btn { padding: 7px 9px; font-size: 0; }
+            .topbar-actions .btn-icon { width: 18px; height: 18px; }
+            .header-progress { min-width: 125px; grid-template-columns: auto minmax(55px, 85px); gap: 4px 6px; }
+            .arena { padding: 12px 12px 88px; gap: 12px; }
+            .play-stage { min-height: 510px; padding: 18px 10px; }
+            #progress-dialog .progression-grid { grid-template-columns: minmax(0, 1fr); }
+        }
+        @media (max-width: 480px) {
+            .topbar { gap: 6px; padding: 9px; }
+            .brand .logo { font-size: 18px; }
+            .topbar-right { gap: 5px; flex: 1; }
+            .chip-user { max-width: 104px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 6px 7px; font-size: 10px; }
+            .header-progress { min-width: 84px; grid-template-columns: minmax(55px, 1fr); }
+            .header-progress-label { font-size: 9px; }
+            .header-progress-track { grid-column: 1; }
+            .header-progress-xp { display: none; }
+            .chip-tasa { display: none; }
+            .chip-balance { padding: 6px 7px; font-size: 10px; white-space: nowrap; }
+            .topbar-actions { gap: 4px; }
+            .topbar-actions .mini-btn { min-width: 31px; padding: 6px; }
+            .arena { grid-template-columns: minmax(0, 1fr); grid-template-areas: "play" "ranking" "withdrawals"; padding: 10px 10px 80px; }
+            .play-stage { min-height: 500px; }
+            .lobby-ranking, .lobby-withdrawals { padding: 14px; }
+            .play-stage { border-radius: 24px; }
+            .play-stage::before { border-radius: 18px; }
+            .play-orb-wrap { width: 118px; }
+            .play-modes .mode-portal { padding: 8px 4px; }
+            .play-modes .mode-art { width: min(100%, 96px); }
+            .play-tools { margin: 8px 0 12px; }
+            .change-skin-btn { min-height: 38px; padding: 8px 12px; font-size: 11px; }
+            .play-now-btn { min-height: 58px; margin-top: 12px; }
+            .bottom-dock { grid-template-columns: repeat(2, minmax(110px, 1fr)); width: min(300px, calc(100vw - 24px)); }
+            .dock-btn { min-height: 50px; font-size: 8px; letter-spacing: .5px; }
+            .dock-icon { font-size: 17px; }
+            .floating-dialog { width: calc(100vw - 18px); }
+            .floating-dialog > .panel { max-height: 86svh; padding: 16px; border-radius: 16px; }
+            #skin-dialog, #rooms-dialog, #progress-dialog { width: calc(100vw - 18px); }
+            #rooms-dialog .grid-salas { max-height: 52svh; }
+            #skin-dialog .skins-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .play-orb, .floating-dialog > .panel { animation: none; }
+        }
     </style>
 </head>
 
@@ -834,7 +1224,16 @@
         </div>
         <div class="topbar-right">
             <span class="chip chip-user" id="user-chip">Cargando…</span>
-            <span class="chip-tasa" id="chip-tasa" hidden>💵 Tasa: $1 = <b id="tasa-valor-txt">…</b> Bs</span>
+            <div class="header-progress" aria-label="Progreso de nivel">
+                <div class="header-progress-label">
+                    <strong id="header-level">Lv. 1</strong>
+                    <span class="header-progress-xp" id="header-progress-text">0/100 XP</span>
+                </div>
+                <div class="header-progress-track" id="header-progress" role="progressbar" aria-label="Progreso al siguiente nivel" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                    <span class="header-progress-fill" id="header-progress-fill"></span>
+                </div>
+            </div>
+            <span class="chip-tasa" id="chip-tasa" hidden>$1 = Bs. <b id="tasa-valor-txt">…</b></span>
             <span class="chip chip-balance">
                 <span class="chip-ico">💰</span><span id="user-balance">$0.00 USD</span>
             </span>
@@ -848,14 +1247,119 @@
     </header>
 
     <main class="arena">
-        <!-- Sidebar: tu configuración -->
+        <aside class="panel lobby-ranking reveal" aria-labelledby="ranking-title">
+            <div class="panel-head">
+                <h2 class="panel-kicker" id="ranking-title">🏆 RANKING TOP</h2>
+            </div>
+            <section class="progression-block" id="ranking-block" tabindex="-1" aria-label="Ranking global">
+                <div class="progression-level">
+                    <button class="progression-action" id="progresion-actualizar-ranking" type="button" aria-label="Actualizar ranking">↻</button>
+                </div>
+                <ol class="progression-ranking" id="progresion-ranking">
+                    <li class="progression-empty">Cargando…</li>
+                </ol>
+                <p class="progression-rank-self" id="progresion-mi-posicion">Tu posición: —</p>
+                <p class="progression-message" id="progresion-ranking-mensaje" aria-live="polite"></p>
+            </section>
+        </aside>
+
+        <section class="play-stage" aria-label="Preparar partida">
+            <canvas id="play-canvas" aria-hidden="true"></canvas>
+            <div class="play-content reveal r1">
+                <div class="play-orb-wrap" aria-hidden="true">
+                    <div class="play-orb" id="play-orb"></div>
+                </div>
+                <div class="play-tools">
+                    <button class="change-skin-btn" type="button" data-open-dialog="skin-dialog">🎨 Cambiar skin</button>
+                </div>
+                <div class="play-mode-summary" aria-live="polite">
+                    <strong id="play-mode-name">FFA</strong>
+                    <span id="play-mode-price">Elige una sala</span>
+                </div>
+                <p class="play-mode-hint" id="play-mode-hint" aria-live="polite">Selecciona una sala</p>
+                <div class="play-modes">
+                    <div class="mode-selector" role="group" aria-label="Selecciona el modo de juego">
+                        <button class="mode-portal" type="button" data-modo="solo" aria-pressed="false"
+                            aria-label="Entrenamiento individual gratis contra cinco bots">
+                            <span class="mode-art" aria-hidden="true">
+                                <img src="/assets/logo/solo.svg" alt="Logo SOLO" />
+                            </span>
+                            <span class="mode-copy">
+                                <span class="mode-name">SOLO</span>
+                                <span class="mode-sub">Gratis</span>
+                                <span class="mode-state">Disponible</span>
+                            </span>
+                        </button>
+                        <button class="mode-portal" type="button" data-modo="ffa" aria-pressed="true">
+                            <span class="mode-art" aria-hidden="true">
+                                <img src="/assets/logo/ffa.svg" alt="Logo FFA" />
+                            </span>
+                            <span class="mode-copy">
+                                <span class="mode-name">FFA</span>
+                                <span class="mode-sub">FFA</span>
+                                <span class="mode-state">Disponible</span>
+                            </span>
+                        </button>
+                        <button class="mode-portal" type="button" data-modo="teams" aria-pressed="false"
+                            aria-label="Salas TEAM con equipos automáticos">
+                            <span class="mode-art" aria-hidden="true">
+                                <img src="/assets/logo/team.svg" alt="Logo TEAM" />
+                            </span>
+                            <span class="mode-copy">
+                                <span class="mode-name">TEAM</span>
+                                <span class="mode-sub">Equipo</span>
+                                <span class="mode-state">Disponible</span>
+                            </span>
+                        </button>
+                    </div>
+                </div>
+                <section class="solo-ticket-progress" aria-label="Progreso de victorias SOLO">
+                    <div class="solo-ticket-progress-head">
+                        <span>Victorias SOLO: <strong id="solo-wins-count">0/10</strong></span>
+                        <span id="solo-ticket-count">0 boletos</span>
+                    </div>
+                    <div class="solo-ticket-bar" id="solo-ticket-bar" role="progressbar"
+                        aria-label="Victorias para el siguiente boleto" aria-valuemin="0"
+                        aria-valuemax="10" aria-valuenow="0">
+                        <div class="solo-ticket-bar-fill" id="solo-ticket-bar-fill"></div>
+                    </div>
+                    <p class="solo-ticket-message" id="solo-ticket-message" aria-live="polite">
+                        Gana 10 prácticas para obtener una entrada gratis en la sala FFA más económica.
+                    </p>
+                </section>
+                <button class="play-now-btn" type="button" id="btn-play-now" aria-expanded="false">¡ENTRAR A JUGAR!</button>
+            </div>
+        </section>
+
+        <aside class="panel lobby-withdrawals reveal r2" aria-labelledby="withdrawals-title">
+            <div class="panel-head">
+                <h2 class="panel-kicker" id="withdrawals-title">💸 RETIROS EN VIVO</h2>
+                <span class="live-badge"><span class="live-dot"></span>LIVE</span>
+            </div>
+            <ul class="retiros-lista" id="retiros-lista">
+                <li class="retiro-vacio">Cargando…</li>
+            </ul>
+        </aside>
+
+        <nav class="bottom-dock" aria-label="Paneles del lobby">
+            <button class="dock-btn" type="button" data-open-dialog="rooms-dialog" aria-haspopup="dialog">
+                <span class="dock-icon" aria-hidden="true">🎟️</span><span>Salas</span>
+            </button>
+            <button class="dock-btn" type="button" data-open-dialog="progress-dialog" data-focus-target="missions-block" aria-haspopup="dialog">
+                <span class="dock-icon" aria-hidden="true">🎯</span><span>Misiones</span>
+            </button>
+        </nav>
+
+        <dialog class="floating-dialog" id="skin-dialog" aria-labelledby="skin-dialog-title">
+            <button class="dialog-close" type="button" data-close-dialog aria-label="Cerrar selección de skin">×</button>
+        <!-- Selector de skin y perfil -->
         <aside class="panel panel-config reveal r1">
             <!-- Escudo (logo) del lobby -->
             <div class="escudo-wrap">
                 <img class="escudo" src="/assets/logo/logo-shield.png" alt="Escudo de WinOrbs">
             </div>
             <div class="panel-head">
-                <span class="panel-kicker">// Tu configuración</span>
+                <span class="panel-kicker" id="skin-dialog-title">// Cambiar skin</span>
             </div>
 
             <!-- El apodo viaja desde el perfil (Firestore): no se edita aquí -->
@@ -895,58 +1399,12 @@
 
             <p class="config-foot">Tu apodo y tu skin viajan contigo a la arena.</p>
         </aside>
+        </dialog>
 
         <!-- Salas en vivo vía Socket.io (protagonista del lobby) -->
+        <dialog class="floating-dialog" id="rooms-dialog" aria-labelledby="salas-title">
+          <button class="dialog-close" type="button" data-close-dialog aria-label="Cerrar selección de sala">×</button>
         <section class="panel panel-salas reveal r2" aria-labelledby="salas-title">
-            <h2 class="lobby-question">¿Cómo quieres jugar?</h2>
-            <div class="mode-selector" role="group" aria-label="Selecciona el modo de juego">
-                <button class="mode-portal" type="button" data-modo="solo" aria-pressed="false"
-                    aria-label="Entrenamiento individual gratis contra cinco bots">
-                    <span class="mode-art" aria-hidden="true">
-                        <img src="/assets/logo/solo.svg" alt="Logo SOLO" />
-                    </span>
-                    <span class="mode-copy">
-                        <span class="mode-name">SOLO</span>
-                        <span class="mode-sub">Gratis · 5 bots</span>
-                        <span class="mode-state">Disponible</span>
-                    </span>
-                </button>
-                <button class="mode-portal" type="button" data-modo="ffa" aria-pressed="true">
-                    <span class="mode-art" aria-hidden="true">
-                        <img src="/assets/logo/ffa.svg" alt="Logo FFA" />
-                    </span>
-                    <span class="mode-copy">
-                        <span class="mode-name">FFA</span>
-                        <span class="mode-sub">Todos contra todos</span>
-                        <span class="mode-state">Disponible</span>
-                    </span>
-                </button>
-                <button class="mode-portal" type="button" data-modo="teams" aria-pressed="false"
-                    aria-label="Salas TEAM con equipos automáticos">
-                    <span class="mode-art" aria-hidden="true">
-                        <img src="/assets/logo/team.svg" alt="Logo TEAM" />
-                    </span>
-                    <span class="mode-copy">
-                        <span class="mode-name">TEAM</span>
-                        <span class="mode-sub">Equipos equilibrados</span>
-                        <span class="mode-state">Disponible</span>
-                    </span>
-                </button>
-            </div>
-            <section class="solo-ticket-progress" aria-label="Progreso de victorias SOLO">
-                <div class="solo-ticket-progress-head">
-                    <span>Victorias SOLO: <strong id="solo-wins-count">0/10</strong></span>
-                    <span id="solo-ticket-count">0 boletos</span>
-                </div>
-                <div class="solo-ticket-bar" id="solo-ticket-bar" role="progressbar"
-                    aria-label="Victorias para el siguiente boleto" aria-valuemin="0"
-                    aria-valuemax="10" aria-valuenow="0">
-                    <div class="solo-ticket-bar-fill" id="solo-ticket-bar-fill"></div>
-                </div>
-                <p class="solo-ticket-message" id="solo-ticket-message" aria-live="polite">
-                    Gana 10 prácticas para obtener una entrada gratis en la sala FFA más económica.
-                </p>
-            </section>
             <div class="panel-head">
                 <h2 class="panel-kicker" id="salas-title">// Salas en vivo</h2>
                 <div class="panel-head-right">
@@ -998,24 +1456,14 @@
                 </div>
             </div>
         </section>
+        </dialog>
 
-        <!-- Log de retiros recientes (columna derecha): los cobros más grandes
-             de la comunidad. La lista la emite el servidor en vivo (retirosList). -->
-        <aside class="panel panel-retiros reveal r2" aria-label="Retiros recientes">
-            <div class="panel-head">
-                <span class="panel-kicker">// Retiros recientes</span>
-                <span class="live-badge"><span class="live-dot"></span>TOP</span>
-            </div>
-            <ul class="retiros-lista" id="retiros-lista">
-                <li class="retiro-vacio">Cargando retiros…</li>
-            </ul>
-            <p class="retiros-foot">💸 Cobros más grandes de la comunidad · en vivo</p>
-        </aside>
-
+        <dialog class="floating-dialog" id="progress-dialog" aria-labelledby="progresion-title">
+          <button class="dialog-close" type="button" data-close-dialog aria-label="Cerrar misiones">×</button>
         <section class="panel panel-progression reveal" aria-labelledby="progresion-title">
             <div class="panel-head">
-                <span class="panel-kicker" id="progresion-title">// Misiones y progresión</span>
-                <span class="live-badge"><span class="live-dot"></span>PROGRESIÓN</span>
+                <span class="panel-kicker" id="progresion-title">// Misiones</span>
+                <span class="live-badge"><span class="live-dot"></span>EN VIVO</span>
             </div>
             <div class="progression-grid">
                 <section class="progression-block" aria-label="Tu nivel y recompensas">
@@ -1037,27 +1485,16 @@
                     <p class="progression-message" id="progresion-mensaje" aria-live="polite">Cargando tu progreso…</p>
                 </section>
 
-                <section class="progression-block" aria-label="Misiones">
+                <section class="progression-block" id="missions-block" tabindex="-1" aria-label="Misiones">
                     <h3>Misiones</h3>
                     <ul class="progression-missions" id="progresion-misiones">
                         <li class="progression-empty">Cargando misiones…</li>
                     </ul>
-                    <p class="progression-message">La experiencia se concede al completar objetivos verificados por el servidor.</p>
                 </section>
 
-                <section class="progression-block" aria-label="Ranking global">
-                    <div class="progression-level">
-                        <h3>Ranking global</h3>
-                        <button class="progression-action" id="progresion-actualizar-ranking" type="button">Actualizar</button>
-                    </div>
-                    <ol class="progression-ranking" id="progresion-ranking">
-                        <li class="progression-empty">Cargando ranking…</li>
-                    </ol>
-                    <p class="progression-rank-self" id="progresion-mi-posicion">Tu posición: —</p>
-                    <p class="progression-message" id="progresion-ranking-mensaje" aria-live="polite"></p>
-                </section>
             </div>
         </section>
+        </dialog>
     </main>
 
     <script>
@@ -1068,6 +1505,117 @@
         window.__lobbySocket = socket;
         const contenedorSalas = document.getElementById("lista-salas");
         let soloTicketFfaFee = null;
+        let dialogTrigger = null;
+
+        document.querySelectorAll('[data-open-dialog]').forEach((trigger) => {
+            trigger.setAttribute('aria-expanded', 'false');
+            trigger.addEventListener('click', () => {
+                const dialog = document.getElementById(trigger.dataset.openDialog);
+                if (!dialog || typeof dialog.showModal !== 'function') return;
+                document.querySelectorAll('.floating-dialog[open]').forEach((openDialog) => openDialog.close());
+                dialogTrigger = trigger;
+                trigger.setAttribute('aria-expanded', 'true');
+                dialog.showModal();
+                const focusTarget = trigger.dataset.focusTarget
+                    ? document.getElementById(trigger.dataset.focusTarget)
+                    : dialog.querySelector('[data-close-dialog]');
+                if (focusTarget) requestAnimationFrame(() => focusTarget.focus());
+            });
+        });
+        document.querySelectorAll('.floating-dialog').forEach((dialog) => {
+            dialog.querySelector('[data-close-dialog]')?.addEventListener('click', () => dialog.close());
+            dialog.addEventListener('click', (event) => {
+                if (event.target === dialog) dialog.close();
+            });
+            dialog.addEventListener('close', () => {
+                document.querySelectorAll(`[data-open-dialog="${dialog.id}"]`).forEach((trigger) => {
+                    trigger.setAttribute('aria-expanded', 'false');
+                });
+                if (dialogTrigger && document.contains(dialogTrigger)) {
+                    dialogTrigger.setAttribute('aria-expanded', 'false');
+                    dialogTrigger.focus();
+                }
+                dialogTrigger = null;
+            });
+        });
+
+        // Escena decorativa en canvas: el canvas permanece detrás de los controles.
+        (() => {
+            const canvas = document.getElementById('play-canvas');
+            const stage = canvas && canvas.closest('.play-stage');
+            const context = canvas && canvas.getContext('2d');
+            if (!canvas || !stage || !context) return;
+            const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+            const particles = Array.from({ length: 34 }, (_, index) => ({
+                x: Math.random(),
+                y: Math.random(),
+                radius: 1.5 + Math.random() * (index < 8 ? 5 : 2.5),
+                dx: (Math.random() - .5) * .00012,
+                dy: (Math.random() - .5) * .0001,
+                alpha: .12 + Math.random() * .42,
+                hue: index % 5 === 0 ? 190 : 205 + Math.random() * 30
+            }));
+            let width = 0;
+            let height = 0;
+            let frame = 0;
+
+            function resizeCanvas() {
+                const bounds = stage.getBoundingClientRect();
+                const dpr = Math.min(window.devicePixelRatio || 1, 2);
+                width = bounds.width;
+                height = bounds.height;
+                canvas.width = Math.round(width * dpr);
+                canvas.height = Math.round(height * dpr);
+                context.setTransform(dpr, 0, 0, dpr, 0, 0);
+                drawFrame(false);
+            }
+
+            function drawFrame(animate) {
+                context.clearRect(0, 0, width, height);
+                particles.forEach((particle) => {
+                    if (animate) {
+                        particle.x += particle.dx;
+                        particle.y += particle.dy;
+                        if (particle.x < -.05) particle.x = 1.05;
+                        if (particle.x > 1.05) particle.x = -.05;
+                        if (particle.y < -.05) particle.y = 1.05;
+                        if (particle.y > 1.05) particle.y = -.05;
+                    }
+                    const x = particle.x * width;
+                    const y = particle.y * height;
+                    const glow = context.createRadialGradient(x, y, 0, x, y, particle.radius * 7);
+                    glow.addColorStop(0, `hsla(${particle.hue}, 95%, 75%, ${particle.alpha})`);
+                    glow.addColorStop(1, `hsla(${particle.hue}, 95%, 60%, 0)`);
+                    context.fillStyle = glow;
+                    context.beginPath();
+                    context.arc(x, y, particle.radius * 7, 0, Math.PI * 2);
+                    context.fill();
+                    context.fillStyle = `rgba(219, 242, 255, ${particle.alpha})`;
+                    context.beginPath();
+                    context.arc(x, y, particle.radius, 0, Math.PI * 2);
+                    context.fill();
+                });
+            }
+
+            function animate() {
+                cancelAnimationFrame(frame);
+                drawFrame(true);
+                if (!reducedMotion.matches && !document.hidden) frame = requestAnimationFrame(animate);
+            }
+            function start() {
+                cancelAnimationFrame(frame);
+                if (reducedMotion.matches) drawFrame(false);
+                else if (!document.hidden) frame = requestAnimationFrame(animate);
+            }
+
+            if (typeof ResizeObserver === 'function') new ResizeObserver(resizeCanvas).observe(stage);
+            else window.addEventListener('resize', resizeCanvas);
+            reducedMotion.addEventListener?.('change', start);
+            document.addEventListener('visibilitychange', start);
+            window.addEventListener('pagehide', () => cancelAnimationFrame(frame), { once: true });
+            resizeCanvas();
+            start();
+        })();
 
         socket.on('serverConfig', (cfg) => {
             // true = el servidor cobra entradas y paga premios vía Admin SDK
@@ -1107,6 +1655,15 @@
             document.getElementById('progresion-bar').setAttribute('aria-valuenow', String(percentage));
             document.getElementById('progresion-bar').setAttribute('aria-valuemin', '0');
             document.getElementById('progresion-bar').setAttribute('aria-valuemax', '100');
+            const headerLevel = document.getElementById('header-level');
+            const headerProgress = document.getElementById('header-progress');
+            const headerProgressFill = document.getElementById('header-progress-fill');
+            const headerProgressText = document.getElementById('header-progress-text');
+            if (headerLevel) headerLevel.textContent = 'Lv. ' + level;
+            if (headerProgressFill) headerProgressFill.style.width = percentage + '%';
+            if (headerProgress) headerProgress.setAttribute('aria-valuenow', String(percentage));
+            if (headerProgressText) headerProgressText.textContent =
+                xpIntoLevel.toLocaleString('es-ES') + '/' + xpForNext.toLocaleString('es-ES') + ' XP';
 
             const missionList = document.getElementById('progresion-misiones');
             missionList.replaceChildren();
@@ -1298,8 +1855,32 @@
             document.querySelectorAll('.skin-card').forEach(c => c.classList.remove('selected'));
             if (cardEl) cardEl.classList.add('selected');
             window.skinSeleccionada = skin;
+            const orb = document.getElementById('play-orb');
+            if (orb) {
+                orb.style.setProperty('--skin-c1', skin.c1 || '#38bdf8');
+                orb.style.setProperty('--skin-c2', skin.c2 || '#0284c7');
+                orb.style.setProperty('--skin-border', skin.border || '#bae6fd');
+                let image = orb.querySelector('img');
+                const imageUrl = typeof skin.imagenUrl === 'string' && /^https:\/\/[^\s'"<>]{10,500}$/i.test(skin.imagenUrl)
+                    ? skin.imagenUrl
+                    : '';
+                if (imageUrl) {
+                    if (!image) {
+                        image = document.createElement('img');
+                        image.alt = '';
+                        image.setAttribute('aria-hidden', 'true');
+                        orb.appendChild(image);
+                    }
+                    image.src = imageUrl;
+                } else if (image) {
+                    image.remove();
+                }
+            }
             try { localStorage.setItem("mi_skin_equipada", JSON.stringify(skin)); } catch (e) { }
         };
+        const skinBasicaSeleccionada = Array.from(document.querySelectorAll('.skin-card[data-bas]'))
+            .find((card) => card.dataset.bas === window.skinSeleccionada.nombre) || null;
+        window.__aplicarSkin(window.skinSeleccionada, skinBasicaSeleccionada);
 
         window.seleccionarSkin = function (nombre, c1, c2, border, el) {
             window.__aplicarSkin({ nombre, c1, c2, border }, el);
@@ -1429,10 +2010,10 @@
                 const user = window.__firebaseAuth && window.__firebaseAuth.currentUser;
                 const isGuest = !user || user.isAnonymous;
                 message.textContent = window.__economyMode === false
-                    ? 'El progreso de boletos no está disponible temporalmente.'
+                    ? 'Boletos no disponibles.'
                     : isGuest
-                    ? 'Las cuentas de invitado pueden jugar, pero deben vincularse para acumular victorias y boletos.'
-                    : 'Gana 10 prácticas SOLO para conseguir un boleto FFA. Se usa automáticamente en la sala FFA de menor entrada.';
+                    ? 'Vincula tu cuenta para acumular boletos.'
+                    : '10 victorias = 1 boleto FFA.';
             }
             if (typeof renderLobby === 'function' && salasCache.length) renderLobby();
         };
@@ -1442,12 +2023,39 @@
             return salasCache.filter((sala) => sala && sala.mode === modoSeleccionado);
         }
 
+        function actualizarResumenModo() {
+            const modeName = document.getElementById('play-mode-name');
+            const modePrice = document.getElementById('play-mode-price');
+            const modeHint = document.getElementById('play-mode-hint');
+            const playButton = document.getElementById('btn-play-now');
+            if (!modeName || !modePrice || !modeHint || !playButton) return;
+            modeName.textContent = modosLobby[modoSeleccionado].label;
+            if (modoSeleccionado === 'solo') {
+                modePrice.textContent = 'Gratis';
+                modeHint.textContent = 'Práctica individual contra bots';
+                playButton.textContent = '¡ENTRAR A JUGAR!';
+                return;
+            }
+            const salasPublicas = salasDelModo().filter((sala) => !sala.esPrivada);
+            const precios = salasPublicas.map(precioDe).filter((precio) => Number.isFinite(precio) && precio >= 0);
+            modePrice.textContent = precios.length
+                ? `Desde $${Math.min(...precios).toFixed(2)}`
+                : salasDelModo().length ? 'Salas' : 'Sin salas';
+            modeHint.textContent = salasPublicas.length
+                ? `${salasPublicas.length} ${salasPublicas.length === 1 ? 'sala pública disponible' : 'salas públicas disponibles'}`
+                : 'Explora las salas para encontrar dónde jugar';
+            playButton.textContent = '¡ENTRAR A JUGAR!';
+        }
+
         function actualizarModoLobby() {
             botonesModo.forEach((boton) => {
                 const activo = boton.dataset.modo === modoSeleccionado;
                 boton.setAttribute('aria-pressed', activo ? 'true' : 'false');
             });
             tituloSalas.textContent = modosLobby[modoSeleccionado].title;
+            const soloProgress = document.querySelector('.play-stage .solo-ticket-progress');
+            if (soloProgress) soloProgress.style.display = modoSeleccionado === 'solo' ? 'block' : 'none';
+            actualizarResumenModo();
         }
 
         const ORDENES_SALAS = [
@@ -1633,6 +2241,7 @@
         // Los grupos van de menor a mayor precio (privadas al final) y el orden
         // elegido se aplica dentro de cada grupo: el lobby se lee por tramos.
         function renderLobby() {
+            actualizarResumenModo();
             const salasModo = salasDelModo();
             pintarChips(salasModo);
 
@@ -1668,15 +2277,23 @@
             boton.addEventListener('click', () => {
                 const siguienteModo = boton.dataset.modo;
                 if (boton.disabled || !Object.prototype.hasOwnProperty.call(modosLobby, siguienteModo)) return;
-                if (siguienteModo === 'solo') {
-                    iniciarPracticaBots();
-                    return;
-                }
                 modoSeleccionado = siguienteModo;
                 categoriaActiva = 'todas';
                 actualizarModoLobby();
                 renderLobby();
             });
+        });
+        document.getElementById('btn-play-now').addEventListener('click', () => {
+            if (modoSeleccionado === 'solo') {
+                iniciarPracticaBots();
+                return;
+            }
+            const dialog = document.getElementById('rooms-dialog');
+            if (dialog && !dialog.open) {
+                dialogTrigger = document.getElementById('btn-play-now');
+                dialogTrigger.setAttribute('aria-expanded', 'true');
+                dialog.showModal();
+            }
         });
         actualizarModoLobby();
         selectOrden.addEventListener('change', () => { ordenSalas = selectOrden.value; renderLobby(); });
@@ -1763,7 +2380,7 @@
             if (!listaRetiros) return;
             const lista = Array.isArray(retiros) ? retiros : [];
             if (!lista.length) {
-                listaRetiros.innerHTML = '<li class="retiro-vacio">Aún no hay retiros.<br>¡Sé el primero en cobrar! 💸</li>';
+                listaRetiros.innerHTML = '<li class="retiro-vacio">Sin retiros recientes.</li>';
                 return;
             }
             listaRetiros.innerHTML = lista.map((r, i) => {
@@ -1883,7 +2500,10 @@
                 // Apodo del perfil visible en el lobby (solo lectura)
                 try {
                     const chip = document.getElementById("apodo-perfil");
-                    if (chip) chip.textContent = String(p.apodo || p.nick || p.nombre || "—");
+                    const nickname = String(p.apodo || p.nick || p.nombre || "—");
+                    if (chip) chip.textContent = nickname;
+                    const lobbyNickname = document.getElementById("apodo-lobby");
+                    if (lobbyNickname) lobbyNickname.textContent = nickname;
                 } catch (e) { }
                 if (window.renderSkinsCompradas) window.renderSkinsCompradas();
                 if (window.aplicarSkinEquipadaDePerfil) window.aplicarSkinEquipadaDePerfil();
