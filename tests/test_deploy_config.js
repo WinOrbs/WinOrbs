@@ -15,6 +15,7 @@ const httpServer = fs.readFileSync(path.join(root, 'apps/server/http/index.js'),
 const changer = fs.readFileSync(path.join(root, 'tools/cambiar-servidor.js'), 'utf8');
 const indexHtml = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
 const gameHtml = fs.readFileSync(path.join(root, 'public/game.html'), 'utf8');
+const serviceWorker = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 
 assert.match(
@@ -49,29 +50,22 @@ for (const [name, html] of [['index.html', indexHtml], ['game.html', gameHtml]])
 assert.ok(server.includes('server.listen(PORT, config.server.host'), 'server must bind using centralized host configuration');
 assert.ok(server.includes('const PORT = config.server.port'), 'server must honor validated centralized PORT configuration');
 assert.ok(defaults.includes("host: '0.0.0.0'"), 'server default host must remain publicly bindable');
-assert.ok(packageJson.scripts.build.includes("fs.copyFileSync('sw.js','dist/sw.js')"), 'Cloudflare Pages build must publish the Monetag service worker');
-assert.ok(httpServer.includes("app.get('/sw.js', (req, res) => res.sendFile(rootDir + '/sw.js'))"), 'Express static hosting must expose the root service worker');
+assert.ok(packageJson.scripts.build.includes("fs.copyFileSync('sw.js','dist/sw.js')"), 'Cloudflare Pages build must publish the service-worker cleanup');
+assert.ok(/app\.get\('\/sw\.js', \(req, res\) => res\.sendFile\(rootDir \+ '\/sw\.js'\)\)/.test(httpServer), 'Express static hosting must expose the service-worker cleanup');
 assert.ok(
-    /<script src="https:\/\/quge5\.com\/88\/tag\.min\.js" data-zone="295428" async data-cfasync="false"(?:\s+[^>]*)?><\/script>/.test(indexHtml),
-    'lobby must load the configured Monetag MultiTag script'
+    !indexHtml.includes('tag.min.js') &&
+        !gameHtml.includes('tag.min.js') &&
+        !serviceWorker.includes('5gvci.com') &&
+        !serviceWorker.includes('importScripts'),
+    'lobby, game page, and service worker must not load automatic Monetag ads'
 );
 assert.ok(
-    !indexHtml.includes('n6wxm.com/vignette.min.js') &&
-        !indexHtml.includes('cargarViñetaMonetagPractica') &&
-        /<script src="https:\/\/quge5\.com\/88\/tag\.min\.js" data-zone="295428" async data-cfasync="false"(?:\s+[^>]*)?><\/script>/.test(gameHtml),
-    'lobby and game page must load only the configured Monetag MultiTag'
-);
-assert.ok(
-    /onload="this\.dataset\.monetagStatus='loaded'" onerror="this\.dataset\.monetagStatus='failed'"/.test(indexHtml) &&
-        /script\.addEventListener\('load', alCargar\)/.test(indexHtml) &&
-        /script\.addEventListener\('error', alFallar\)/.test(indexHtml) &&
-        /esperarTagMonetag\(5000\)/.test(indexHtml) &&
-        /Promise\.all\(\[\s*crearSalaPracticaBots\(\),\s*esperarTagMonetag\(5000\)\s*\]\)/.test(indexHtml),
-    'SOLO must wait for Monetag to load, fail, or time out after five seconds before navigating'
+    /self\.clients\.claim\(\)\.then\(\(\) => self\.registration\.unregister\(\)\)/.test(serviceWorker),
+    'the previously registered Monetag service worker must retire and unregister itself'
 );
 assert.ok(indexHtml.includes('id="solo-ticket-bar"'), 'lobby must render solo ticket progress');
 assert.ok(server.includes('recordSoloVictory({'), 'server must record SOLO wins from its authoritative result');
 assert.ok(server.includes('servidorCobrarEntradaConBoleto'), 'paid room entry must route through server-side ticket redemption');
 assert.ok(server.includes('soloTicketFfaFee: precioMinimoFfa()'), 'server must provide the authoritative lowest FFA ticket price');
 
-console.log('OK deploy config: Render, Monetag, solo-ticket UI and server entry wiring.');
+console.log('OK deploy config: Render, paused ad formats, solo-ticket UI and server entry wiring.');

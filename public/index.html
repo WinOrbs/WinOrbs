@@ -7,8 +7,6 @@
     <meta name="theme-color" content="#060a12">
     <link rel="icon" type="image/png" href="/assets/logo/logo-shield.png">
     <title>WinOrbs - Entrar a Jugar</title>
-    <script src="https://quge5.com/88/tag.min.js" data-zone="295428" async data-cfasync="false"
-        onload="this.dataset.monetagStatus='loaded'" onerror="this.dataset.monetagStatus='failed'"></script>
     <!-- Incluimos la librería cliente de Socket.io -->
     <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>
     <script src="/js/servidor-config.js"></script>
@@ -2413,45 +2411,8 @@
             });
         }
 
-        function esperarTagMonetag(timeoutMs) {
-            const script = document.querySelector('script[src="https://quge5.com/88/tag.min.js"]');
-            if (!script) {
-                console.warn('No se encontró el tag de Monetag; se permitirá iniciar la práctica.');
-                return Promise.resolve(false);
-            }
-            if (script.dataset.monetagStatus === 'loaded') return Promise.resolve(true);
-            if (script.dataset.monetagStatus === 'failed') {
-                console.warn('No se pudo cargar el tag de Monetag; se permitirá iniciar la práctica.');
-                return Promise.resolve(false);
-            }
-
-            return new Promise((resolve) => {
-                let timeout;
-                const terminar = (cargado) => {
-                    clearTimeout(timeout);
-                    script.removeEventListener('load', alCargar);
-                    script.removeEventListener('error', alFallar);
-                    if (!cargado) {
-                        console.warn('Monetag no cargó a tiempo o falló; se permitirá iniciar la práctica.');
-                    }
-                    resolve(cargado);
-                };
-                const alCargar = () => terminar(true);
-                const alFallar = () => terminar(false);
-                script.addEventListener('load', alCargar);
-                script.addEventListener('error', alFallar);
-
-                if (script.dataset.monetagStatus === 'loaded') return terminar(true);
-                if (script.dataset.monetagStatus === 'failed') return terminar(false);
-                timeout = setTimeout(() => terminar(false), timeoutMs);
-            });
-        }
-
         async function entrarPracticaBots(nick) {
-            const [result] = await Promise.all([
-                crearSalaPracticaBots(),
-                esperarTagMonetag(5000)
-            ]);
+            const result = await crearSalaPracticaBots();
             if (!result || result.ok !== true || !result.roomId || !result.password) {
                 alert((result && result.error) || 'No se pudo crear la práctica con bots.');
                 return;
@@ -2476,7 +2437,7 @@
             botonModoSolo.disabled = true;
             const estadoModoSolo = botonModoSolo.querySelector('.mode-state');
             const textoEstadoAnterior = estadoModoSolo && estadoModoSolo.textContent;
-            if (estadoModoSolo) estadoModoSolo.textContent = 'Preparando anuncio…';
+            if (estadoModoSolo) estadoModoSolo.textContent = 'Preparando partida…';
             try {
                 await entrarPracticaBots(nick);
             } finally {
