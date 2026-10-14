@@ -1215,6 +1215,9 @@
         }
 
         #trophy-room-dialog {
+            position: fixed;
+            inset: 0;
+            margin: auto;
             width: min(560px, calc(100vw - 28px));
             max-height: min(78vh, 680px);
             padding: 24px;
@@ -1224,6 +1227,14 @@
             border: 1px solid var(--border-strong);
             border-radius: var(--radius);
             box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65);
+        }
+
+        #trophy-room-dialog:not([open]) {
+            display: none;
+        }
+
+        #trophy-room-dialog[open] {
+            display: block;
         }
 
         #trophy-room-dialog::backdrop {
@@ -3508,6 +3519,10 @@
                 id="lobby-countdown">5</div>
             <p class="ov-hint" id="lobby-controls-hint" style="margin-left:auto;margin-right:auto;">Usa WASD para
                 moverte, ratón para disparar y apuntar. Clic derecho para dash.</p>
+            <button id="btn-trophy-room-lobby" class="top-btn" type="button"
+                style="min-height:44px; justify-content:center; padding:0 18px;">
+                🏆 SALA DE TROFEOS
+            </button>
             <button class="top-btn btn-exit" onclick="salirAlLobby(event)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                     stroke-linejoin="round">
@@ -5037,7 +5052,8 @@
             socket.emit('requestTrophyRoom');
         }
 
-        document.getElementById('btn-trophy-room').addEventListener('click', abrirSalaTrofeos);
+        document.querySelectorAll('#btn-trophy-room, #btn-trophy-room-lobby')
+            .forEach((button) => button.addEventListener('click', abrirSalaTrofeos));
         document.getElementById('trophy-room-close').addEventListener('click', () => {
             document.getElementById('trophy-room-dialog').close();
         });

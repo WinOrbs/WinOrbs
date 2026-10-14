@@ -129,6 +129,12 @@ async function main() {
         'a death resets the consecutive elimination streak');
     assert.match(gameSource, /id="trophy-room-dialog"[\s\S]*?id="trophy-record-list"/,
         'the game exposes a dedicated trophy room');
+    assert.match(gameSource, /id="btn-trophy-room-lobby"[\s\S]*?SALA DE TROFEOS/,
+        'the trophy room can be opened while the lobby overlay is visible');
+    assert.match(gameSource, /querySelectorAll\('#btn-trophy-room, #btn-trophy-room-lobby'\)/,
+        'both the in-game and lobby buttons open the same trophy room');
+    assert.match(gameSource, /#trophy-room-dialog\[open\]\s*\{\s*display:\s*block/,
+        'the trophy dialog has an explicit visible state');
 
     console.log('OK trophy records: thresholds, persistent holders, eligibility and public privacy.');
 }
