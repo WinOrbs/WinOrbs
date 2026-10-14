@@ -29,6 +29,11 @@ const {
 } = require('./apps/server/game/match_history');
 const { applyDamage } = require('./apps/server/game/combat');
 const {
+    TROPHY_DEFINITIONS,
+    getGlobalTrophyRecords,
+    updateGlobalTrophyRecord
+} = require('./apps/server/game/trophy_records');
+const {
     createPathfinder,
     hasLineOfSight,
     calculateAimAngle
@@ -102,6 +107,15 @@ function emitGameState(room) {
     const socketIds = [...(io.sockets.adapter.rooms.get(room.id) || [])];
     realtimeMetrics.recordGameState(room.id, state, socketIds);
     io.to(room.id).volatile.emit('gameState', state);
+    if (room.missionStateDirty) {
+        socketIds.forEach((socketId) => {
+            const player = room.players[socketId];
+            if (player) {
+                io.to(socketId).emit('missionState', room.estadoMision(player));
+            }
+        });
+        room.missionStateDirty = false;
+    }
 }
 
 const ADMIN_PASSWORD = adminPassword;
@@ -233,6 +247,28 @@ const OBSTACULOS_TIPOS = {
 };
 const BARRIL_CADENA_TICKS = 6;      // retardo de la reacción en cadena (~0,1 s)
 const BARRIL_CADENA_RADIO = 65;    // margen extra para que los grupos de barriles encadenen
+const MATCH_OBJECTIVES = [
+    { id: 'combo', title: 'Encadena 4 explosiones', target: 4 },
+    { id: 'eliminations', title: 'Consigue 2 eliminaciones', target: 2 },
+    { id: 'bank', title: 'Asegura 40 puntos en el banco', target: 40 }
+];
+const MISSION_DROP_PROBABILITY = 0.1;
+const MISSION_DROP_LIFETIME = 1800;
+const MISSION_TASK_REWARD = 70;
+const MISSION_TASKS = [
+    { id: 'collect_orbs', title: 'Recoge 5 orbes', target: 5 },
+    { id: 'destroy_cover', title: 'Destruye 3 obstáculos', target: 3 },
+    { id: 'use_dash', title: 'Usa el dash 2 veces', target: 2 },
+    { id: 'collect_medkit', title: 'Recoge un botiquín', target: 1 },
+    { id: 'bank_points', title: 'Asegura 40 puntos en el banco', target: 40 },
+    { id: 'shop_purchase', title: 'Compra un objeto', target: 1 },
+    { id: 'eliminate_player', title: 'Consigue una eliminación', target: 1 },
+    { id: 'deal_damage', title: 'Inflige 100 de daño', target: 100 },
+    { id: 'throw_bomb', title: 'Lanza una bomba', target: 1 },
+    { id: 'activate_speedpad', title: 'Activa un turbo del mapa', target: 1 },
+    { id: 'destroy_wall', title: 'Destruye un muro', target: 1 },
+    { id: 'open_airdrop', title: 'Abre un airdrop', target: 1 }
+];
 const COCHE_ORBES = 2;              // orbes que suelta un coche destruido
 const COCHE_ORBE_VAL = 10;
 const MOTO_TURBO_TICKS = 120;       // ~2 s de turbo ×1.9 al reventar una moto
@@ -810,6 +846,17 @@ class GameRoom {
         this.shopZones = this.generarTiendas();   // tras obstáculos y antes de muros
         this.walls = this.generateWalls();
         this.explosionChain = [];                 // barriles encendidos (cola)
+        this.explosionComboCounts = {};
+        this.bestExplosionCombos = {};
+        this.bestTeamExplosionCombos = {};
+        this.trophySaveWarnings = new Set();
+        this.nextExplosionComboId = 0;
+        this.missionDrops = [];
+        this.activeMissions = {};
+        this.missionStateDirty = true;
+        this.matchObjective = null;
+        this.lastMatchObjectiveId = null;
+        this.objectiveProgress = {};
         // Versión del mapa: sube en cada reset(). El cliente la usa para saber
         // que su roomConfig quedó obsoleto y hay que pedir la geometría nueva
         // (si no, emparejaría hp viejos contra el mapa de la partida anterior).
@@ -833,6 +880,232 @@ class GameRoom {
 
         this.initEnergy();
         this.startLoop();
+    }
+
+    elegirObjetivoPartida() {
+        const opciones = MATCH_OBJECTIVES.filter((objective) =>
+            objective.id !== this.lastMatchObjectiveId
+        );
+        const pool = opciones.length ? opciones : MATCH_OBJECTIVES;
+        const selected = pool[Math.floor(Math.random() * pool.length)];
+        this.lastMatchObjectiveId = selected.id;
+        return { ...selected };
+    }
+
+    missionScopeKey(player) {
+        return this.mode === 'teams' && player.teamId
+            ? `team:${player.teamId}`
+            : `player:${player.id}`;
+    }
+
+    notificarMision(mission, message) {
+        const recipientIds = mission.teamId
+            ? Object.values(this.players)
+                .filter((player) => player.teamId === mission.teamId)
+                .map((player) => player.id)
+            : [mission.ownerId];
+        recipientIds.forEach((playerId) => {
+            io.sockets.sockets.get(playerId)?.emit('missionNotice', message);
+        });
+    }
+
+    estadoMision(player) {
+        const mission = this.activeMissions[this.missionScopeKey(player)] || null;
+        return {
+            mission: mission ? {
+                id: mission.id,
+                teamId: mission.teamId,
+                completed: mission.completed,
+                completedCount: mission.completedCount,
+                tasks: mission.tasks.map((task) => ({ ...task }))
+            } : null,
+            drops: this.missionDrops
+                .filter((drop) => drop.ownerId === player.id)
+                .map(({ id, x, y }) => ({ id, x, y }))
+        };
+    }
+
+    crearMision(player) {
+        const scopeKey = this.missionScopeKey(player);
+        const current = this.activeMissions[scopeKey];
+        if (current && !current.completed) return null;
+
+        const shuffled = [...MISSION_TASKS];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        const mission = {
+            id: `mission_${randID()}`,
+            scopeKey,
+            ownerId: player.id,
+            teamId: this.mode === 'teams' ? player.teamId : null,
+            completed: false,
+            completedCount: 0,
+            tasks: shuffled.slice(0, 10).map((task) => ({
+                ...task,
+                progress: 0,
+                completed: false
+            }))
+        };
+        this.activeMissions[scopeKey] = mission;
+        this.missionStateDirty = true;
+        return mission;
+    }
+
+    avanzarMision(player, taskId, amount = 1) {
+        if (!player || player.isDead || !Number.isFinite(amount) || amount <= 0) return;
+        const mission = this.activeMissions[this.missionScopeKey(player)];
+        if (!mission || mission.completed) return;
+        let completedNow = 0;
+        mission.tasks.forEach((task) => {
+            if (task.id !== taskId || task.completed) return;
+            task.progress = Math.min(task.target, task.progress + amount);
+            this.missionStateDirty = true;
+            if (task.progress >= task.target) {
+                task.completed = true;
+                mission.completedCount++;
+                player.charge += MISSION_TASK_REWARD;
+                completedNow++;
+                this.notificarMision(
+                    mission,
+                    `✅ ${task.title} · ${player.nick || 'Un compañero'} ganó ${MISSION_TASK_REWARD} puntos sin asegurar`
+                );
+            }
+        });
+        if (completedNow > 0 && mission.completedCount >= mission.tasks.length) {
+            mission.completed = true;
+            this.notificarMision(mission,
+                '🏆 ¡Misión completada! Aseguren en el banco los puntos que ganaron.');
+        }
+    }
+
+    soltarMision(x, y, ownerId) {
+        const player = this.players[ownerId];
+        if (!this.gameStarted || !player || player.isBot ||
+            this.missionDrops.length >= 6 ||
+            this.missionDrops.some((drop) => drop.ownerId === ownerId)) return false;
+        const current = this.activeMissions[this.missionScopeKey(player)];
+        if (current && !current.completed ||
+            Math.random() >= MISSION_DROP_PROBABILITY) return false;
+        this.missionDrops.push({
+            id: `mission_drop_${randID()}`,
+            x,
+            y,
+            ownerId,
+            life: MISSION_DROP_LIFETIME
+        });
+        this.missionStateDirty = true;
+        return true;
+    }
+
+    recogerMision(player) {
+        if (!player || player.isDead) return;
+        for (let i = this.missionDrops.length - 1; i >= 0; i--) {
+            const drop = this.missionDrops[i];
+            if (drop.ownerId !== player.id ||
+                Math.hypot(player.x - drop.x, player.y - drop.y) >= player.radius + 18) continue;
+            const mission = this.crearMision(player);
+            if (!mission) continue;
+            this.missionDrops.splice(i, 1);
+            this.missionStateDirty = true;
+            this.notificarMision(mission, mission.teamId
+                ? '🎯 ¡Misión secundaria del equipo iniciada! Completen las 10 tareas.'
+                : '🎯 ¡Misión secundaria iniciada! Completa las 10 tareas.');
+            io.sockets.sockets.get(player.id)?.emit('playSound', 'pickup');
+            break;
+        }
+    }
+
+    abandonarMision(playerId) {
+        const player = this.players[playerId];
+        if (!player) return false;
+        const scopeKey = this.missionScopeKey(player);
+        const mission = this.activeMissions[scopeKey];
+        if (!mission || mission.completed) return false;
+        delete this.activeMissions[scopeKey];
+        this.missionStateDirty = true;
+        this.notificarMision(mission, 'La misión secundaria fue abandonada.');
+        return true;
+    }
+
+    registrarTrofeo(player, achievementId, value) {
+        const humanPlayers = Object.values(this.players).filter((candidate) => !candidate.isBot);
+        if (this.isPractice || !this.gameStarted || !player || player.isBot ||
+            !player.uid || !player.verifiedAccount || humanPlayers.length < 2) return;
+        if (!this.trophySaveWarnings) this.trophySaveWarnings = new Set();
+        const warningKey = `${player.id}:${achievementId}`;
+        const notifySaveError = () => {
+            if (this.trophySaveWarnings.has(warningKey)) return;
+            this.trophySaveWarnings.add(warningKey);
+            io.sockets.sockets.get(player.id)?.emit(
+                'trophyRecordError',
+                'No se pudo guardar tu récord global. Inténtalo de nuevo más tarde.'
+            );
+        };
+        if (!FIREBASE_DB) {
+            if (!this.trophyStorageWarningLogged) {
+                logger.error('trophy.record_persist_failed', {
+                    achievementId,
+                    errorCode: 'FIRESTORE_UNAVAILABLE'
+                });
+                this.trophyStorageWarningLogged = true;
+            }
+            notifySaveError();
+            return;
+        }
+        const trophy = TROPHY_DEFINITIONS.find((entry) => entry.id === achievementId);
+        if (!trophy || value < trophy.threshold) return;
+
+        updateGlobalTrophyRecord(FIREBASE_DB, {
+            achievementId,
+            value,
+            uid: player.uid,
+            nick: player.nick
+        }).then((result) => {
+            if (!result.updated) return;
+            const notice = {
+                id: achievementId,
+                title: trophy.title,
+                description: trophy.description,
+                value: result.record.value,
+                holderName: result.record.holderName
+            };
+            io.to(this.id).emit('trophyRecordChanged', notice);
+            io.sockets.sockets.get(player.id)?.emit('trophyUnlocked', notice);
+        }).catch((error) => {
+            logger.error('trophy.record_persist_failed', {
+                achievementId,
+                errorCode: typeof error?.code === 'string'
+                    ? error.code.slice(0, 64)
+                    : 'FIRESTORE_UNAVAILABLE'
+            });
+            notifySaveError();
+        });
+    }
+
+    registrarEliminacionHumana(killer, victim) {
+        if (!killer || !victim || killer.isBot || victim.isBot ||
+            killer.isDead || killer.id === victim.id) return;
+        killer.humanKillStreak = (killer.humanKillStreak || 0) + 1;
+        this.registrarTrofeo(killer, 'kill_streak', killer.humanKillStreak);
+
+        const now = Date.now();
+        killer.recentHumanKillTimes = (killer.recentHumanKillTimes || [])
+            .filter((timestamp) => now - timestamp <= 10_000);
+        killer.recentHumanKillTimes.push(now);
+        this.registrarTrofeo(killer, 'multikill', killer.recentHumanKillTimes.length);
+    }
+
+    registrarObstaculoDestruido(obstacle, ownerId) {
+        const player = this.players[ownerId];
+        if (!player || player.isBot) return;
+        this.avanzarMision(player, 'destroy_cover');
+        this.soltarMision(
+            obstacle.x + obstacle.w / 2,
+            obstacle.y + obstacle.h / 2,
+            ownerId
+        );
     }
 
     // Cadena de centros de las fases de la zona: cada fase puede cerrarse en
@@ -1168,6 +1441,8 @@ class GameRoom {
             hp: 100, maxHp: 100,
             shield: 0, maxShield: 50,
             charge: 0, bankedScore: 0, eliminations: 0,
+            humanKillStreak: 0,
+            recentHumanKillTimes: [],
             radius: 22, speed: 5.5,
             angle: 0,
             inputs: { w: false, a: false, s: false, d: false, angle: 0 },
@@ -1188,6 +1463,7 @@ class GameRoom {
             turboTimer: 0,
             turboCooldown: 0
         };
+        this.missionStateDirty = true;
         if (teamId && !this.teamProfiles[teamId].leaderId) {
             this.teamProfiles[teamId].leaderId = socketId;
         }
@@ -1236,6 +1512,11 @@ class GameRoom {
             let p = this.players[socketId];
             if (p.disconnectTimer) clearTimeout(p.disconnectTimer);
             this.soloProgressEligiblePlayerIds.delete(socketId);
+            const missionKey = this.missionScopeKey(p);
+            if (!p.teamId) delete this.activeMissions[missionKey];
+            const pendingDrops = this.missionDrops.length;
+            this.missionDrops = this.missionDrops.filter((drop) => drop.ownerId !== socketId);
+            if (pendingDrops !== this.missionDrops.length || !p.teamId) this.missionStateDirty = true;
             if (p.charge > 0) {
                 this.droppedEnergy.push({
                     id: 'e_' + randID(),
@@ -1358,6 +1639,7 @@ class GameRoom {
         if (ahora - (p.lastBombAt || 0) < BOMBA_COOLDOWN_MS) return;
         p.lastBombAt = ahora;
         p.bombs--;
+        this.avanzarMision(p, 'throw_bomb');
         // Nace delante del jugador (como las balas) para no nacer encima del dueño
         const x0 = p.x + Math.cos(ang) * (p.radius + 12);
         const y0 = p.y + Math.sin(ang) * (p.radius + 12);
@@ -1382,6 +1664,7 @@ class GameRoom {
         p.dashProgress = 0;
         p.isDashing = true;
         p.dashTimer = 15;
+        this.avanzarMision(p, 'use_dash');
     }
 
     // Recarga OBLIGATORIA (~2.5 s). Arma 1: gratis. Arma 2 (Lanza-Orbes): cuesta
@@ -1467,6 +1750,7 @@ class GameRoom {
                 p.ammo2 = p.maxAmmo2; // se entrega con el cargador lleno
                 break;
         }
+        this.avanzarMision(p, 'shop_purchase');
     }
 
     handleRespawn(socketId) {
@@ -1615,6 +1899,7 @@ class GameRoom {
                 } else if (this.countdown <= 0) {
                     this.gameStarted = true;
                     this.gameStartedAt = Date.now();
+                    this.matchObjective = this.elegirObjetivoPartida();
                     this.teamParticipants = this.mode === 'teams'
                         ? Object.values(this.players).map((player) => ({
                             id: player.id,
@@ -1756,6 +2041,7 @@ class GameRoom {
     openAirdrop(ad) {
         const idx = this.airdrops.indexOf(ad);
         if (idx >= 0) this.airdrops.splice(idx, 1);
+        this.avanzarMision(this.players[ad.lastHitBy], 'open_airdrop');
         for (let i = 0; i < 5; i++) {
             const a = (Math.PI * 2 * i) / 5 + Math.random() * 0.6;
             const d = ad.radius + 20 + Math.random() * 40;
@@ -1913,12 +2199,15 @@ class GameRoom {
         const gameId = this.id + '_' + Date.now();
         const leaderboard = this.getLeaderboard();
         this.resultLock = lockResult(leaderboard);
+        const bestTeamCombos = { ...this.bestTeamExplosionCombos };
         if (FIREBASE_DB) {
             const historyRecord = buildMatchHistoryRecord({
                 gameId,
                 roomId: this.id,
                 roomName: this.name,
                 mode: this.mode,
+                matchObjective: this.matchObjective,
+                objectiveProgress: { ...this.objectiveProgress },
                 isPractice: this.isPractice,
                 finishedAt: Date.now(),
                 leaderboard
@@ -2016,6 +2305,8 @@ class GameRoom {
                 winningTeamMembers: this.mode === 'teams' && this.winnerTeamId
                     ? this.getTeamParticipants(this.winnerTeamId).length
                     : 0,
+                bestCombos: { ...this.bestExplosionCombos },
+                bestTeamCombos,
                 resultChecksum: this.resultLock.checksum,
                 abandono: abandono,
                 premioNeto: premioNeto
@@ -2130,6 +2421,16 @@ class GameRoom {
         this.shopZones = this.generarTiendas();   // obstáculos → tiendas → muros
         this.walls = this.generateWalls();
         this.explosionChain = [];
+        this.explosionComboCounts = {};
+        this.bestExplosionCombos = {};
+        this.bestTeamExplosionCombos = {};
+        this.trophySaveWarnings = new Set();
+        this.missionDrops = [];
+        this.activeMissions = {};
+        this.missionStateDirty = true;
+        this.nextExplosionComboId = 0;
+        this.matchObjective = null;
+        this.objectiveProgress = {};
         this.waitingTimer = null;
         this.lastPlayerCount = 0;
         this.soloTimer = null;
@@ -2609,6 +2910,7 @@ class GameRoom {
                     p.turboTimer = 84;     // ~1.4 s
                     p.turboCooldown = 150; // ~2.5 s
                     io.sockets.sockets.get(p.id)?.emit('playSound', 'turbo');
+                    this.avanzarMision(p, 'activate_speedpad');
                 }
             }
 
@@ -2673,7 +2975,9 @@ class GameRoom {
 
             p.isExtracting = Math.hypot(p.x - this.bankZone.x, p.y - this.bankZone.y) < this.bankZone.radius;
             if (p.isExtracting && p.charge > 0) {
+                const deposited = p.charge;
                 bankMatchOrbs(p);
+                this.avanzarMision(p, 'bank_points', deposited);
                 io.to(this.id).emit('playSound', 'pickup');
             }
 
@@ -2681,6 +2985,7 @@ class GameRoom {
                 let g = this.droppedEnergy[i];
                 if (Math.hypot(p.x - g.x, p.y - g.y) < p.radius + 10) {
                     p.charge += g.val;
+                    this.avanzarMision(p, 'collect_orbs');
                     if (p.uid) {
                         this.progressionEvents.push({
                             type: 'OrbCollected',
@@ -2704,11 +3009,13 @@ class GameRoom {
                     const h = this.droppedHealthKits[i];
                     if (Math.hypot(p.x - h.x, p.y - h.y) < p.radius + 10) {
                         p.hp = Math.min(p.maxHp, p.hp + h.val);
+                        this.avanzarMision(p, 'collect_medkit');
                         io.to(this.id).emit('playSound', 'pickup');
                         this.droppedHealthKits.splice(i, 1);
                     }
                 }
             }
+            this.recogerMision(p);
 
             // Lanza-Orbes soltado por un airdrop. Si ya lo tienes, la pieza se
             // queda en el suelo para el resto de la sala.
@@ -2783,6 +3090,13 @@ class GameRoom {
                 this.droppedHealthKits.splice(i, 1);
             }
         }
+        for (let i = this.missionDrops.length - 1; i >= 0; i--) {
+            this.missionDrops[i].life--;
+            if (this.missionDrops[i].life <= 0) {
+                this.missionDrops.splice(i, 1);
+                this.missionStateDirty = true;
+            }
+        }
 
         // Lanza-Orbes sin recoger: caducan para no saturar el mapa
         for (let i = this.droppedOrbGuns.length - 1; i >= 0; i--) {
@@ -2825,6 +3139,7 @@ class GameRoom {
                     if (Math.abs(b.x - ad.x) < ad.radius + 8 && Math.abs(b.y - ad.y) < ad.radius + 8) {
                         hit = true;
                         ad.hp -= 6;
+                        ad.lastHitBy = b.ownerId;
                         if (ad.hp <= 0) this.openAirdrop(ad);
                         break;
                     }
@@ -2838,7 +3153,12 @@ class GameRoom {
                     if (b.x > wl.x && b.x < wl.x + wl.w && b.y > wl.y && b.y < wl.y + wl.h) {
                         hit = true;
                         wl.hp -= 6;
-                        if (wl.hp <= 0) this.walls.splice(wi, 1);
+                        if (wl.hp <= 0) {
+                            this.walls.splice(wi, 1);
+                            this.avanzarMision(this.players[b.ownerId], 'destroy_wall');
+                            this.avanzarMision(this.players[b.ownerId], 'destroy_cover');
+                            this.soltarMision(wl.x + wl.w / 2, wl.y + wl.h / 2, b.ownerId);
+                        }
                         break;
                     }
                 }
@@ -2872,7 +3192,7 @@ class GameRoom {
             e.ticks--;
             if (e.ticks > 0) continue;
             this.explosionChain.splice(i, 1);
-            this.explotarObstaculo(e.obs, e.ownerId);
+            this.explotarObstaculo(e.obs, e.ownerId, e.comboId);
         }
 
         for (let i = this.bombs.length - 1; i >= 0; i--) {
@@ -2910,6 +3230,9 @@ class GameRoom {
         const source = this.players[ownerId];
         if (!canDamagePlayer(this.mode, source, p)) return;
         const result = applyDamage(p, damage);
+        if (source && source.id !== p.id) {
+            this.avanzarMision(source, 'deal_damage', result.absorbed + result.damage);
+        }
         if (!result.killed) return;
         if (p.hp <= 0) {
             p.hp = 0;
@@ -2919,6 +3242,8 @@ class GameRoom {
             p.reloadWeapon = 0;
             p.respawnTimer = 0;
             p.canRespawn = false;
+            p.humanKillStreak = 0;
+            p.recentHumanKillTimes = [];
             const loss = applyDeathLoss(p);
             if (loss.lost > 0) {
                 this.droppedEnergy.push({
@@ -2932,6 +3257,8 @@ class GameRoom {
                 if (owner) {
                     const selfElimination = owner.id === p.id;
                     awardElimination(owner, { countAsElimination: !selfElimination });
+                    if (!selfElimination) this.avanzarMision(owner, 'eliminate_player');
+                    if (!selfElimination) this.registrarEliminacionHumana(owner, p);
                     if (owner.uid && !selfElimination) {
                         this.progressionEvents.push({
                             type: 'PlayerKilled',
@@ -2957,6 +3284,8 @@ class GameRoom {
         p.reloadWeapon = 0;
         p.respawnTimer = 0;
         p.canRespawn = false;
+        p.humanKillStreak = 0;
+        p.recentHumanKillTimes = [];
         const loss = applyDeathLoss(p);
         if (loss.lost > 0) {
             this.droppedEnergy.push({
@@ -3000,6 +3329,7 @@ class GameRoom {
             if (obs.hp > 0) continue;
             this.obstacles.splice(i, 1);
             if (obs.tipo && obs.tipo !== 'roca') destruidos.push(obs);
+            else this.registrarObstaculoDestruido(obs, bomb.ownerId);
         }
         destruidos.forEach(obs => this.explotarObstaculo(obs, bomb.ownerId));
     }
@@ -3007,17 +3337,55 @@ class GameRoom {
     // Explosión de un obstáculo destructible (coche, moto o barril) con crédito de
     // baja para quien lo reviente. Las cadenas de barriles NO usan recursión: se
     // encolan en this.explosionChain y se consumen en update() con retardo.
-    explotarObstaculo(obs, ownerId) {
-        if (!obs || obs.explotado) return;
+    explotarObstaculo(obs, ownerId, comboId = null) {
+        if (!obs || obs.explotado) {
+            if (comboId !== null &&
+                !this.explosionChain.some((entry) => entry.comboId === comboId)) {
+                delete this.explosionComboCounts[comboId];
+            }
+            return;
+        }
+        const iniciaCombo = comboId === null;
+        if (iniciaCombo) comboId = ++this.nextExplosionComboId;
         obs.explotado = true;
         obs.hp = 0;
         const idx = this.obstacles.indexOf(obs);
         if (idx >= 0) this.obstacles.splice(idx, 1);
+        this.registrarObstaculoDestruido(obs, ownerId);
 
         const def = OBSTACULOS_TIPOS[obs.tipo] || OBSTACULOS_TIPOS.roca;
         const cx = obs.x + obs.w / 2, cy = obs.y + obs.h / 2;
+        const comboCount = (this.explosionComboCounts[comboId] || 0) + 1;
+        this.explosionComboCounts[comboId] = comboCount;
+        if (ownerId && this.players[ownerId]) {
+            const comboOwner = this.players[ownerId];
+            this.bestExplosionCombos[ownerId] = Math.max(
+                this.bestExplosionCombos[ownerId] || 0,
+                comboCount
+            );
+            const teamId = comboOwner.teamId;
+            if (teamId) {
+                this.bestTeamExplosionCombos[teamId] = Math.max(
+                    this.bestTeamExplosionCombos[teamId] || 0,
+                    comboCount
+                );
+            }
+        }
         this.explosions.push({ x: cx, y: cy, radius: def.radio, alpha: 1 });
         io.to(this.id).emit('playSound', 'explosion');
+        io.to(this.id).emit('explosionCombo', {
+            comboId,
+            count: comboCount,
+            ownerId,
+            x: cx,
+            y: cy
+        });
+        if (this.matchObjective?.id === 'combo' && ownerId) {
+            this.objectiveProgress[ownerId] = Math.max(
+                this.objectiveProgress[ownerId] || 0,
+                comboCount
+            );
+        }
 
         // Daño a jugadores en el radio (con crédito de baja para el disparador)
         Object.values(this.players).forEach(p => {
@@ -3047,10 +3415,29 @@ class GameRoom {
             // Reacción en cadena: prende barriles y vehículos cercanos con retardo
             this.obstacles.forEach(o => {
                 if (o.explotado || !o.tipo || o.tipo === 'roca') return;
+                if (this.explosionChain.some((entry) => entry.obs === o)) return;
                 if (Math.hypot(o.x + o.w / 2 - cx, o.y + o.h / 2 - cy) < def.radio + BARRIL_CADENA_RADIO) {
-                    this.explosionChain.push({ obs: o, ownerId, ticks: BARRIL_CADENA_TICKS });
+                    const pendingInCombo = this.explosionChain.filter((entry) =>
+                        entry.comboId === comboId
+                    ).length;
+                    this.explosionChain.push({
+                        obs: o,
+                        ownerId,
+                        ticks: BARRIL_CADENA_TICKS * (pendingInCombo + 1),
+                        comboId
+                    });
                 }
             });
+        }
+        if (!this.explosionChain.some((entry) => entry.comboId === comboId)) {
+            delete this.explosionComboCounts[comboId];
+            if (ownerId && this.players[ownerId]) {
+                this.registrarTrofeo(
+                    this.players[ownerId],
+                    'explosion_chain',
+                    comboCount
+                );
+            }
         }
     }
 
@@ -4231,6 +4618,7 @@ io.on('connection', (socket) => {
         room.addPlayer(socket.id, nickFinal, skinValidada, socket.verifiedUid);
         const nuevoP = room.players[socket.id];
         nuevoP.__ip = ip;
+        nuevoP.verifiedAccount = socket.verifiedAccount === true;
         if (socket.verifiedAccount === true) room.soloProgressEligiblePlayerIds.add(socket.id);
         if (socket.__entradaCobrada) nuevoP.pagoEntrada = socket.__entradaCobrada;
 
@@ -4277,6 +4665,7 @@ io.on('connection', (socket) => {
                 return socket.emit('errorMsg', 'Esa cuenta ya está jugando en esta sala.');
             }
             p.uid = socket.verifiedUid;
+            p.verifiedAccount = socket.verifiedAccount === true;
             if (socket.verifiedAccount === true) room.soloProgressEligiblePlayerIds.add(socket.id);
             else room.soloProgressEligiblePlayerIds.delete(socket.id);
             const progressionReward = await recompensaVisualEquipada(socket.verifiedUid);
@@ -4382,6 +4771,26 @@ io.on('connection', (socket) => {
         if (socket.roomId && rooms[socket.roomId]) {
             const command = normalizeCommand(null, 'BUY_SHOP_ITEM', { itemType: validation.itemType });
             rooms[socket.roomId].handleBuyItem(socket.id, command.payload.itemType);
+        }
+    });
+
+    socket.on('abandonMission', () => {
+        if (socket.roomId && rooms[socket.roomId]) {
+            rooms[socket.roomId].abandonarMision(socket.id);
+        }
+    });
+
+    socket.on('requestTrophyRoom', async () => {
+        try {
+            const records = await getGlobalTrophyRecords(FIREBASE_DB);
+            socket.emit('trophyRoomData', records);
+        } catch (error) {
+            logger.error('trophy.records_read_failed', {
+                errorCode: typeof error?.code === 'string'
+                    ? error.code.slice(0, 64)
+                    : 'FIRESTORE_UNAVAILABLE'
+            });
+            socket.emit('trophyRoomError', 'No se pudieron cargar los trofeos. Inténtalo de nuevo.');
         }
     });
 

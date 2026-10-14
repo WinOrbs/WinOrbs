@@ -181,6 +181,222 @@
             color: var(--green);
         }
 
+        .match-objective {
+            position: absolute;
+            top: 88px;
+            left: 14px;
+            z-index: 5;
+            width: min(270px, calc(100vw - 28px));
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            padding: 10px 12px;
+            border: 1px solid rgba(250, 204, 21, 0.45);
+            border-radius: 12px;
+            background: rgba(15, 23, 42, 0.84);
+            box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28), 0 0 18px rgba(250, 204, 21, 0.12);
+            color: #f8fafc;
+            pointer-events: none;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        .match-objective[hidden] {
+            display: none;
+        }
+
+        .match-objective-label {
+            color: #fde047;
+            font-size: 9px;
+            font-weight: 800;
+            letter-spacing: 1.2px;
+        }
+
+        .match-objective-title {
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .match-objective-progress {
+            display: flex;
+            justify-content: space-between;
+            color: #cbd5e1;
+            font-size: 10px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .match-objective-track {
+            height: 4px;
+            overflow: hidden;
+            border-radius: 4px;
+            background: rgba(148, 163, 184, 0.25);
+        }
+
+        .match-objective-fill {
+            width: 0;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, #f59e0b, #fde047);
+            transition: width 180ms ease-out;
+        }
+
+        .match-objective.completed {
+            border-color: rgba(74, 222, 128, 0.7);
+            box-shadow: 0 0 22px rgba(74, 222, 128, 0.22);
+        }
+
+        .match-objective.completed .match-objective-label {
+            color: #86efac;
+        }
+
+        .match-objective.completed .match-objective-fill {
+            background: linear-gradient(90deg, #22c55e, #86efac);
+        }
+
+        .mission-checklist {
+            position: absolute;
+            top: 172px;
+            left: 14px;
+            z-index: 5;
+            width: min(270px, calc(100vw - 28px));
+            max-height: 42vh;
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+            padding: 10px;
+            border: 1px solid rgba(56, 189, 248, 0.42);
+            border-radius: 12px;
+            background: rgba(8, 18, 34, 0.88);
+            box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+            color: #e2e8f0;
+            pointer-events: auto;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        .mission-checklist[hidden] {
+            display: none;
+        }
+
+        .mission-checklist-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .mission-checklist-title {
+            color: #7dd3fc;
+            font-size: 10px;
+            font-weight: 900;
+            letter-spacing: 0.8px;
+        }
+
+        .mission-abandon {
+            border: 1px solid rgba(248, 113, 113, 0.45);
+            border-radius: 6px;
+            padding: 3px 6px;
+            background: rgba(127, 29, 29, 0.28);
+            color: #fecaca;
+            font-size: 9px;
+            cursor: pointer;
+        }
+
+        .mission-checklist-count {
+            color: #cbd5e1;
+            font-size: 9px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .mission-task-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin: 0;
+            padding: 0;
+            overflow-y: auto;
+            list-style: none;
+        }
+
+        .mission-task {
+            display: grid;
+            grid-template-columns: 15px minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 5px;
+            min-height: 20px;
+            color: #cbd5e1;
+            font-size: 10px;
+            line-height: 1.2;
+        }
+
+        .mission-task-check {
+            display: grid;
+            width: 14px;
+            height: 14px;
+            place-items: center;
+            border: 1px solid rgba(148, 163, 184, 0.5);
+            border-radius: 4px;
+            color: transparent;
+            font-size: 10px;
+            font-weight: 900;
+        }
+
+        .mission-task-progress {
+            color: #94a3b8;
+            font-size: 9px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .mission-task.completed {
+            color: #86efac;
+        }
+
+        .mission-task.completed .mission-task-check {
+            border-color: rgba(74, 222, 128, 0.75);
+            background: rgba(34, 197, 94, 0.18);
+            color: #86efac;
+        }
+
+        .mission-checklist-complete .mission-checklist-title {
+            color: #86efac;
+        }
+
+        .mission-checklist-complete .mission-task-list {
+            max-height: 100px;
+        }
+
+        #explosion-combo-banner {
+            position: absolute;
+            top: 23%;
+            left: 50%;
+            z-index: 12;
+            transform: translate(-50%, 12px) scale(0.8);
+            opacity: 0;
+            padding: 10px 20px;
+            border: 1px solid rgba(251, 191, 36, 0.75);
+            border-radius: 999px;
+            background: linear-gradient(110deg, rgba(124, 45, 18, 0.94), rgba(180, 83, 9, 0.94));
+            box-shadow: 0 0 30px rgba(251, 146, 60, 0.55);
+            color: #fff7ed;
+            font-family: var(--font-display);
+            font-size: clamp(18px, 4vw, 30px);
+            font-weight: 900;
+            letter-spacing: 1.5px;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+            pointer-events: none;
+        }
+
+        #explosion-combo-banner.show {
+            animation: explosion-combo-pop 1.35s ease-out forwards;
+        }
+
+        @keyframes explosion-combo-pop {
+            12% { opacity: 1; transform: translate(-50%, 0) scale(1.08); }
+            24% { transform: translate(-50%, 0) scale(1); }
+            78% { opacity: 1; transform: translate(-50%, -8px) scale(1); }
+            100% { opacity: 0; transform: translate(-50%, -22px) scale(0.96); }
+        }
+
         /* BARRAS DE VIDA Y ESCUDO */
         .status-bars {
             width: 132px;
@@ -749,6 +965,23 @@
             margin: 0 auto;
         }
 
+        .team-combo-results {
+            max-width: 620px;
+            margin: 0 auto 12px;
+            padding: 9px 12px;
+            border: 1px solid rgba(56, 189, 248, 0.35);
+            border-radius: 10px;
+            background: rgba(14, 165, 233, 0.08);
+            color: #bae6fd;
+            font-size: 12px;
+            font-weight: 700;
+            text-align: center;
+        }
+
+        .team-combo-results[hidden] {
+            display: none;
+        }
+
         .podium-place {
             min-width: 0;
             display: flex;
@@ -979,6 +1212,88 @@
         #btn-fullscreen:hover {
             color: var(--primary);
             border-color: var(--border-strong);
+        }
+
+        #trophy-room-dialog {
+            width: min(560px, calc(100vw - 28px));
+            max-height: min(78vh, 680px);
+            padding: 24px;
+            overflow: auto;
+            color: var(--text);
+            background: var(--surface);
+            border: 1px solid var(--border-strong);
+            border-radius: var(--radius);
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65);
+        }
+
+        #trophy-room-dialog::backdrop {
+            background: rgba(2, 6, 23, 0.78);
+            backdrop-filter: blur(5px);
+        }
+
+        .trophy-room-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .trophy-room-header h2 {
+            margin: 0;
+            color: var(--gold);
+            font-family: var(--font-display);
+        }
+
+        .trophy-room-close {
+            min-height: 38px;
+            padding: 0 12px;
+            color: var(--text);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        #trophy-room-status {
+            min-height: 22px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        #trophy-record-list {
+            display: grid;
+            gap: 10px;
+            margin: 16px 0 0;
+            padding: 0;
+            list-style: none;
+        }
+
+        .trophy-record-card {
+            padding: 14px;
+            background: rgba(15, 23, 42, 0.75);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+        }
+
+        .trophy-record-card h3 {
+            margin: 0 0 5px;
+            color: var(--gold);
+            font-size: 15px;
+        }
+
+        .trophy-record-description,
+        .trophy-record-holder {
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .trophy-record-value {
+            display: block;
+            margin-top: 8px;
+            color: var(--text);
+            font-family: var(--font-display);
+            font-size: 18px;
         }
 
         /* Overlay dentro de death-card cuando es lobby: boton salir en flujo */
@@ -1882,6 +2197,37 @@
                 display: none;
             }
 
+            .match-objective {
+                top: 70px;
+                left: 50%;
+                transform: translateX(-50%);
+                width: min(250px, calc(100vw - 30px));
+                padding: 7px 10px;
+            }
+
+            .match-objective-label {
+                font-size: 8px;
+            }
+
+            .match-objective-title {
+                font-size: 11px;
+            }
+
+            .mission-checklist {
+                top: auto;
+                left: 10px;
+                bottom: calc(150px + env(safe-area-inset-bottom));
+                width: min(230px, 49vw);
+                max-height: 29vh;
+                padding: 7px;
+            }
+
+            .mission-checklist-title { font-size: 8px; }
+            .mission-task { font-size: 8px; min-height: 17px; }
+            .mission-task-progress,
+            .mission-checklist-count { font-size: 8px; }
+            .mission-abandon { font-size: 8px; }
+
             .ability-hud {
                 display: none;
             }
@@ -2366,7 +2712,7 @@
                 top: calc(6px + env(safe-area-inset-top));
                 right: calc(8px + env(safe-area-inset-right));
                 left: auto;
-                width: 110px;
+                width: 180px;
                 gap: 5px;
             }
 
@@ -2381,6 +2727,16 @@
 
             #btn-fullscreen {
                 width: 42px;
+            }
+
+            #btn-trophy-room {
+                width: 42px;
+                padding: 0;
+                justify-content: center;
+            }
+
+            .trophy-label {
+                display: none;
             }
 
             .hud {
@@ -2954,6 +3310,26 @@
             <b id="hud-bank">0 pts</b>
         </div>
     </div>
+    <section id="match-objective" class="match-objective" aria-live="polite" hidden>
+        <span id="match-objective-label" class="match-objective-label">OBJETIVO DE LA RONDA</span>
+        <strong id="match-objective-title" class="match-objective-title"></strong>
+        <div class="match-objective-progress">
+            <span id="match-objective-status"></span>
+            <span id="match-objective-count"></span>
+        </div>
+        <div class="match-objective-track" aria-hidden="true">
+            <div id="match-objective-fill" class="match-objective-fill"></div>
+        </div>
+    </section>
+    <section id="mission-checklist" class="mission-checklist" aria-live="polite" hidden>
+        <div class="mission-checklist-header">
+            <strong id="mission-checklist-title" class="mission-checklist-title">MISIÓN SECUNDARIA</strong>
+            <button id="mission-abandon" class="mission-abandon" type="button">Abandonar</button>
+        </div>
+        <span id="mission-checklist-count" class="mission-checklist-count"></span>
+        <ol id="mission-task-list" class="mission-task-list"></ol>
+    </section>
+    <div id="explosion-combo-banner" role="status" aria-live="polite"></div>
 
     <!-- Equipamiento -->
     <div class="weapon-hud" id="weapon-hud">
@@ -3149,6 +3525,7 @@
             <div class="ov-title" style="color: var(--red); font-size: 26px;" id="death-title">NÚCLEO DESTRUIDO</div>
             <p class="ov-text" id="death-subtext">Perdiste todas las gemas no aseguradas.</p>
             <div class="match-results" id="match-results">
+                <div class="team-combo-results" id="team-combo-results" hidden></div>
                 <div class="match-podium" id="match-podium"></div>
                 <div class="results-list-wrap" id="results-list-wrap" hidden>
                     <h3>Clasificación</h3>
@@ -3180,6 +3557,15 @@
             </svg>
             Salir
         </button>
+        <button id="btn-trophy-room" class="top-btn" type="button" title="Sala de trofeos"
+            aria-label="Abrir sala de trofeos">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4Z"></path>
+                <path d="M7 6H4v2a4 4 0 0 0 4 4M17 6h3v2a4 4 0 0 1-4 4"></path>
+            </svg>
+            <span class="trophy-label">Trofeos</span>
+        </button>
         <button id="btn-fullscreen" class="top-btn" onclick="toggleFullscreen()" title="Pantalla completa">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                 stroke-linejoin="round">
@@ -3190,6 +3576,14 @@
             </svg>
         </button>
     </div>
+    <dialog id="trophy-room-dialog" aria-labelledby="trophy-room-title">
+        <div class="trophy-room-header">
+            <h2 id="trophy-room-title">Sala de trofeos</h2>
+            <button id="trophy-room-close" class="trophy-room-close" type="button">Cerrar</button>
+        </div>
+        <p id="trophy-room-status" role="status" aria-live="polite">Récords globales de partidas oficiales.</p>
+        <ul id="trophy-record-list"></ul>
+    </dialog>
     <div id="conn-status">Conectando con el servidor...</div>
     <!-- Barra de estado: fotos de skins aún cargando -->
     <div id="skins-carga">
@@ -3876,7 +4270,7 @@
             function startTouchControl(id, x, y, target, event) {
                 if (!fsOverlay.classList.contains("hidden") || document.body.classList.contains("dead")) return;
                 if (!(target instanceof Element) ||
-                    target.closest('.top-btn, .hud, .weapon-hud, .leaderboard, #minimap, .touch-controls, .touch-btn, #shop-modal, button, a, input')) return;
+                    target.closest('.top-btn, .hud, .weapon-hud, .leaderboard, .mission-checklist, #minimap, .touch-controls, .touch-btn, #shop-modal, button, a, input')) return;
 
                 if (x <= window.innerWidth * 0.55 && !joystickActive) {
                     joystickActive = true;
@@ -4126,6 +4520,10 @@
         // ESTADO MULTIJUGADOR GLOBAL
         let myPlayerId = null;
         let gameState = null;
+        let missionState = { mission: null, drops: [] };
+        let trophyRoomRecords = [];
+        let comboBannerTimer = null;
+        let missionUiSignature = '';
         let ultimoMinimapa = 0;
         // Geometría del mapa, separada del estado volátil. Llega una vez por
         // partida en 'roomConfig' (server.js → configEstatica()). No cambia al
@@ -4594,6 +4992,97 @@
             window.__intro && window.__intro.sumar('join');
         });
 
+        function renderTrophyRoom() {
+            const list = document.getElementById('trophy-record-list');
+            const status = document.getElementById('trophy-room-status');
+            list.replaceChildren();
+            if (!trophyRoomRecords.length) {
+                status.textContent = 'Cargando récords globales...';
+                return;
+            }
+            status.textContent = 'Récords globales de salas oficiales; no cuentan bots ni partidas de práctica.';
+            trophyRoomRecords.forEach((trophy) => {
+                const card = document.createElement('li');
+                card.className = 'trophy-record-card';
+                const title = document.createElement('h3');
+                title.textContent = trophy.title;
+                const description = document.createElement('div');
+                description.className = 'trophy-record-description';
+                description.textContent = trophy.description;
+                const value = document.createElement('strong');
+                value.className = 'trophy-record-value';
+                const holder = document.createElement('div');
+                holder.className = 'trophy-record-holder';
+                if (trophy.record) {
+                    const metric = trophy.id === 'multikill'
+                        ? `${trophy.record.value} eliminaciones en 10 s`
+                        : trophy.id === 'explosion_chain'
+                            ? `${trophy.record.value} objetos en cadena`
+                            : `${trophy.record.value} eliminaciones sin morir`;
+                    value.textContent = metric;
+                    holder.textContent = `Titular: ${trophy.record.holderName}`;
+                } else {
+                    value.textContent = `Por conquistar · mínimo ${trophy.threshold}`;
+                    holder.textContent = 'Aún no hay un titular para este trofeo.';
+                }
+                card.append(title, description, value, holder);
+                list.append(card);
+            });
+        }
+
+        function abrirSalaTrofeos() {
+            const dialog = document.getElementById('trophy-room-dialog');
+            if (!dialog.open) dialog.showModal();
+            document.getElementById('trophy-room-status').textContent = 'Cargando récords globales...';
+            socket.emit('requestTrophyRoom');
+        }
+
+        document.getElementById('btn-trophy-room').addEventListener('click', abrirSalaTrofeos);
+        document.getElementById('trophy-room-close').addEventListener('click', () => {
+            document.getElementById('trophy-room-dialog').close();
+        });
+        document.getElementById('trophy-room-dialog').addEventListener('click', (event) => {
+            if (event.target === event.currentTarget) event.currentTarget.close();
+        });
+
+        socket.on('trophyRoomData', (records) => {
+            trophyRoomRecords = Array.isArray(records) ? records : [];
+            renderTrophyRoom();
+        });
+
+        socket.on('trophyRoomError', (message) => {
+            document.getElementById('trophy-room-status').textContent =
+                String(message || 'No se pudieron cargar los trofeos.');
+        });
+
+        socket.on('trophyRecordChanged', (record) => {
+            if (!record || typeof record.id !== 'string') return;
+            trophyRoomRecords = trophyRoomRecords.map((trophy) =>
+                trophy.id === record.id
+                    ? { ...trophy, record: { value: record.value, holderName: record.holderName } }
+                    : trophy
+            );
+            if (document.getElementById('trophy-room-dialog').open) renderTrophyRoom();
+        });
+
+        socket.on('trophyUnlocked', (record) => {
+            if (!record || typeof record.title !== 'string') return;
+            const banner = document.getElementById('announcement-banner');
+            banner.textContent = `🏆 ¡Nuevo récord global! ${record.title}: ${record.value}`;
+            banner.style.display = 'block';
+            setTimeout(() => { banner.style.display = 'none'; }, 5000);
+        });
+
+        socket.on('trophyRecordError', (message) => {
+            const banner = document.getElementById('announcement-banner');
+            banner.textContent = String(message || 'No se pudo guardar el récord global.');
+            banner.style.display = 'block';
+            if (document.getElementById('trophy-room-dialog').open) {
+                document.getElementById('trophy-room-status').textContent = banner.textContent;
+            }
+            setTimeout(() => { banner.style.display = 'none'; }, 5000);
+        });
+
         socket.on('errorMsg', (msg) => {
             alert(msg);
             window.location.href = "index.html";
@@ -4635,6 +5124,18 @@
             const el = document.getElementById("announcement-banner");
             el.innerText = text; el.style.display = "block";
             setTimeout(() => el.style.display = "none", 4000);
+        });
+
+        socket.on('missionNotice', (text) => {
+            const el = document.getElementById("announcement-banner");
+            if (!el) return;
+            el.textContent = String(text || '').slice(0, 180);
+            el.style.display = "block";
+            setTimeout(() => { el.style.display = "none"; }, 4500);
+        });
+
+        document.getElementById('mission-abandon').addEventListener('click', () => {
+            socket.emit('abandonMission');
         });
 
         // Aviso NO fatal (ej. tienda: "No tienes suficientes gemas"): solo banner,
@@ -4712,6 +5213,28 @@
                 configPedida = true;                 // una sola petición: evita bucle
                 socket.emit('pedirConfig');
             }
+        });
+
+        socket.on('missionState', (state) => {
+            missionState = state && typeof state === 'object'
+                ? state
+                : { mission: null, drops: [] };
+            solicitarActualizacionHUD();
+        });
+
+        socket.on('explosionCombo', (combo) => {
+            if (!combo || combo.ownerId !== myPlayerId ||
+                !Number.isInteger(combo.count) || combo.count < 1) return;
+            const banner = document.getElementById('explosion-combo-banner');
+            banner.textContent = `¡COMBO x${combo.count}!`;
+            banner.classList.remove('show');
+            void banner.offsetWidth;
+            banner.classList.add('show');
+            if (comboBannerTimer) clearTimeout(comboBannerTimer);
+            comboBannerTimer = setTimeout(() => {
+                banner.classList.remove('show');
+                comboBannerTimer = null;
+            }, 1400);
         });
 
         socket.on('gameOver', (data) => {
@@ -4890,17 +5413,93 @@
             if (wrap) wrap.style.display = "none";
         }
 
+        function updateMissionChecklist(me) {
+            const panel = document.getElementById('mission-checklist');
+            const mission = missionState.mission &&
+                (gameState.mode !== 'teams' || missionState.mission.teamId === me.teamId)
+                ? missionState.mission
+                : null;
+            if (!gameState.gameStarted || !mission || !Array.isArray(mission.tasks)) {
+                panel.hidden = true;
+                missionUiSignature = '';
+                return;
+            }
+
+            panel.hidden = false;
+            panel.classList.toggle('mission-checklist-complete', !!mission.completed);
+            const title = gameState.mode === 'teams'
+                ? `MISIÓN DEL EQUIPO ${me.teamId}`
+                : 'MISIÓN SECUNDARIA';
+            const progress = Math.max(0, Number(mission.completedCount) || 0);
+            const signature = `${mission.id}:${mission.completed}:${progress}:` +
+                mission.tasks.map((task) =>
+                    `${task.id},${task.progress},${task.completed}`
+                ).join(';');
+            if (signature === missionUiSignature) return;
+            missionUiSignature = signature;
+
+            document.getElementById('mission-checklist-title').textContent = title;
+            document.getElementById('mission-checklist-count').textContent =
+                `${progress}/10 tareas · ${progress * 70}/700 puntos ganados`;
+            const list = document.getElementById('mission-task-list');
+            list.replaceChildren();
+            mission.tasks.forEach((task) => {
+                const row = document.createElement('li');
+                row.className = `mission-task${task.completed ? ' completed' : ''}`;
+                const check = document.createElement('span');
+                check.className = 'mission-task-check';
+                check.textContent = task.completed ? '✓' : '';
+                const label = document.createElement('span');
+                label.textContent = task.title;
+                const taskProgress = document.createElement('span');
+                taskProgress.className = 'mission-task-progress';
+                taskProgress.textContent = task.completed
+                    ? '+70'
+                    : `${Math.floor(Number(task.progress) || 0)}/${task.target}`;
+                row.append(check, label, taskProgress);
+                list.appendChild(row);
+            });
+        }
+
         function updateHUD() {
             if (!gameState || !myPlayerId) return;
             const me = gameState.players[myPlayerId];
             if (!me) return;
 
+            updateMissionChecklist(me);
             isDead = me.isDead;
             document.body.classList.toggle("dead", !!isDead);
             actualizarModoEspectador(me);
             updateTeamLobby(me);
             document.getElementById("hud-kills").innerText =
                 String(Math.max(0, Math.floor(Number(me.eliminations) || 0)));
+
+            const objective = gameState.matchObjective;
+            const objectiveCard = document.getElementById("match-objective");
+            const objectiveVisible = !!(gameState.gameStarted && !isGameOver && objective);
+            objectiveCard.hidden = !objectiveVisible;
+            if (objectiveVisible) {
+                const target = Math.max(1, Number(objective.target) || 1);
+                const rawProgress = objective.id === 'eliminations'
+                    ? Number(me.eliminations) || 0
+                    : objective.id === 'bank'
+                        ? Number(me.bankedScore) || 0
+                        : Number(gameState.objectiveProgress?.[myPlayerId]) || 0;
+                const progress = Math.min(target, Math.max(0, rawProgress));
+                const complete = progress >= target;
+                document.getElementById("match-objective-label").textContent =
+                    complete ? "¡OBJETIVO COMPLETADO!" : "OBJETIVO DE LA RONDA";
+                document.getElementById("match-objective-title").textContent = objective.title;
+                document.getElementById("match-objective-status").textContent =
+                    complete ? "Reto superado" : "Tu progreso";
+                document.getElementById("match-objective-count").textContent =
+                    `${progress}/${target}`;
+                document.getElementById("match-objective-fill").style.width =
+                    `${Math.round(progress / target * 100)}%`;
+                objectiveCard.classList.toggle("completed", complete);
+            } else {
+                objectiveCard.classList.remove("completed");
+            }
 
             // Overlay de Lobby
             const lobbyOverlay = document.getElementById("lobby-overlay");
@@ -5612,6 +6211,26 @@
                     ctx.fillStyle = '#22c55e'; ctx.fillRect(h.x - 7, h.y - 7, 14, 14);
                 }
             });
+            (missionState.drops || []).forEach(drop => {
+                if (!visible(drop.x, drop.y, 34)) return;
+                const pulse = 1 + 0.12 * Math.sin(Date.now() / 180 + drop.x);
+                ctx.save();
+                ctx.translate(drop.x, drop.y);
+                ctx.rotate(Math.PI / 4);
+                ctx.fillStyle = 'rgba(14, 165, 233, 0.9)';
+                ctx.strokeStyle = '#bae6fd';
+                ctx.lineWidth = 3;
+                ctx.shadowColor = '#38bdf8';
+                ctx.shadowBlur = 18;
+                ctx.fillRect(-12 * pulse, -12 * pulse, 24 * pulse, 24 * pulse);
+                ctx.strokeRect(-12 * pulse, -12 * pulse, 24 * pulse, 24 * pulse);
+                ctx.restore();
+                ctx.fillStyle = '#e0f2fe';
+                ctx.font = 'bold 13px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('!', drop.x, drop.y);
+            });
 
             // Lanza-Orbes en el suelo (botín de airdrop): rombo violeta giratorio
             // si el sprite no está disponible.
@@ -5917,19 +6536,37 @@
             });
         }
 
-        function renderFinalStandings(ranking) {
+        function renderFinalStandings(ranking, resultData) {
             const resultsEl = document.getElementById("match-results");
             const podiumEl = document.getElementById("match-podium");
             const listWrap = document.getElementById("results-list-wrap");
             const listEl = document.getElementById("results-list");
+            const teamComboEl = document.getElementById("team-combo-results");
             podiumEl.replaceChildren();
             listEl.replaceChildren();
 
             const appendStat = (container, player) => {
                 const score = Math.max(0, Number(player.bankedScore) || 0);
                 const kills = Math.max(0, Math.floor(Number(player.eliminations) || 0));
-                container.textContent = `${score} pts asegurados · ${kills} kills`;
+                const playerId = player.id || player.playerId;
+                const bestCombo = Math.max(0, Math.floor(
+                    Number(resultData?.bestCombos?.[playerId]) || 0
+                ));
+                container.textContent = `${score} pts asegurados · ${kills} kills` +
+                    (bestCombo > 0 ? ` · mejor combo x${bestCombo}` : '');
             };
+
+            const bestTeamCombos = resultData?.bestTeamCombos || {};
+            const teamComboEntries = Object.entries(bestTeamCombos)
+                .filter(([, count]) => Number(count) > 0)
+                .map(([teamId, count]) => {
+                    const teamName = gameState?.teams?.[teamId]?.name || `Equipo ${teamId}`;
+                    return `${teamName}: combo x${Math.floor(Number(count))}`;
+                });
+            teamComboEl.hidden = gameState?.mode !== 'teams' || teamComboEntries.length === 0;
+            teamComboEl.textContent = teamComboEl.hidden
+                ? ''
+                : `MEJOR COMBO POR EQUIPO · ${teamComboEntries.join(' · ')}`;
 
             [
                 { player: ranking[1], position: 2, className: "second", medal: "silver" },
@@ -6062,7 +6699,7 @@
             }
 
             cardEl.classList.add("final-results");
-            renderFinalStandings(ranking);
+            renderFinalStandings(ranking, data);
             const returnButton = document.getElementById("btn-respawn-action");
             returnButton.innerText = "VOLVER AL LOBBY 🔄";
             returnButton.disabled = false;

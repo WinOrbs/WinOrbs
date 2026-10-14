@@ -301,8 +301,8 @@ async function parte2(p1, admin, m) {
         src.includes('this.explotarObstaculo(obs, b.ownerId)'));
     log('Barriles con reacción en cadena por cola (sin recursión)',
         src.includes('this.explosionChain = []') &&
-        /this\.explosionChain\.push\(\{ obs: o, ownerId, ticks: BARRIL_CADENA_TICKS \}\)/.test(src) &&
-        /explosionChain\.splice\(i, 1\);\s*\n\s*this\.explotarObstaculo\(e\.obs, e\.ownerId\);/.test(src));
+        /this\.explosionChain\.push\(\{[\s\S]*?obs: o,[\s\S]*?ticks: BARRIL_CADENA_TICKS \* \(pendingInCombo \+ 1\),[\s\S]*?comboId/.test(src) &&
+        /explosionChain\.splice\(i, 1\);\s*\n\s*this\.explotarObstaculo\(e\.obs, e\.ownerId, e\.comboId\);/.test(src));
     log('Coche suelta 2 orbes ×10 y la moto da turbo al que la revienta',
         src.includes('COCHE_ORBES = 2') && src.includes('COCHE_ORBE_VAL = 10') &&
         src.includes('MOTO_TURBO_TICKS = 120') && src.includes('p.turboTimer = MOTO_TURBO_TICKS'));

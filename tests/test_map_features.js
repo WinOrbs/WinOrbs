@@ -11,6 +11,28 @@ const mapSize = Number((server.match(/const MAP_SIZE = (\d+);/) || [])[1]);
 assert.equal(mapSize, 7000, 'the arena should be larger than the former 5000-unit map');
 assert.match(server, /obs\.x \+ obs\.w \/ 2 - bomb\.currentX[\s\S]*?obs\.y \+ obs\.h \/ 2 - bomb\.currentY/,
     'bomb damage measures distance from the center of scaled obstacles');
+const objectiveDefinitions = server.match(/const MATCH_OBJECTIVES = \[([\s\S]*?)\n\];/);
+assert.ok(objectiveDefinitions, 'the server defines a set of round objectives');
+const objectiveList = new Function(`return [${objectiveDefinitions[1]}];`)();
+assert.equal(objectiveList.length, 3, 'each round can draw from three objective styles');
+assert.ok(objectiveList.every(({ id, title, target }) =>
+    typeof id === 'string' && typeof title === 'string' && target > 0
+), 'every objective has an id, user-facing title, and positive target');
+const objectivePickerStart = server.indexOf('    elegirObjetivoPartida() {');
+const objectivePickerEnd = server.indexOf('\n    // Cadena de centros', objectivePickerStart);
+assert.ok(objectivePickerStart >= 0 && objectivePickerEnd > objectivePickerStart,
+    'the room has a round-objective picker');
+const objectivePickerSource = server.slice(objectivePickerStart, objectivePickerEnd).trim()
+    .replace(/^elegirObjetivoPartida/, 'function elegirObjetivoPartida');
+const pickObjective = new Function('MATCH_OBJECTIVES', 'Math',
+    `return (${objectivePickerSource});`)(objectiveList, Math);
+const objectiveRoom = { lastMatchObjectiveId: objectiveList[0].id };
+const previousObjectiveId = objectiveRoom.lastMatchObjectiveId;
+const nextObjective = pickObjective.call(objectiveRoom);
+assert.notEqual(nextObjective.id, previousObjectiveId,
+    'consecutive rounds do not repeat the same objective');
+assert.ok(objectiveList.some(({ id }) => id === nextObjective.id),
+    'the selected objective comes from the supported objective list');
 
 const methodStart = server.indexOf('    generateObstacles() {');
 const methodEnd = server.indexOf('\n    // Muros simétricos', methodStart);
@@ -26,18 +48,23 @@ const generateObstacles = new Function(
     'Math',
     `return (${methodSource});`
 )(mapSize, obstacleTypes, Math);
-const explodeStart = server.indexOf('    explotarObstaculo(obs, ownerId) {');
+const explodeStart = server.indexOf('    explotarObstaculo(obs, ownerId, comboId = null) {');
 const explodeEnd = server.indexOf('\n    getSummary()', explodeStart);
 assert.ok(explodeStart >= 0 && explodeEnd > explodeStart, 'explosive obstacle handler exists');
 const explodeSource = server.slice(explodeStart, explodeEnd).trim()
     .replace(/^explotarObstaculo/, 'function explotarObstaculo');
+const comboEvents = [];
 const explodeObstacle = new Function(
     'OBSTACULOS_TIPOS',
     'BARRIL_CADENA_RADIO',
     'BARRIL_CADENA_TICKS',
     'io',
     `return (${explodeSource});`
-)(obstacleTypes, 65, 6, { to: () => ({ emit: () => {} }) });
+)(obstacleTypes, 65, 6, {
+    to: () => ({ emit: (event, payload) => {
+        if (event === 'explosionCombo') comboEvents.push(payload);
+    } })
+});
 
 function seededMath(seed) {
     let value = seed >>> 0;
@@ -114,18 +141,36 @@ const chainRoom = {
     obstacles: chainBarrels,
     explosions: [],
     explosionChain: [],
-    players: {},
+    explosionComboCounts: {},
+    nextExplosionComboId: 0,
+    matchObjective: { id: 'combo', target: 4 },
+    objectiveProgress: {},
+    players: { player: { id: 'player', teamId: 'A' } },
+    bestExplosionCombos: {},
+    bestTeamExplosionCombos: {},
     damagePlayer: () => {}
 };
 explodeObstacle.call(chainRoom, chainBarrels[0], 'player');
 assert.equal(chainRoom.obstacles.length, 4, 'the first barrel is removed when it explodes');
 assert.equal(chainRoom.explosionChain.length, 4, 'the explosion queues the four nearby barrels');
+assert.deepEqual(chainRoom.explosionChain.map(({ ticks }) => ticks), [6, 12, 18, 24],
+    'nearby barrels detonate in a visible staggered cascade');
 while (chainRoom.explosionChain.length) {
     const next = chainRoom.explosionChain.shift();
-    explodeObstacle.call(chainRoom, next.obs, next.ownerId);
+    explodeObstacle.call(chainRoom, next.obs, next.ownerId, next.comboId);
 }
 assert.equal(chainRoom.obstacles.length, 0, 'the chain eventually consumes the whole barrel cluster');
 assert.equal(chainRoom.explosions.length, 5, 'each barrel produces one explosion');
+assert.deepEqual(comboEvents.map(({ count }) => count), [1, 2, 3, 4, 5],
+    'chain explosions emit an authoritative, increasing combo count');
+assert.equal(chainRoom.objectiveProgress.player, 5,
+    'the server tracks the player’s best chain for the round objective');
+assert.equal(chainRoom.bestExplosionCombos.player, 5,
+    'the server keeps a separate personal record for the match');
+assert.equal(chainRoom.bestTeamExplosionCombos.A, 5,
+    'team mode can report its best individual chain for each team');
+assert.match(server, /bestCombos: \{ \.\.\.this\.bestExplosionCombos \}[\s\S]*?bestTeamCombos,/,
+    'the final results payload includes personal and team combo records');
 
 assert.match(game, /if \(k === 'm' && !e\.repeat && !editableTarget\)/,
     'M toggles the map without repeating while held or hijacking text input');
@@ -141,5 +186,15 @@ assert.match(game, /const mapConfigCurrent = roomConfig[\s\S]*?Array\.isArray\(r
     'the map overlay reads static obstacle geometry from roomConfig');
 assert.match(game, /const mapObstacles = mapConfigCurrent\s*\?\s*combinarMapa\(roomConfig\.obstacles, gameState\.obstaculosHp\)/,
     'the map overlay hides destroyed obstacles using the shared live-geometry helper');
+assert.match(game, /socket\.on\('explosionCombo'[\s\S]*?COMBO x\$\{combo\.count\}/,
+    'the client shows a visual combo banner to the player who triggered it');
+assert.match(game, /id="match-objective"[\s\S]*?id="match-objective-fill"/,
+    'the HUD includes a progress card for the current round objective');
+assert.match(game, /gameState\.matchObjective[\s\S]*?objectiveProgress\?\.\[myPlayerId\]/,
+    'the objective card displays server-authoritative personal progress');
+assert.match(game, /bestCombo > 0 \? ` · mejor combo x\$\{bestCombo\}`/,
+    'the final standings show each player’s best chain');
+assert.match(game, /MEJOR COMBO POR EQUIPO/,
+    'team results highlight each team’s best chain');
 
 console.log('OK map features: 7000-unit arena, realistic obstacle scale, chain-barrel clusters and translucent M map.');

@@ -215,7 +215,8 @@ check('el HUD muestra las eliminaciones recibidas en gameState',
     /hud-kills/.test(game) && /eliminations:\s*p\.eliminations/.test(server));
 check('el resultado final incluye podio y clasificación con puntuación y kills',
     /id="match-podium"/.test(game) && /id="results-list"/.test(game) &&
-    /renderFinalStandings\(ranking\)/.test(game) && /player\.eliminations/.test(game));
+    /renderFinalStandings\(ranking, data\)/.test(game) &&
+    /player\.eliminations/.test(game) && /bestCombo/.test(game));
 const joystickFnStart = game.indexOf('        function actualizarTeclasJoystick(');
 const joystickFnEnd = game.indexOf('\n\n        let mouseX', joystickFnStart);
 assert.ok(joystickFnStart > 0 && joystickFnEnd > joystickFnStart, 'No se encontró actualizarTeclasJoystick()');
