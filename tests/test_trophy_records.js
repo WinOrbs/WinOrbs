@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const serverSource = fs.readFileSync('server.js', 'utf8');
+const lobbySource = fs.readFileSync('public/index.html', 'utf8');
 const gameSource = fs.readFileSync('public/game.html', 'utf8');
 const {
     TROPHY_DEFINITIONS,
@@ -127,14 +128,14 @@ async function main() {
         'bot eliminations do not contribute to kill-based records');
     assert.match(serverSource, /p\.humanKillStreak = 0/,
         'a death resets the consecutive elimination streak');
-    assert.match(gameSource, /id="trophy-room-dialog"[\s\S]*?id="trophy-record-list"/,
-        'the game exposes a dedicated trophy room');
-    assert.match(gameSource, /id="btn-trophy-room-lobby"[\s\S]*?SALA DE TROFEOS/,
-        'the trophy room can be opened while the lobby overlay is visible');
-    assert.match(gameSource, /querySelectorAll\('#btn-trophy-room, #btn-trophy-room-lobby'\)/,
-        'both the in-game and lobby buttons open the same trophy room');
-    assert.match(gameSource, /#trophy-room-dialog\[open\]\s*\{\s*display:\s*block/,
-        'the trophy dialog has an explicit visible state');
+    assert.match(lobbySource, /id="btn-trophy-room"[\s\S]*?Trofeos/,
+        'the trophy room is accessible from the initial lobby navigation');
+    assert.match(lobbySource, /id="trophy-dialog"[\s\S]*?id="trophy-record-list"/,
+        'the initial lobby contains the record room dialog');
+    assert.match(lobbySource, /socket\.emit\('requestTrophyRoom'\)/,
+        'the initial lobby requests global records when opening the room');
+    assert.doesNotMatch(gameSource, /btn-trophy-room|trophy-room-dialog/,
+        'the trophy room is not presented inside the game page');
 
     console.log('OK trophy records: thresholds, persistent holders, eligibility and public privacy.');
 }

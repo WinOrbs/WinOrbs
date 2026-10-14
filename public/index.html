@@ -1210,6 +1210,16 @@
         #rooms-dialog .grid-salas { max-height: min(48svh, 520px); min-height: 180px; }
         #progress-dialog { width: min(1180px, calc(100vw - 28px)); }
         #progress-dialog .progression-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        #trophy-dialog { width: min(680px, calc(100vw - 28px)); }
+        #trophy-record-list { display: grid; gap: 10px; margin: 16px 0 0; padding: 0; list-style: none; }
+        .trophy-record-card {
+            padding: 16px; background: rgba(2, 6, 17, .58);
+            border: 1px solid var(--line); border-radius: 14px;
+        }
+        .trophy-record-card h3 { margin: 0 0 5px; color: var(--amber); font: 700 16px var(--font-display); }
+        .trophy-record-description, .trophy-record-holder { color: var(--muted); font-size: 13px; }
+        .trophy-record-value { display: block; margin: 8px 0 4px; color: #f8fafc; font: 700 18px var(--font-display); }
+        #trophy-room-status { min-height: 22px; color: var(--muted); font-size: 13px; }
         .dialog-heading { margin: 0 0 16px; color: #f8fafc; font: 700 18px var(--font-display); }
         .dialog-heading::before { content: "// "; color: var(--cyan); }
 
@@ -1264,7 +1274,7 @@
             .dock-icon { font-size: 17px; }
             .floating-dialog { width: calc(100vw - 18px); }
             .floating-dialog > .panel { max-height: 86svh; padding: 16px; border-radius: 16px; }
-            #skin-dialog, #rooms-dialog, #progress-dialog { width: calc(100vw - 18px); }
+            #skin-dialog, #rooms-dialog, #progress-dialog, #trophy-dialog { width: calc(100vw - 18px); }
             #rooms-dialog .grid-salas { max-height: 52svh; }
             #skin-dialog .skins-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
@@ -1316,6 +1326,10 @@
                 <button class="mini-btn" id="btn-tienda"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h16l-1 12H5L4 8z"/><path d="M9 9V6a3 3 0 0 1 6 0v3"/></svg>Tienda</button>
                 <button class="mini-btn" id="btn-perfil"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>Perfil</button>
                 <button class="mini-btn" id="btn-wallet"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M3 9h18M16 14h2"/></svg>Wallet</button>
+                <button class="mini-btn" id="btn-trophy-room" type="button" data-open-dialog="trophy-dialog" aria-haspopup="dialog">
+                    <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4Z"/><path d="M7 6H4v2a4 4 0 0 0 4 4M17 6h3v2a4 4 0 0 1-4 4"/></svg>
+                    Trofeos
+                </button>
                 <button class="mini-btn mini-btn-danger" id="btn-logout"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4H5v16h5M14 8l4 4-4 4M8 12h10"/></svg>Salir</button>
             </nav>
         </div>
@@ -1570,6 +1584,18 @@
             </div>
         </section>
         </dialog>
+        <dialog class="floating-dialog" id="trophy-dialog" aria-labelledby="trophy-room-title">
+            <button class="dialog-close" id="trophy-room-close" type="button" data-close-dialog aria-label="Cerrar sala de trofeos">×</button>
+            <section class="panel" aria-labelledby="trophy-room-title">
+                <div class="panel-head">
+                    <h2 class="panel-kicker" id="trophy-room-title">🏆 SALA DE TROFEOS</h2>
+                </div>
+                <p id="trophy-room-status" role="status" aria-live="polite">
+                    Récords globales de partidas oficiales; no cuentan bots ni prácticas.
+                </p>
+                <ul id="trophy-record-list"></ul>
+            </section>
+        </dialog>
     </main>
 
     <script>
@@ -1612,6 +1638,58 @@
                 }
                 dialogTrigger = null;
             });
+        });
+
+        let trophyRoomRecords = [];
+        function renderTrophyRoom() {
+            const list = document.getElementById('trophy-record-list');
+            const status = document.getElementById('trophy-room-status');
+            list.replaceChildren();
+            if (!trophyRoomRecords.length) {
+                status.textContent = 'No hay registros disponibles.';
+                return;
+            }
+            status.textContent = 'Récords globales de partidas oficiales; no cuentan bots ni prácticas.';
+            trophyRoomRecords.forEach((trophy) => {
+                const card = document.createElement('li');
+                card.className = 'trophy-record-card';
+                const title = document.createElement('h3');
+                title.textContent = trophy.title;
+                const description = document.createElement('div');
+                description.className = 'trophy-record-description';
+                description.textContent = trophy.description;
+                const value = document.createElement('strong');
+                value.className = 'trophy-record-value';
+                const holder = document.createElement('div');
+                holder.className = 'trophy-record-holder';
+                if (trophy.record) {
+                    value.textContent = trophy.id === 'multikill'
+                        ? `${trophy.record.value} eliminaciones en 10 s`
+                        : trophy.id === 'explosion_chain'
+                            ? `${trophy.record.value} objetos en cadena`
+                            : `${trophy.record.value} eliminaciones sin morir`;
+                    holder.textContent = `Titular: ${trophy.record.holderName}`;
+                } else {
+                    value.textContent = `Por conquistar · mínimo ${trophy.threshold}`;
+                    holder.textContent = 'Aún no hay un titular para este trofeo.';
+                }
+                card.append(title, description, value, holder);
+                list.append(card);
+            });
+        }
+
+        document.getElementById('btn-trophy-room').addEventListener('click', () => {
+            const status = document.getElementById('trophy-room-status');
+            status.textContent = 'Cargando récords globales...';
+            socket.emit('requestTrophyRoom');
+        });
+        socket.on('trophyRoomData', (records) => {
+            trophyRoomRecords = Array.isArray(records) ? records : [];
+            renderTrophyRoom();
+        });
+        socket.on('trophyRoomError', (message) => {
+            document.getElementById('trophy-room-status').textContent =
+                String(message || 'No se pudieron cargar los trofeos.');
         });
 
         // Escena decorativa en canvas: el canvas permanece detrás de los controles.

@@ -1214,99 +1214,6 @@
             border-color: var(--border-strong);
         }
 
-        #trophy-room-dialog {
-            position: fixed;
-            inset: 0;
-            margin: auto;
-            width: min(560px, calc(100vw - 28px));
-            max-height: min(78vh, 680px);
-            padding: 24px;
-            overflow: auto;
-            color: var(--text);
-            background: var(--surface);
-            border: 1px solid var(--border-strong);
-            border-radius: var(--radius);
-            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65);
-        }
-
-        #trophy-room-dialog:not([open]) {
-            display: none;
-        }
-
-        #trophy-room-dialog[open] {
-            display: block;
-        }
-
-        #trophy-room-dialog::backdrop {
-            background: rgba(2, 6, 23, 0.78);
-            backdrop-filter: blur(5px);
-        }
-
-        .trophy-room-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 8px;
-        }
-
-        .trophy-room-header h2 {
-            margin: 0;
-            color: var(--gold);
-            font-family: var(--font-display);
-        }
-
-        .trophy-room-close {
-            min-height: 38px;
-            padding: 0 12px;
-            color: var(--text);
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            cursor: pointer;
-        }
-
-        #trophy-room-status {
-            min-height: 22px;
-            color: var(--muted);
-            font-size: 13px;
-        }
-
-        #trophy-record-list {
-            display: grid;
-            gap: 10px;
-            margin: 16px 0 0;
-            padding: 0;
-            list-style: none;
-        }
-
-        .trophy-record-card {
-            padding: 14px;
-            background: rgba(15, 23, 42, 0.75);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-        }
-
-        .trophy-record-card h3 {
-            margin: 0 0 5px;
-            color: var(--gold);
-            font-size: 15px;
-        }
-
-        .trophy-record-description,
-        .trophy-record-holder {
-            color: var(--muted);
-            font-size: 12px;
-        }
-
-        .trophy-record-value {
-            display: block;
-            margin-top: 8px;
-            color: var(--text);
-            font-family: var(--font-display);
-            font-size: 18px;
-        }
-
         /* Overlay dentro de death-card cuando es lobby: boton salir en flujo */
         .death-card .btn-exit {
             position: static;
@@ -2740,16 +2647,6 @@
                 width: 42px;
             }
 
-            #btn-trophy-room {
-                width: 42px;
-                padding: 0;
-                justify-content: center;
-            }
-
-            .trophy-label {
-                display: none;
-            }
-
             .hud {
                 top: calc(6px + env(safe-area-inset-top));
                 left: calc(8px + env(safe-area-inset-left));
@@ -3519,10 +3416,6 @@
                 id="lobby-countdown">5</div>
             <p class="ov-hint" id="lobby-controls-hint" style="margin-left:auto;margin-right:auto;">Usa WASD para
                 moverte, ratón para disparar y apuntar. Clic derecho para dash.</p>
-            <button id="btn-trophy-room-lobby" class="top-btn" type="button"
-                style="min-height:44px; justify-content:center; padding:0 18px;">
-                🏆 SALA DE TROFEOS
-            </button>
             <button class="top-btn btn-exit" onclick="salirAlLobby(event)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                     stroke-linejoin="round">
@@ -3572,15 +3465,6 @@
             </svg>
             Salir
         </button>
-        <button id="btn-trophy-room" class="top-btn" type="button" title="Sala de trofeos"
-            aria-label="Abrir sala de trofeos">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
-                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4Z"></path>
-                <path d="M7 6H4v2a4 4 0 0 0 4 4M17 6h3v2a4 4 0 0 1-4 4"></path>
-            </svg>
-            <span class="trophy-label">Trofeos</span>
-        </button>
         <button id="btn-fullscreen" class="top-btn" onclick="toggleFullscreen()" title="Pantalla completa">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                 stroke-linejoin="round">
@@ -3591,14 +3475,6 @@
             </svg>
         </button>
     </div>
-    <dialog id="trophy-room-dialog" aria-labelledby="trophy-room-title">
-        <div class="trophy-room-header">
-            <h2 id="trophy-room-title">Sala de trofeos</h2>
-            <button id="trophy-room-close" class="trophy-room-close" type="button">Cerrar</button>
-        </div>
-        <p id="trophy-room-status" role="status" aria-live="polite">Récords globales de partidas oficiales.</p>
-        <ul id="trophy-record-list"></ul>
-    </dialog>
     <div id="conn-status">Conectando con el servidor...</div>
     <!-- Barra de estado: fotos de skins aún cargando -->
     <div id="skins-carga">
@@ -4536,7 +4412,6 @@
         let myPlayerId = null;
         let gameState = null;
         let missionState = { mission: null, drops: [] };
-        let trophyRoomRecords = [];
         let comboBannerTimer = null;
         let missionUiSignature = '';
         let ultimoMinimapa = 0;
@@ -5007,80 +4882,6 @@
             window.__intro && window.__intro.sumar('join');
         });
 
-        function renderTrophyRoom() {
-            const list = document.getElementById('trophy-record-list');
-            const status = document.getElementById('trophy-room-status');
-            list.replaceChildren();
-            if (!trophyRoomRecords.length) {
-                status.textContent = 'Cargando récords globales...';
-                return;
-            }
-            status.textContent = 'Récords globales de salas oficiales; no cuentan bots ni partidas de práctica.';
-            trophyRoomRecords.forEach((trophy) => {
-                const card = document.createElement('li');
-                card.className = 'trophy-record-card';
-                const title = document.createElement('h3');
-                title.textContent = trophy.title;
-                const description = document.createElement('div');
-                description.className = 'trophy-record-description';
-                description.textContent = trophy.description;
-                const value = document.createElement('strong');
-                value.className = 'trophy-record-value';
-                const holder = document.createElement('div');
-                holder.className = 'trophy-record-holder';
-                if (trophy.record) {
-                    const metric = trophy.id === 'multikill'
-                        ? `${trophy.record.value} eliminaciones en 10 s`
-                        : trophy.id === 'explosion_chain'
-                            ? `${trophy.record.value} objetos en cadena`
-                            : `${trophy.record.value} eliminaciones sin morir`;
-                    value.textContent = metric;
-                    holder.textContent = `Titular: ${trophy.record.holderName}`;
-                } else {
-                    value.textContent = `Por conquistar · mínimo ${trophy.threshold}`;
-                    holder.textContent = 'Aún no hay un titular para este trofeo.';
-                }
-                card.append(title, description, value, holder);
-                list.append(card);
-            });
-        }
-
-        function abrirSalaTrofeos() {
-            const dialog = document.getElementById('trophy-room-dialog');
-            if (!dialog.open) dialog.showModal();
-            document.getElementById('trophy-room-status').textContent = 'Cargando récords globales...';
-            socket.emit('requestTrophyRoom');
-        }
-
-        document.querySelectorAll('#btn-trophy-room, #btn-trophy-room-lobby')
-            .forEach((button) => button.addEventListener('click', abrirSalaTrofeos));
-        document.getElementById('trophy-room-close').addEventListener('click', () => {
-            document.getElementById('trophy-room-dialog').close();
-        });
-        document.getElementById('trophy-room-dialog').addEventListener('click', (event) => {
-            if (event.target === event.currentTarget) event.currentTarget.close();
-        });
-
-        socket.on('trophyRoomData', (records) => {
-            trophyRoomRecords = Array.isArray(records) ? records : [];
-            renderTrophyRoom();
-        });
-
-        socket.on('trophyRoomError', (message) => {
-            document.getElementById('trophy-room-status').textContent =
-                String(message || 'No se pudieron cargar los trofeos.');
-        });
-
-        socket.on('trophyRecordChanged', (record) => {
-            if (!record || typeof record.id !== 'string') return;
-            trophyRoomRecords = trophyRoomRecords.map((trophy) =>
-                trophy.id === record.id
-                    ? { ...trophy, record: { value: record.value, holderName: record.holderName } }
-                    : trophy
-            );
-            if (document.getElementById('trophy-room-dialog').open) renderTrophyRoom();
-        });
-
         socket.on('trophyUnlocked', (record) => {
             if (!record || typeof record.title !== 'string') return;
             const banner = document.getElementById('announcement-banner');
@@ -5093,9 +4894,6 @@
             const banner = document.getElementById('announcement-banner');
             banner.textContent = String(message || 'No se pudo guardar el récord global.');
             banner.style.display = 'block';
-            if (document.getElementById('trophy-room-dialog').open) {
-                document.getElementById('trophy-room-status').textContent = banner.textContent;
-            }
             setTimeout(() => { banner.style.display = 'none'; }, 5000);
         });
 
